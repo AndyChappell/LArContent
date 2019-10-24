@@ -14,6 +14,7 @@
 #include "larpandoracontent/LArHelpers/LArMCParticleHelper.h"
 #include "larpandoracontent/LArHelpers/LArPfoHelper.h"
 #include "larpandoracontent/LArHelpers/LArMonitoringHelper.h"
+#include "larpandoracontent/LArHelpers/LArInteractionTypeHelper.h"
 #include "Objects/OrderedCaloHitList.h"
 
 #include <fstream>
@@ -104,6 +105,18 @@ StatusCode BScProjectInputsAlgorithm::Run()
             std::cout << "WARNING: Multiple vertices found" << std::endl;
             m_file << "," << "," << ",";
         }
+        
+        MCParticleList mcPrimaryList;
+        for (const auto &mapEntry : mcToPfoHitSharingMap)
+        {
+            mcPrimaryList.push_back(mapEntry.first);
+        }
+        mcPrimaryList.sort(LArMCParticleHelper::SortByMomentum);
+        const LArInteractionTypeHelper::InteractionType interactionType(
+            LArInteractionTypeHelper::GetInteractionType(mcPrimaryList));
+        std::string int_type = LArInteractionTypeHelper::ToString(interactionType);
+        std::cout << int_type << std::endl;
+        m_file << int_type << ",";
 
         CaloHitList wHitsInPfo;
         LArPfoHelper::GetCaloHits(pPfo, TPC_VIEW_W, wHitsInPfo);
@@ -158,7 +171,7 @@ StatusCode BScProjectInputsAlgorithm::ReadSettings(const TiXmlHandle xmlHandle)
         m_file.open(m_outputFilename, std::ios::out);
         if(m_file.is_open())
         {
-            m_file << "true_vertex_x, true_vertex_y, true_vertex_z, x, wire, energy" << std::endl;
+            m_file << "true_vertex_x, true_vertex_y, true_vertex_z, interaction_type, num_hits, x, wire, energy" << std::endl;
         }
     }
             
