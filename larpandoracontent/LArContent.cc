@@ -56,6 +56,7 @@
 
 #include "larpandoracontent/LArPersistency/EventReadingAlgorithm.h"
 #include "larpandoracontent/LArPersistency/EventWritingAlgorithm.h"
+#include "larpandoracontent/LArPersistency/BScProjectInputsAlgorithm.h"
 
 #include "larpandoracontent/LArPlugins/LArParticleIdPlugins.h"
 
@@ -188,6 +189,7 @@
     d("LArVisualMonitoring",                    VisualMonitoringAlgorithm)                                                      \
     d("LArEventReading",                        EventReadingAlgorithm)                                                          \
     d("LArEventWriting",                        EventWritingAlgorithm)                                                          \
+    d("LArBScProjectInputs",                    BScProjectInputsAlgorithm)                                                               \
     d("LArCheatingClusterCharacterisation",     CheatingClusterCharacterisationAlgorithm)                                       \
     d("LArCheatingClusterCreation",             CheatingClusterCreationAlgorithm)                                               \
     d("LArCheatingCosmicRayIdentification",     CheatingCosmicRayIdentificationAlg)                                             \

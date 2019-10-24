@@ -3,3 +3,7 @@
 *.backup
 *.log
 *.root
+*.cmake
+build/
+include/
+lib/
