@@ -143,7 +143,7 @@ StatusCode BScProjectInputsAlgorithm::Run()
             const CartesianVector hitPos = pCaloHit->GetPositionVector();
             float energy = pCaloHit->GetInputEnergy();
             
-            m_file << hitPos.GetX() << "," << hitPos.GetZ() << "," << energy << ",";
+            m_file << hitPos.GetX() << " " << hitPos.GetZ() << " " << energy << " ";
         }
         m_file << std::endl;
     }
@@ -171,7 +171,7 @@ StatusCode BScProjectInputsAlgorithm::ReadSettings(const TiXmlHandle xmlHandle)
         m_file.open(m_outputFilename, std::ios::out);
         if(m_file.is_open())
         {
-            m_file << "true_vertex_x, true_vertex_y, true_vertex_z, interaction_type, num_hits, x, wire, energy" << std::endl;
+            m_file << "true_vertex_x,true_vertex_y,true_vertex_z,interaction_type,num_hits,hits(x wire energy)" << std::endl;
         }
     }
             
