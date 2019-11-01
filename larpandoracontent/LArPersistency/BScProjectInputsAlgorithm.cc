@@ -27,6 +27,7 @@ namespace lar_content
 
 BScProjectInputsAlgorithm::BScProjectInputsAlgorithm():
     m_inputCaloHitListName(""),
+    m_inputCaloHitListNameW(""),
     m_outputFilename("")
 {
 
@@ -46,100 +47,65 @@ BScProjectInputsAlgorithm::~BScProjectInputsAlgorithm()
 
 StatusCode BScProjectInputsAlgorithm::Run()
 {
-/*    const CaloHitList *pCaloHitList(nullptr);
-    std::cout << "Name: " << m_inputCaloHitListName << std::endl;
-    PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetList(
-        *this, m_inputCaloHitListName, pCaloHitList));*/
-
-
-    ///////////////
-    
     if(!m_file.is_open())
     {
         return STATUS_CODE_FAILURE;
     }
 
-    const PfoList *pPfoList(nullptr);
-    PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetList(
-        *this, "NeutrinoParticles3D", pPfoList));
-
     const CaloHitList *pCaloHitList(nullptr);
     PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetList(
         *this, m_inputCaloHitListName, pCaloHitList));
+        
+    const CaloHitList *pCaloHitListW(nullptr);
+    PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetList(
+        *this, m_inputCaloHitListNameW, pCaloHitListW));
 
     const MCParticleList *pMCParticleList(nullptr);
     PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=,
         PandoraContentApi::GetCurrentList(*this, pMCParticleList));
 
-    // Mapping target MCParticles -> truth associated Hits
-    LArMCParticleHelper::MCContributionMap targetMCParticleToHitsMap;
+    LArMCParticleHelper::MCContributionMap targetMCParticlesToGoodHitsMap;
+
+    // ATTN Assumes single neutrino is parent of all neutrino-induced mc particles
     LArMCParticleHelper::SelectReconstructableMCParticles(pMCParticleList,
         pCaloHitList, LArMCParticleHelper::PrimaryParameters(),
-        LArMCParticleHelper::IsBeamNeutrinoFinalState, targetMCParticleToHitsMap);
+        LArMCParticleHelper::IsBeamNeutrinoFinalState,
+        targetMCParticlesToGoodHitsMap);
 
-    LArMCParticleHelper::PfoContributionMap pfoToHitsMap;
-    LArMCParticleHelper::GetPfoToReconstructable2DHitsMap(*pPfoList,
-        targetMCParticleToHitsMap, pfoToHitsMap);
-
-    // Last step
-    LArMCParticleHelper::PfoToMCParticleHitSharingMap pfoToMCHitSharingMap;
-    LArMCParticleHelper::MCParticleToPfoHitSharingMap mcToPfoHitSharingMap;
-    LArMCParticleHelper::GetPfoMCParticleHitSharingMaps(pfoToHitsMap,
-        {targetMCParticleToHitsMap}, pfoToMCHitSharingMap, mcToPfoHitSharingMap);
-
-    if (pPfoList->size() > 1)
+    MCParticleList mcPrimaryList;
+    for (const auto &mapEntry : targetMCParticlesToGoodHitsMap)
     {
-        std::cout << "WARNING: Found more than 1 Pfo!" << std::endl;
+        mcPrimaryList.push_back(mapEntry.first);
     }
-    for (const Pfo *const pPfo : *pPfoList)
-    {
-        auto vertices = pPfo->GetVertexList();
-        if (vertices.size() == 1)
-        {            
-            const CartesianVector trueVertex = vertices.front()->GetPosition();
-            m_file << trueVertex.GetX() << "," << trueVertex.GetY() << "," <<
-                trueVertex.GetZ() << ",";
-        }
-        else
-        {
-            std::cout << "WARNING: Multiple vertices found" << std::endl;
-            m_file << "," << "," << ",";
-        }
-        
-        MCParticleList mcPrimaryList;
-        for (const auto &mapEntry : mcToPfoHitSharingMap)
-        {
-            mcPrimaryList.push_back(mapEntry.first);
-        }
-        mcPrimaryList.sort(LArMCParticleHelper::SortByMomentum);
-        const LArInteractionTypeHelper::InteractionType interactionType(
-            LArInteractionTypeHelper::GetInteractionType(mcPrimaryList));
-        std::string int_type = LArInteractionTypeHelper::ToString(interactionType);
-        std::cout << int_type << std::endl;
-        m_file << int_type << ",";
+    mcPrimaryList.sort(LArMCParticleHelper::SortByMomentum);
 
-        CaloHitList wHitsInPfo;
-        LArPfoHelper::GetCaloHits(pPfo, TPC_VIEW_W, wHitsInPfo);
-        
-        const LArMCParticleHelper::MCParticleToSharedHitsVector
-            &mcParticleToSharedHitsVector(pfoToMCHitSharingMap.at(pPfo));
-        CaloHitList associatedMCHitsW;
-        for (const LArMCParticleHelper::MCParticleCaloHitListPair &mcParticleCaloHitListPair : mcParticleToSharedHitsVector)
+    const LArInteractionTypeHelper::InteractionType interactionType(LArInteractionTypeHelper::GetInteractionType(mcPrimaryList));
+    std::string intType = LArInteractionTypeHelper::ToString(interactionType);
+    const std::string interactions[] = { "CCQEL_MU_P", "CCQEL_E_P", "CCQEL_MU_P_P" };
+    //std::cout << intType << std::endl;
+
+    if (std::find(std::begin(interactions), std::end(interactions), intType) != std::end(interactions))
+    {
+        for (auto iter = pMCParticleList->begin(); iter != pMCParticleList->end(); ++iter)
         {
-            const CaloHitList &associatedMCHits(mcParticleCaloHitListPair.second);
-            
-            for (const CaloHit *const pCaloHit : associatedMCHits)
+            const auto pMCParticle = *iter;
+            if(LArMCParticleHelper::IsNeutrino(pMCParticle))
             {
-                if (TPC_VIEW_W == pCaloHit->GetHitType())
-                    associatedMCHitsW.push_back(pCaloHit);
-            }            
+                const CartesianVector& trueVertex = pMCParticle->GetEndpoint();
+                m_file << trueVertex.GetX() << "," << trueVertex.GetY() << "," <<
+                    trueVertex.GetZ() << ",";
+            }
         }
-        
+
+        std::cout << intType << std::endl;
+        m_file << intType << ",";
+
         // Record the total number of calo hits
-        m_file << associatedMCHitsW.size() << ",";
+        m_file << pCaloHitListW->size() << ",";
         // Loop over all of the W calo hits and store their locations
-        for (const CaloHit *const pCaloHit : associatedMCHitsW)
+        for (auto iter = pCaloHitListW->begin(); iter != pCaloHitListW->end(); ++iter)
         {
+            const auto pCaloHit = *iter;
             const CartesianVector hitPos = pCaloHit->GetPositionVector();
             float energy = pCaloHit->GetInputEnergy();
             
@@ -160,18 +126,18 @@ StatusCode BScProjectInputsAlgorithm::ReadSettings(const TiXmlHandle xmlHandle)
         m_inputCaloHitListName));
 
     PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND,
-        !=, XmlHelper::ReadValue(xmlHandle, "InputPfoListName",
-        m_inputPfoListName));
+        !=, XmlHelper::ReadValue(xmlHandle, "InputCaloHitListNameW",
+        m_inputCaloHitListNameW));
 
     PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND,
         !=, XmlHelper::ReadValue(xmlHandle, "OutputFile", m_outputFilename));
         
     if(!m_outputFilename.empty())
     {
-        m_file.open(m_outputFilename, std::ios::out);
+        m_file.open(m_outputFilename, std::ios::app);
         if(m_file.is_open())
         {
-            m_file << "true_vertex_x,true_vertex_y,true_vertex_z,interaction_type,num_hits,hits(x wire energy)" << std::endl;
+            //m_file << "true_vertex_x,true_vertex_y,true_vertex_z,interaction_type,num_hits,hits(x wire energy)" << std::endl;
         }
     }
             

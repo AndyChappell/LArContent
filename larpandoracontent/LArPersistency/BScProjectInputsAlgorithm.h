@@ -41,7 +41,7 @@ private:
     pandora::StatusCode ReadSettings(const pandora::TiXmlHandle xmlHandle);
     
     std::string m_inputCaloHitListName;
-    std::string m_inputPfoListName;
+    std::string m_inputCaloHitListNameW;
     std::string m_outputFilename;
     std::ofstream m_file;
     
