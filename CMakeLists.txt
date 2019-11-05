@@ -95,6 +95,14 @@ else()
     find_package(Eigen3 3.3 REQUIRED NO_MODULE)
     include_directories(SYSTEM ${EIGEN3_INCLUDE_DIRS})
 
+    find_package(Torch REQUIRED)
+    include_directories(${TORCH_INCLUDE_DIRECTORIES})
+    link_libraries(${TORCH_LIBRARIES})
+
+    message(STATUS "torch dir: ${Torch_DIR}")
+    message(STATUS "include dir: ${TORCH_INCLUDE_DIRS}")
+    message(STATUS "libs: ${TORCH_LIBRARIES}")
+
     #-------------------------------------------------------------------------------------------------------------------------------------------
     # Low level settings - compiler etc
     set(CMAKE_CXX_FLAGS "-Wall -Wextra -Werror -pedantic -Wno-long-long -Wno-sign-compare -Wshadow -fno-strict-aliasing -std=c++11 ${CMAKE_CXX_FLAGS}")
