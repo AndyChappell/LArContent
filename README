@@ -1,0 +1,39 @@
+# Two approahces to building against Torch are presented below, the first uses a
+local LibTorch, while the second builds against uboone LibTorch from cvmfs.
+
+### Local Build ###
+
+source /cvmfs/dune.opensciencegrid.org/products/dune/setup_dune.sh
+setup gcc v7_3_0
+setup gdb v7_9
+setup git v2_15_1
+setup eigen v3_3_3
+setup root v6_16_00 -q e17:prof
+setup cmake v3_14_3 -f Linux64bit+3.10-2.17
+export FW_SEARCH_PATH=$MY_TEST_AREA/LArReco/settings:$FW_SEARCH_PATH
+
+# Get the LibTorch libraries and includes
+
+cd $MY_TEST_AREA
+wget https://download.pytorch.org/libtorch/cpu/libtorch-cxx11-abi-shared-with-deps-1.3.0%2Bcpu.zip
+unzip libtorch-cxx11-abi-shared-with-deps-1.3.0+cpu.zip
+
+# Additional cmake flag for LArContent build
+
+cmake -DCMAKE_PREFIX_PATH=$MY_TEST_AREA/libtorch/ ..
+
+### uboone cvmfs build ###
+
+source /cvmfs/uboone.opensciencegrid.org/products/setup_uboone.sh
+
+setup gcc v7_3_0
+setup gdb v7_9
+setup git v2_15_1
+setup eigen v3_3_3
+setup root v6_16_00 -q e17:prof
+setup cmake v3_14_3 -f Linux64bit+3.10-2.17
+setup libtorch v1_0_1 -f Linux64bit+3.10-2.17 -q e17:prof
+
+export FW_SEARCH_PATH=$MY_TEST_AREA/LArReco/settings:$FW_SEARCH_PATH
+cmake -DCMAKE_PREFIX_PATH=/cvmfs/uboone.opensciencegrid.org/products/libtorch/v1_0_1/Linux64bit+3.10-2.17-e17-prof    /lib/python2.7/site-packages/torch/ ..
+
