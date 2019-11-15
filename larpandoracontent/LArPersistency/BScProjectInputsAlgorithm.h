@@ -44,7 +44,40 @@ private:
     std::string m_inputCaloHitListNameW;
     std::string m_outputFilename;
     std::ofstream m_file;
-    
+
+    const std::string m_interactions[31] = {
+        "CCQEL_MU_P",
+        "CCRES_MU_P_PIPLUS",
+        "CCRES_MU_PIPLUS",
+        "CCRES_MU_P_PIZERO",
+        "CCRES_MU_P",
+        "CCRES_MU",
+        "CCRES_MU_P_P",
+        "CCRES_MU_PIZERO",
+        "CCRES_MU_P_P_P",
+        "CCRES_MU_P_P_PIPLUS",
+        "CCQEL_MU_P_P",
+        "CCCOH",
+        "CCRES_MU_P_P_P_P",
+        "CCRES_MU_P_P_PIZERO",
+        "CCQEL_MU_P_P_P",
+        "CCQEL_E_P",
+        "CCRES_MU_P_PHOTON",
+        "CCRES_E_PIPLUS",
+        "CCRES_MU_P_P_P_PIZERO",
+        "CCRES_MU_P_P_P_P_P",
+        "CCRES_E_P_PIPLUS",
+        "CCRES_E_P",
+        "CCQEL_MU_P_P_P_P",
+        "CCRES_MU_PHOTON",
+        "CCRES_MU_P_P_P_PIPLUS",
+        "CCRES_MU_P_P_P_PHOTON",
+        "CCRES_E_P_PHOTON",
+        "CCRES_MU_P_P_P_P_P_PIZERO",
+        "CCRES_E",
+        "CCRES_MU_P_P_P_P_PIZERO",
+        "CCRES_E_P_PIZERO"
+    };
 };
 
 } // namespace lar_content

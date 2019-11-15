@@ -81,10 +81,8 @@ StatusCode BScProjectInputsAlgorithm::Run()
 
     const LArInteractionTypeHelper::InteractionType interactionType(LArInteractionTypeHelper::GetInteractionType(mcPrimaryList));
     std::string intType = LArInteractionTypeHelper::ToString(interactionType);
-    const std::string interactions[] = { "CCQEL_MU_P", "CCQEL_E_P", "CCQEL_MU_P_P" };
-    //std::cout << intType << std::endl;
 
-    if (std::find(std::begin(interactions), std::end(interactions), intType) != std::end(interactions))
+    if (std::find(std::begin(m_interactions), std::end(m_interactions), intType) != std::end(m_interactions))
     {
         for (auto iter = pMCParticleList->begin(); iter != pMCParticleList->end(); ++iter)
         {
@@ -97,7 +95,6 @@ StatusCode BScProjectInputsAlgorithm::Run()
             }
         }
 
-        std::cout << intType << std::endl;
         m_file << intType << ",";
 
         // Record the total number of calo hits
