@@ -13,6 +13,7 @@
 #include "larpandoracontent/LArDeepLearning/DeepLearningTrackShowerIdAlgorithm.h"
 #include "larpandoracontent/LArHelpers/LArMCParticleHelper.h"
 #include "larpandoracontent/LArHelpers/LArMvaHelper.h"
+#include "larpandoracontent/LArHelpers/LArPfoHelper.h"
 
 using namespace pandora;
 
@@ -37,6 +38,29 @@ DeepLearningTrackShowerIdAlgorithm::DeepLearningTrackShowerIdAlgorithm() :
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
+
+bool isIsolatedShortTrack(const MCParticle *const mcParticle)
+{
+    const MCParticle* particle = mcParticle;
+    while(!particle->GetParentList().empty())
+    {   
+        if(particle->GetParentList().size() > 1)
+            throw StatusCodeException(STATUS_CODE_INVALID_PARAMETER);
+
+        const MCParticle* pParent = *(particle->GetParentList().begin());
+        const int pdg = std::abs(pParent->GetParticleId());
+        if(pdg == 211 || pdg == 2112)
+        {
+            CartesianVector displacement = mcParticle->GetEndpoint() - mcParticle->GetVertex();
+            if(displacement.GetMagnitude() < 10)
+                return true;
+        }   
+        particle = pParent;
+    }
+
+    return false;
+}
+
 
 StatusCode DeepLearningTrackShowerIdAlgorithm::Run()
 {
@@ -73,6 +97,13 @@ StatusCode DeepLearningTrackShowerIdAlgorithm::Run()
                     const MCParticle *const pMCParticle(MCParticleHelper::GetMainMCParticle(pCaloHit));
                     nuanceCode = LArMCParticleHelper::GetNuanceCode(LArMCParticleHelper::GetParentMCParticle(pMCParticle));
                     pdg = pMCParticle->GetParticleId();
+                    if(std::abs(pdg) != 11 && std::abs(pdg) != 22)
+                    {   // Lots of neutrons and some pions bumping into protons producing isolated short tracks - force them to be showers
+                        if(isIsolatedShortTrack(pMCParticle))
+                        {
+                           pdg = 11;
+                        }
+                    }
                 }
                 catch (...)
                 {
