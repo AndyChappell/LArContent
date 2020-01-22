@@ -65,71 +65,127 @@ bool isIsolatedShortTrack(const MCParticle *const mcParticle)
 StatusCode DeepLearningTrackShowerIdAlgorithm::Run()
 {
     if (m_useTrainingMode)
+        return Train();
+    else
+        return Infer();
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+StatusCode DeepLearningTrackShowerIdAlgorithm::ReadSettings(const TiXmlHandle xmlHandle)
+{
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
+        "UseTrainingMode", m_useTrainingMode));
+
+    if (m_useTrainingMode)
     {
-        for (const std::string listName : m_caloHitListNames)
-        {
-            const CaloHitList *pCaloHitList(nullptr);
-            PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetList(*this, listName, pCaloHitList));
-
-            const bool isU(pCaloHitList->front()->GetHitType() == TPC_VIEW_U ? true : false);
-            const bool isV(pCaloHitList->front()->GetHitType() == TPC_VIEW_V ? true : false);
-            const bool isW(pCaloHitList->front()->GetHitType() == TPC_VIEW_W ? true : false);
-
-            if (!isU && !isV && !isW)
-                return STATUS_CODE_NOT_ALLOWED;
-
-            std::string trainingOutputFileName(m_trainingOutputFile);
-            LArMvaHelper::MvaFeatureVector featureVector;
-
-            if (isU) trainingOutputFileName += "_CaloHitListU.txt";
-            else if (isV) trainingOutputFileName += "_CaloHitListV.txt";
-            else if (isW) trainingOutputFileName += "_CaloHitListW.txt";
-
-            featureVector.push_back(static_cast<double>(pCaloHitList->size()));
-
-            for (const CaloHit *pCaloHit : *pCaloHitList)
-            {
-                int nuanceCode(3000);
-                int pdg(-1);
-
-                try
-                {
-                    const MCParticle *const pMCParticle(MCParticleHelper::GetMainMCParticle(pCaloHit));
-                    nuanceCode = LArMCParticleHelper::GetNuanceCode(LArMCParticleHelper::GetParentMCParticle(pMCParticle));
-                    pdg = pMCParticle->GetParticleId();
-                    if(std::abs(pdg) != 11 && std::abs(pdg) != 22)
-                    {   // Lots of neutrons and some pions bumping into protons producing isolated short tracks - force them to be showers
-                        if(isIsolatedShortTrack(pMCParticle))
-                        {
-                           pdg = 11;
-                        }
-                    }
-                }
-                catch (...)
-                {
-                    continue;
-                }
-
-                featureVector.push_back(static_cast<double>(pCaloHit->GetPositionVector().GetX()));
-                featureVector.push_back(static_cast<double>(pCaloHit->GetPositionVector().GetY()));
-                featureVector.push_back(static_cast<double>(pCaloHit->GetPositionVector().GetZ()));
-                featureVector.push_back(static_cast<double>(pdg));
-                featureVector.push_back(static_cast<double>(nuanceCode));
-            }
-
-            LArMvaHelper::ProduceTrainingExample(trainingOutputFileName, true, featureVector);
-        }
-        return STATUS_CODE_SUCCESS;
+        PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadValue(xmlHandle,
+            "TrainingOutputFileName", m_trainingOutputFile));
     }
 
-    // Load the model.pt file.
-    std::shared_ptr<torch::jit::script::Module> pModule(nullptr);
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadVectorOfValues(xmlHandle,
+        "CaloHitListNames", m_caloHitListNames));
 
+    PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadValue(xmlHandle, "ModelFileName", m_modelFileName));
+
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
+        "Visualize", m_visualize));
+
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
+        "ImageXMin", m_xMin));
+
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
+        "ImageXMax", m_xMax));
+
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
+        "ImageZMinU", m_zMinU));
+
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
+        "ImageZMaxU", m_zMaxU));
+
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
+        "ImageZMinV", m_zMinV));
+
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
+        "ImageZMaxV", m_zMaxV));
+
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
+        "ImageZMinW", m_zMinW));
+
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
+        "ImageZMaxW", m_zMaxW));
+
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
+        "NumberOfBins", m_nBins));
+
+    return STATUS_CODE_SUCCESS;
+}
+
+StatusCode DeepLearningTrackShowerIdAlgorithm::Train()
+{
+    for (const std::string listName : m_caloHitListNames)
+    {
+        const CaloHitList *pCaloHitList(nullptr);
+        PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetList(*this, listName, pCaloHitList));
+
+        const bool isU(pCaloHitList->front()->GetHitType() == TPC_VIEW_U ? true : false);
+        const bool isV(pCaloHitList->front()->GetHitType() == TPC_VIEW_V ? true : false);
+        const bool isW(pCaloHitList->front()->GetHitType() == TPC_VIEW_W ? true : false);
+
+        if (!isU && !isV && !isW) return STATUS_CODE_NOT_ALLOWED;
+
+        std::string trainingOutputFileName(m_trainingOutputFile);
+        LArMvaHelper::MvaFeatureVector featureVector;
+
+        if (isU) trainingOutputFileName += "_CaloHitListU.txt";
+        else if (isV) trainingOutputFileName += "_CaloHitListV.txt";
+        else if (isW) trainingOutputFileName += "_CaloHitListW.txt";
+
+        featureVector.push_back(static_cast<double>(pCaloHitList->size()));
+
+        for (const CaloHit *pCaloHit : *pCaloHitList)
+        {
+            int nuanceCode(3000);
+            int pdg(-1);
+
+            try
+            {
+                const MCParticle *const pMCParticle(MCParticleHelper::GetMainMCParticle(pCaloHit));
+                nuanceCode = LArMCParticleHelper::GetNuanceCode(LArMCParticleHelper::GetParentMCParticle(pMCParticle));
+                pdg = pMCParticle->GetParticleId();
+                if(std::abs(pdg) != 11 && std::abs(pdg) != 22)
+                {   // Lots of neutrons and some pions bumping into protons producing isolated short tracks - force them to be showers
+                    if(isIsolatedShortTrack(pMCParticle))
+                    {
+                        pdg = 11;
+                    }
+                }
+            }
+            catch (...)
+            {
+                continue;
+            }
+
+            featureVector.push_back(static_cast<double>(pCaloHit->GetPositionVector().GetX()));
+            featureVector.push_back(static_cast<double>(pCaloHit->GetPositionVector().GetY()));
+            featureVector.push_back(static_cast<double>(pCaloHit->GetPositionVector().GetZ()));
+            featureVector.push_back(static_cast<double>(pdg));
+            featureVector.push_back(static_cast<double>(nuanceCode));
+        }
+
+        LArMvaHelper::ProduceTrainingExample(trainingOutputFileName, true, featureVector);
+    }
+    return STATUS_CODE_SUCCESS;
+}
+
+StatusCode DeepLearningTrackShowerIdAlgorithm::Infer()
+{
+    std::shared_ptr<torch::jit::script::Module> pModule(nullptr);
     try
     {
         pModule = torch::jit::load(m_modelFileName);
     }
-    catch (const c10::Error &e)
+    catch (...)
     {
         std::cout << "Error loading the PyTorch module" << std::endl;
         return STATUS_CODE_FAILURE;
@@ -149,6 +205,60 @@ StatusCode DeepLearningTrackShowerIdAlgorithm::Run()
 
         if (!isU && !isV && !isW)
             return STATUS_CODE_NOT_ALLOWED;
+
+        const float tileSize = 128.f;
+        const int imageWidth = 256;
+        const int imageHeight = 256;
+        // Get bounds of hit region
+        float xMin = std::numeric_limits<float>::max(); float xMax = 0.f;
+        float zMin = std::numeric_limits<float>::max(); float zMax = 0.f;
+        for (const CaloHit *pCaloHit : *pCaloHitList)
+        {
+            const float x(pCaloHit->GetPositionVector().GetX());
+            const float z(pCaloHit->GetPositionVector().GetZ());
+            if (x < xMin) xMin = x;
+            if (x > xMax) xMax = x;
+            if (z < zMin) zMin = z;
+            if (z > zMax) zMax = z;
+        }
+        const float xRange = xMax - xMin;
+        const float zRange = zMax - zMin;
+        int nTilesX = static_cast<int>(std::ceil(xRange / tileSize));
+        int nTilesZ = static_cast<int>(std::ceil(zRange / tileSize));
+        // Need to add 1 to number of tiles for ranges exactly matching tile size and for zero ranges
+        if (std::fmod(xRange, tileSize) == 0.f) ++nTilesX;
+        if (std::fmod(zRange, tileSize) == 0.f) ++nTilesZ;
+
+        const int nTiles = nTilesX * nTilesZ;
+
+        // Populate tensor - may need to split the batch into separate single image batches
+        // TODO - Need to create CaloHitMap
+        torch::Tensor input = torch::zeros({nTiles, 1, imageHeight, imageWidth});
+        auto accessor = input.accessor<float, 4>();
+        for (const CaloHit *pCaloHit : *pCaloHitList)
+        {
+            const float x(pCaloHit->GetPositionVector().GetX());
+            const float z(pCaloHit->GetPositionVector().GetZ());
+            // Determine which tile the hit will be assigned to
+            const int tileX = static_cast<int>(std::floor((x - xMin) / tileSize));
+            const int tileZ = static_cast<int>(std::floor((z - zMin) / tileSize));
+            const int tile = tileX * (tileZ * nTilesX) + tileZ;
+            // Determine hit position within the tile
+            const float localX = std::fmod(x - xMin, tileSize);
+            const float localZ = std::fmod(z - zMin, tileSize);
+            // Determine hit pixel within the tile
+            const int pixelX = static_cast<int>(std::floor(localX * imageHeight / tileSize));
+            const int pixelZ = static_cast<int>(std::floor(localZ * imageWidth / tileSize));
+            accessor[tile][0][pixelX][pixelZ] = 255.0;
+            std::cout << std::fixed;
+            std::cout << std::setprecision(2);
+            std::cout << "(" << x << "," << z << ") => " << "(" <<
+                tileX << "," << tileZ << "," << localX << "," << localZ <<
+                "," << pixelX << "," << pixelZ << ")" << std::endl;
+        }
+        // May need to apply transforms to the tensor prior to input to the network
+
+        /*
 
         const float zMin(isU ? m_zMinU : (isV ? m_zMinV : m_zMinW));
         const float zMax(isU ? m_zMaxU : (isV ? m_zMaxV : m_zMaxW));
@@ -234,62 +344,11 @@ StatusCode DeepLearningTrackShowerIdAlgorithm::Run()
             PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &trackHits, trackListName, BLUE));
             PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &showerHits, showerListName, RED));
             PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &other, otherListName, BLACK));
-        }
+        }*/
     }
 
     if (m_visualize)
         PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
-
-    return STATUS_CODE_SUCCESS;
-}
-
-//------------------------------------------------------------------------------------------------------------------------------------------
-
-StatusCode DeepLearningTrackShowerIdAlgorithm::ReadSettings(const TiXmlHandle xmlHandle)
-{
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "UseTrainingMode", m_useTrainingMode));
-
-    if (m_useTrainingMode)
-    {
-        PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadValue(xmlHandle,
-            "TrainingOutputFileName", m_trainingOutputFile));
-    }
-
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadVectorOfValues(xmlHandle,
-        "CaloHitListNames", m_caloHitListNames));
-
-    PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadValue(xmlHandle, "ModelFileName", m_modelFileName));
-
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "Visualize", m_visualize));
-
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "ImageXMin", m_xMin));
-
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "ImageXMax", m_xMax));
-
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "ImageZMinU", m_zMinU));
-
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "ImageZMaxU", m_zMaxU));
-
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "ImageZMinV", m_zMinV));
-
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "ImageZMaxV", m_zMaxV));
-
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "ImageZMinW", m_zMinW));
-
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "ImageZMaxW", m_zMaxW));
-
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "NumberOfBins", m_nBins));
 
     return STATUS_CODE_SUCCESS;
 }

@@ -27,6 +27,8 @@ public:
 private:
     pandora::StatusCode Run();
     pandora::StatusCode ReadSettings(const pandora::TiXmlHandle xmlHandle);
+    pandora::StatusCode Train();
+    pandora::StatusCode Infer();
 
     pandora::StringVector     m_caloHitListNames;    ///< Name of input calo hit list
     std::string               m_modelFileName;       ///< Model file name
