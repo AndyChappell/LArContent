@@ -39,7 +39,7 @@ DeepLearningTrackShowerIdAlgorithm::DeepLearningTrackShowerIdAlgorithm() :
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-bool isIsolatedShortTrack(const MCParticle *const mcParticle)
+bool isNeutronDaughter(const MCParticle *const mcParticle)
 {
     const MCParticle* particle = mcParticle;
     while(!particle->GetParentList().empty())
@@ -49,11 +49,9 @@ bool isIsolatedShortTrack(const MCParticle *const mcParticle)
 
         const MCParticle* pParent = *(particle->GetParentList().begin());
         const int pdg = std::abs(pParent->GetParticleId());
-        if(pdg == 211 || pdg == 2112)
+        if (pdg == 2112)
         {
-            CartesianVector displacement = mcParticle->GetEndpoint() - mcParticle->GetVertex();
-            if(displacement.GetMagnitude() < 10)
-                return true;
+            return true;
         }   
         particle = pParent;
     }
@@ -127,6 +125,8 @@ StatusCode DeepLearningTrackShowerIdAlgorithm::Train()
     {
         const CaloHitList *pCaloHitList(nullptr);
         PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetList(*this, listName, pCaloHitList));
+        const MCParticleList *pMCParticleList(nullptr);
+        PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetCurrentList(*this, pMCParticleList));
 
         const bool isU(pCaloHitList->front()->GetHitType() == TPC_VIEW_U ? true : false);
         const bool isV(pCaloHitList->front()->GetHitType() == TPC_VIEW_V ? true : false);
@@ -143,21 +143,36 @@ StatusCode DeepLearningTrackShowerIdAlgorithm::Train()
 
         featureVector.push_back(static_cast<double>(pCaloHitList->size()));
 
+        int discardedHits = 0;
+        LArMCParticleHelper::PrimaryParameters parameters;
+        // Only care about reconstructability with respect to the current view, so skip good view check
+        parameters.m_minHitsForGoodView = 0;
+        // Turn off max photo propagation for now, only care about killing off daughters of neutrons
+        parameters.m_maxPhotonPropagation = std::numeric_limits<float>::max();
+        LArMCParticleHelper::MCContributionMap targetMCParticleToHitsMap;
+        LArMCParticleHelper::SelectReconstructableMCParticles(pMCParticleList, pCaloHitList,
+                parameters, LArMCParticleHelper::IsBeamNeutrinoFinalState, targetMCParticleToHitsMap);
+
         for (const CaloHit *pCaloHit : *pCaloHitList)
         {
-            int nuanceCode(3000);
+            int isReconstructable = 1;
             int pdg(-1);
 
             try
             {
                 const MCParticle *const pMCParticle(MCParticleHelper::GetMainMCParticle(pCaloHit));
-                nuanceCode = LArMCParticleHelper::GetNuanceCode(LArMCParticleHelper::GetParentMCParticle(pMCParticle));
+                // Throw away non-reconstructable hits
+                if (targetMCParticleToHitsMap.find(pMCParticle) == targetMCParticleToHitsMap.end())
+                {
+                    ++discardedHits;
+                    isReconstructable = 0;
+                }
                 pdg = pMCParticle->GetParticleId();
-                if(std::abs(pdg) != 11 && std::abs(pdg) != 22)
-                {   // Lots of neutrons and some pions bumping into protons producing isolated short tracks - force them to be showers
-                    if(isIsolatedShortTrack(pMCParticle))
+                if (isReconstructable)
+                {
+                    if(isNeutronDaughter(pMCParticle))
                     {
-                        pdg = 11;
+                        isReconstructable = 0;
                     }
                 }
             }
@@ -170,8 +185,10 @@ StatusCode DeepLearningTrackShowerIdAlgorithm::Train()
             featureVector.push_back(static_cast<double>(pCaloHit->GetPositionVector().GetY()));
             featureVector.push_back(static_cast<double>(pCaloHit->GetPositionVector().GetZ()));
             featureVector.push_back(static_cast<double>(pdg));
-            featureVector.push_back(static_cast<double>(nuanceCode));
+            featureVector.push_back(static_cast<double>(isReconstructable));
         }
+
+        std::cout << "Discarding " << discardedHits << " of " << pCaloHitList->size() <<  " hits as non-reconstructable" << std::endl;
 
         LArMvaHelper::ProduceTrainingExample(trainingOutputFileName, true, featureVector);
     }
