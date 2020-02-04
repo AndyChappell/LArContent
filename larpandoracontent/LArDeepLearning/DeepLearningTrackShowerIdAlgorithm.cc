@@ -15,6 +15,8 @@
 #include "larpandoracontent/LArHelpers/LArMvaHelper.h"
 #include "larpandoracontent/LArHelpers/LArPfoHelper.h"
 
+#include <chrono>
+
 using namespace pandora;
 
 namespace lar_content
@@ -197,6 +199,19 @@ StatusCode DeepLearningTrackShowerIdAlgorithm::Train()
 
 StatusCode DeepLearningTrackShowerIdAlgorithm::Infer()
 {
+    std::cout << "system_clock " << std::chrono::system_clock::period::num << " " <<
+        std::chrono::system_clock::period::den << " steady: " << std::boolalpha <<
+        std::chrono::system_clock::is_steady << std::endl;
+
+    std::cout << "high_resolution_clock " << std::chrono::high_resolution_clock::period::num << " " <<
+        std::chrono::high_resolution_clock::period::den << " steady: " << std::boolalpha <<
+        std::chrono::high_resolution_clock::is_steady << std::endl;
+
+    std::cout << "steady_clock " << std::chrono::steady_clock::period::num << " " <<
+        std::chrono::steady_clock::period::den << " steady: " << std::boolalpha <<
+        std::chrono::steady_clock::is_steady << std::endl;
+  
+    auto start = std::chrono::steady_clock::now();
     std::shared_ptr<torch::jit::script::Module> pModule(nullptr);
     try
     {
@@ -207,12 +222,16 @@ StatusCode DeepLearningTrackShowerIdAlgorithm::Infer()
         std::cout << "Error loading the PyTorch module" << std::endl;
         return STATUS_CODE_FAILURE;
     }
+    auto end = std::chrono::steady_clock::now();
+    auto diff = end - start;
+    std::cout << "Network setup time: " << std::chrono::duration<double, std::milli>(diff).count() << " ms" << std::endl;
 
     if (m_visualize)
         PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1.f, 1.f, 1.f));
 
     for (const std::string listName : m_caloHitListNames)
     {
+        start = std::chrono::steady_clock::now();
         const CaloHitList *pCaloHitList(nullptr);
         PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetList(*this, listName, pCaloHitList));
 
@@ -248,10 +267,19 @@ StatusCode DeepLearningTrackShowerIdAlgorithm::Infer()
 
         const int nTiles = nTilesX * nTilesZ;
 
+        // Normalisation value from training set - should store and load this from file
+        const float PIXEL_VALUE = (255.0 - 0.558497428894043) / 11.920382499694824;
         // Populate tensor - may need to split the batch into separate single image batches
-        // TODO - Need to create CaloHitMap
         torch::Tensor input = torch::zeros({nTiles, 1, imageHeight, imageWidth});
+        typedef std::map<const CaloHit*, std::tuple<int, int, int, int>> CaloHitToPixelMap;
+        CaloHitToPixelMap caloHitToPixelMap;
         auto accessor = input.accessor<float, 4>();
+        end = std::chrono::steady_clock::now();
+        diff = end - start;
+        std::cout << "#Hits: " << pCaloHitList->size() << " #TilesX: " <<
+            nTilesX << " #TilesZ: " << nTilesZ << " #Tiles: " << nTiles << std::endl;
+        std::cout << "Prep time: " << std::chrono::duration<double, std::milli>(diff).count() << " ms" << std::endl;
+        start = std::chrono::steady_clock::now();
         for (const CaloHit *pCaloHit : *pCaloHitList)
         {
             const float x(pCaloHit->GetPositionVector().GetX());
@@ -259,21 +287,58 @@ StatusCode DeepLearningTrackShowerIdAlgorithm::Infer()
             // Determine which tile the hit will be assigned to
             const int tileX = static_cast<int>(std::floor((x - xMin) / tileSize));
             const int tileZ = static_cast<int>(std::floor((z - zMin) / tileSize));
-            const int tile = tileX * (tileZ * nTilesX) + tileZ;
+            const int tile = tileZ * nTilesX + tileX;
             // Determine hit position within the tile
             const float localX = std::fmod(x - xMin, tileSize);
             const float localZ = std::fmod(z - zMin, tileSize);
             // Determine hit pixel within the tile
             const int pixelX = static_cast<int>(std::floor(localX * imageHeight / tileSize));
             const int pixelZ = static_cast<int>(std::floor(localZ * imageWidth / tileSize));
-            accessor[tile][0][pixelX][pixelZ] = 255.0;
-            std::cout << std::fixed;
-            std::cout << std::setprecision(2);
-            std::cout << "(" << x << "," << z << ") => " << "(" <<
-                tileX << "," << tileZ << "," << localX << "," << localZ <<
-                "," << pixelX << "," << pixelZ << ")" << std::endl;
+            accessor[tile][0][pixelX][pixelZ] = PIXEL_VALUE;
+            caloHitToPixelMap.insert(std::make_pair(pCaloHit, std::make_tuple(tileX, tileZ, pixelX, pixelZ)));
         }
-        // May need to apply transforms to the tensor prior to input to the network
+
+        // Pass as input the input Tensor containing the calo hit picture
+        std::vector<torch::jit::IValue> inputs;
+        inputs.push_back(input);
+        end = std::chrono::steady_clock::now();
+        diff = end - start;
+        std::cout << "Image processing time: " << std::chrono::duration<double, std::milli>(diff).count() << " ms" << std::endl;
+
+        // Run the input through the trained model and get the output accessor
+        // There should be one iteration of this for each image associated with a given tile
+        // Need to ensure that each calohit is mapped to the correct tile and extract the
+        // track/shower probability from the appropriate pixel within that particular ouput
+        // This may need multiple runs of forward on the different tile inputs - essentially
+        // this would need to know about the value in the first dimension of the outputAccessor -
+        // i.e. the number within the batch
+        start = std::chrono::steady_clock::now();
+        at::Tensor output = pModule->forward(inputs).toTensor();
+        auto outputAccessor = output.accessor<float, 4>();
+        end = std::chrono::steady_clock::now();
+        diff = end - start;
+        std::cout << "Network time: " << std::chrono::duration<double, std::milli>(diff).count() << " ms" << std::endl;
+
+        start = std::chrono::steady_clock::now();
+        for (const CaloHit *pCaloHit : *pCaloHitList)
+        {
+            auto pixelMap = caloHitToPixelMap.at(pCaloHit);
+            const int tileX(std::get<0>(pixelMap));
+            const int tileZ(std::get<1>(pixelMap));
+            const int tile = tileZ * nTilesX + tileX;
+            const int pixelX(std::get<2>(pixelMap));
+            const int pixelZ(std::get<3>(pixelMap));
+
+            object_creation::CaloHit::Metadata metadata;
+            metadata.m_propertiesToAdd["Pshower"] = outputAccessor[tile][1][pixelX][pixelZ];
+            metadata.m_propertiesToAdd["Ptrack"] = outputAccessor[tile][2][pixelX][pixelZ];
+            const StatusCode &statusCode(PandoraContentApi::CaloHit::AlterMetadata(*this, pCaloHit, metadata));
+            if (statusCode != STATUS_CODE_SUCCESS)
+                std::cout << "Cannot set calo hit meta data" << std::endl;
+        }
+        end = std::chrono::steady_clock::now();
+        diff = end - start;
+        std::cout << "Readout time " << std::chrono::duration<double, std::milli>(diff).count() << " ms" << std::endl;
 
         /*
 
