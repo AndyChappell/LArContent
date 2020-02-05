@@ -23,6 +23,7 @@ public:
      *  @brief  Default constructor
      */
     DeepLearningTrackShowerIdAlgorithm();
+    virtual ~DeepLearningTrackShowerIdAlgorithm();
 
 private:
     pandora::StatusCode Run();
@@ -43,6 +44,7 @@ private:
     int                       m_nBins;               ///< Number of bins used in training model (assumption is same number in X and Z)
     bool                      m_visualize;           ///< Whether to visualize the track shower ID scores
     bool                      m_useTrainingMode;     ///< Training mode
+    bool                      m_profile;
     std::string               m_trainingOutputFile;  ///< Output file name for training examples
 };
 

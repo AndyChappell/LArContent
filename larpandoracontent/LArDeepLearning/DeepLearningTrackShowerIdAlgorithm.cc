@@ -13,6 +13,7 @@
 #include "larpandoracontent/LArDeepLearning/DeepLearningTrackShowerIdAlgorithm.h"
 #include "larpandoracontent/LArHelpers/LArMCParticleHelper.h"
 #include "larpandoracontent/LArHelpers/LArMvaHelper.h"
+#include "larpandoracontent/LArHelpers/LArMonitoringHelper.h"
 #include "larpandoracontent/LArHelpers/LArPfoHelper.h"
 
 #include <chrono>
@@ -30,6 +31,7 @@ DeepLearningTrackShowerIdAlgorithm::DeepLearningTrackShowerIdAlgorithm() :
     m_nBins(512),
     m_visualize(false),
     m_useTrainingMode(false),
+    m_profile(false),
     m_trainingOutputFile("")
 {
     const float span(980);
@@ -37,6 +39,21 @@ DeepLearningTrackShowerIdAlgorithm::DeepLearningTrackShowerIdAlgorithm() :
     m_zMaxU = m_zMinU + span;
     m_zMaxV = m_zMinV + span;
     m_zMaxW = m_zMinW + span;
+}
+
+DeepLearningTrackShowerIdAlgorithm::~DeepLearningTrackShowerIdAlgorithm()
+{
+    if (m_profile)
+    {
+        try
+        {
+            PANDORA_MONITORING_API(SaveTree(this->GetPandora(), "cpu_tree", "cpu.root", "UPDATE"));
+        }
+        catch(const StatusCodeException&)
+        {
+            std::cout << "DeepLearningTrackShowerIdAlgorithm: Unable to write tree to file" << std::endl;
+        }
+    }
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
@@ -90,6 +107,9 @@ StatusCode DeepLearningTrackShowerIdAlgorithm::ReadSettings(const TiXmlHandle xm
 
     PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
         "Visualize", m_visualize));
+
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
+        "Profile", m_profile));
 
     PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
         "ImageXMin", m_xMin));
@@ -199,6 +219,7 @@ StatusCode DeepLearningTrackShowerIdAlgorithm::Train()
 
 StatusCode DeepLearningTrackShowerIdAlgorithm::Infer()
 {
+    auto start = std::chrono::steady_clock::now();
     std::shared_ptr<torch::jit::script::Module> pModule(nullptr);
     try
     {
@@ -304,13 +325,10 @@ StatusCode DeepLearningTrackShowerIdAlgorithm::Infer()
         inputs.push_back(input);
 
         // Run the input through the trained model and get the output accessor
-        auto start = std::chrono::steady_clock::now();
         at::Tensor output = pModule->forward(inputs).toTensor();
         auto outputAccessor = output.accessor<float, 4>();
-        auto end = std::chrono::steady_clock::now();
-        auto diff = end - start;
-        std::cout << "Network time: " << std::chrono::duration<double, std::milli>(diff).count() << " ms" << std::endl;
 
+        CaloHitList trackHits, showerHits, otherHits;
         for (const CaloHit *pCaloHit : *pCaloHitList)
         {
             auto pixelMap = caloHitToPixelMap.at(pCaloHit);
@@ -321,29 +339,46 @@ StatusCode DeepLearningTrackShowerIdAlgorithm::Infer()
             const int pixelZ(std::get<3>(pixelMap));
 
             object_creation::CaloHit::Metadata metadata;
-            metadata.m_propertiesToAdd["Pshower"] = outputAccessor[tile][1][pixelX][pixelZ];
-            metadata.m_propertiesToAdd["Ptrack"] = outputAccessor[tile][2][pixelX][pixelZ];
+            // Apply softmax to loss to get actual probability
+            float probShower = exp(outputAccessor[tile][1][pixelX][pixelZ]);
+            float probTrack = exp(outputAccessor[tile][2][pixelX][pixelZ]);
+            float probNull = exp(outputAccessor[tile][0][pixelX][pixelZ]);
+            float recipSum = 1.f / (probShower + probTrack + probNull);
+            probShower *= recipSum;
+            probTrack *= recipSum;
+            probNull *= recipSum;
+            metadata.m_propertiesToAdd["Pshower"] = probShower;
+            metadata.m_propertiesToAdd["Ptrack"] = probTrack;
+            if (probShower > probTrack && probShower > probNull)
+                showerHits.push_back(pCaloHit);
+            else if (probTrack > probShower && probTrack > probNull)
+                trackHits.push_back(pCaloHit);
+            else
+                otherHits.push_back(pCaloHit);
+
             const StatusCode &statusCode(PandoraContentApi::CaloHit::AlterMetadata(*this, pCaloHit, metadata));
             if (statusCode != STATUS_CODE_SUCCESS)
                 std::cout << "Cannot set calo hit meta data" << std::endl;
         }
 
-        /*
-            if (isShower)
-                showerHits.push_back(pCaloHit);
-            else
-                trackHits.push_back(pCaloHit);
+        if (m_visualize)
+        {
+            const std::string trackListName("TrackHits_" + listName);
+            const std::string showerListName("ShowerHits_" + listName);
+            const std::string otherListName("OtherHits_" + listName);
+            PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &trackHits, trackListName, BLUE));
+            PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &showerHits, showerListName, RED));
+            PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &otherHits, otherListName, BLACK));
+        }
+    }
 
-            if (m_visualize)
-            {
-                const std::string trackListName("TrackHits_" + listName);
-                const std::string showerListName("ShowerHits_" + listName);
-                const std::string otherListName("OtherHits_" + listName);
-                PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &trackHits, trackListName, BLUE));
-                PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &showerHits, showerListName, RED));
-                PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &other, otherListName, BLACK));
-            }
-         */
+    auto end = std::chrono::steady_clock::now();
+    if (m_profile)
+    {
+        auto diff = end - start;
+        float cpu(std::chrono::duration<double, std::milli>(diff).count());
+        PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "cpu_tree", "cpu_time", cpu));
+        PANDORA_MONITORING_API(FillTree(this->GetPandora(), "cpu_tree"));
     }
 
     if (m_visualize)
