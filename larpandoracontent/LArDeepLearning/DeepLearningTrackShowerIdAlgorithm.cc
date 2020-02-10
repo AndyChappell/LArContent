@@ -9,6 +9,7 @@
 #include "Pandora/AlgorithmHeaders.h"
 
 #include <torch/script.h>
+#include <torch/torch.h>
 
 #include "larpandoracontent/LArDeepLearning/DeepLearningTrackShowerIdAlgorithm.h"
 #include "larpandoracontent/LArHelpers/LArMCParticleHelper.h"
@@ -219,8 +220,9 @@ StatusCode DeepLearningTrackShowerIdAlgorithm::Train()
 
 StatusCode DeepLearningTrackShowerIdAlgorithm::Infer()
 {
+    //torch::Tensor tensor = torch::rand({2, 3});
     auto start = std::chrono::steady_clock::now();
-    std::shared_ptr<torch::jit::script::Module> pModule(nullptr);
+    torch::jit::script::Module pModule;
     try
     {
         pModule = torch::jit::load(m_modelFileName);
@@ -325,7 +327,7 @@ StatusCode DeepLearningTrackShowerIdAlgorithm::Infer()
         inputs.push_back(input);
 
         // Run the input through the trained model and get the output accessor
-        at::Tensor output = pModule->forward(inputs).toTensor();
+        at::Tensor output = pModule.forward(inputs).toTensor();
         auto outputAccessor = output.accessor<float, 4>();
 
         CaloHitList trackHits, showerHits, otherHits;
