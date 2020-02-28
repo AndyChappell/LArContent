@@ -335,6 +335,16 @@ void LArMCParticleHelper::GetMCPrimaryMap(const MCParticleList *const pMCParticl
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
+void LArMCParticleHelper::GetMCToSelfMap(const MCParticleList *const pMCParticleList, MCRelationMap &mcToSelfMap)
+{
+    for(const MCParticle *const pMCParticle : *pMCParticleList)
+    {
+        mcToSelfMap[pMCParticle] = pMCParticle;
+    }    
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
 void LArMCParticleHelper::GetMCLeadingMap(const MCParticleList *const pMCParticleList, MCRelationMap &mcLeadingMap)
 {
     for (const MCParticle *const pMCParticle : *pMCParticleList)
@@ -419,6 +429,34 @@ void LArMCParticleHelper::GetMCParticleToCaloHitMatches(const CaloHitList *const
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
+void LArMCParticleHelper::SelectUnfoldedReconstructableMCParticles(const MCParticleList *pMCParticleList,
+        const CaloHitList *pCaloHitList, const PrimaryParameters &parameters, MCContributionMap &mcToRecoHitsMap)
+{
+
+    // Obtain map: [MC particle -> self] (to prevent folding to primary MC particle)
+    MCRelationMap mcToSelfMap;
+    GetMCToSelfMap(pMCParticleList, mcToSelfMap);
+
+    //REMOVED NEUTRON AND PHOTON CONSIDERATION
+
+    // Obtain maps: [hits -> MC particle], [MC particle -> list of hits]
+    CaloHitToMCMap trueHitToTargetMCMap;
+    MCContributionMap targetMCToTrueHitListMap;
+    GetMCParticleToCaloHitMatches(pCaloHitList, mcToSelfMap, trueHitToTargetMCMap, targetMCToTrueHitListMap);
+
+    // Obtain vector of all mc particles as SelectParticlesByHitCount method takes a vector, not a list, as argument
+    MCParticleVector targetMCVector;
+    std::copy(pMCParticleList->begin(), pMCParticleList->end(), std::back_inserter(targetMCVector));
+  
+    //REMOVED WHETHER PARTICLE MATCHES SOME CRITERIA (e.g whether downstream of neutrino) - not needed for created neutrino events
+
+    // Remove hits that do not meet minimum hit count and share criteria
+    SelectParticlesByHitCount(targetMCVector, targetMCToTrueHitListMap, mcToSelfMap, parameters, mcToRecoHitsMap);
+
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
 void LArMCParticleHelper::SelectReconstructableMCParticles(const MCParticleList *pMCParticleList, const CaloHitList *pCaloHitList, const PrimaryParameters &parameters,
     std::function<bool(const MCParticle *const)> fCriteria, MCContributionMap &selectedMCParticlesToHitsMap)
 {
@@ -488,6 +526,21 @@ void LArMCParticleHelper::SelectReconstructableTestBeamHierarchyMCParticles(cons
             CaloHitList caloHitList;
             selectedMCParticlesToHitsMap.insert(MCContributionMap::value_type(pParentMCParticle, caloHitList));
         }
+    }
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+void LArMCParticleHelper::GetUnfoldedPfoToReconstructable2DHitsMap(const PfoList &pfoList,
+        const MCContributionMap &selectedMCParticleToHitsMap, PfoContributionMap &pfoToReconstructable2DHitsMap)
+{
+    for(const ParticleFlowObject *const pPfo : pfoList) 
+    {
+        CaloHitList pfoHitList;
+        LArMCParticleHelper::CollectReconstructable2DHits(PfoList{pPfo}, {selectedMCParticleToHitsMap}, pfoHitList);
+
+        if (!pfoToReconstructable2DHitsMap.insert(PfoContributionMap::value_type(pPfo, pfoHitList)).second)
+            throw StatusCodeException(STATUS_CODE_ALREADY_PRESENT);
     }
 }
 

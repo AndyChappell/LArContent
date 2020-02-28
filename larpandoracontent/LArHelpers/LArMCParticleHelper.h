@@ -209,6 +209,15 @@ public:
     static void GetMCPrimaryMap(const pandora::MCParticleList *const pMCParticleList, MCRelationMap &mcPrimaryMap);
 
     /**
+     *  @brief  Get mapping from individual mc particles (in a provided list) to
+     *  themselves (to be used when not folding particles to their primaries)
+     *
+     *  @param  pMCParticleList the input mc particle list
+     *  @param  mcToSelfMap the output mapping between mc particles and themselves
+     */
+    static void GetMCToSelfMap(const pandora::MCParticleList *const pMCParticleList, MCRelationMap &mcToSelfMap);
+
+    /**
      *  @brief  Get mapping from individual mc particles (in a provided list) and their leading parent mc particles
      *
      *  @param  pMCParticleList the input mc particle list
@@ -245,6 +254,18 @@ public:
         CaloHitToMCMap &hitToMCMap, MCContributionMap &mcToTrueHitListMap);
 
     /**
+     * @brief Select reconstructable mc particles that match given criteria
+     *
+     *  @param  pMCParticleList the address of the list of MCParticles
+     *  @param  pCaloHitList the address of the list of CaloHits
+     *  @param  parameters validation parameters to decide when an MCParticle is considered reconstructable
+     *  @param  mcToRecoHitsMap the output mapping from selected mcparticles to their hits
+     */     
+    static void SelectUnfoldedReconstructableMCParticles(const pandora::MCParticleList *pMCParticleList,
+            const pandora::CaloHitList *pCaloHitList,  const PrimaryParameters &parameters,
+            MCContributionMap &mcToRecoHitsMap);
+
+    /**
      *  @brief  Select primary, reconstructable mc particles that match given criteria.
      *
      *  @param  pMCParticleList the address of the list of MCParticles
@@ -267,6 +288,18 @@ public:
      */
     static void SelectReconstructableTestBeamHierarchyMCParticles(const pandora::MCParticleList *pMCParticleList, const pandora::CaloHitList *pCaloHitList,
         const PrimaryParameters &parameters, std::function<bool(const pandora::MCParticle *const)> fCriteria, MCContributionMap &selectedMCParticlesToHitsMap);
+
+    /**
+     *  @brief  Get unfolded mapping from Pfo to reconstructable 2D hits (=good hits
+     *  belonging to a selected reconstructable MCParticle)
+     *
+     *  @param  pfoList the input list of Pfos
+     *  @param  selectedMCParticleToHitsMap the input mapping from selected reconstructable MCParticles to their hits
+     *  @param  pfoToReconstructable2DHitsMap the output mapping from Pfos to their reconstructable 2D hits
+     */
+    static void GetUnfoldedPfoToReconstructable2DHitsMap(const pandora::PfoList &pfoList,
+            const MCContributionMap &selectedMCParticleToHitsMap,
+            PfoContributionMap &pfoToReconstructable2DHitsMap);
 
     /**
      *  @brief  Get mapping from Pfo to reconstructable 2D hits (=good hits belonging to a selected reconstructable MCParticle)
