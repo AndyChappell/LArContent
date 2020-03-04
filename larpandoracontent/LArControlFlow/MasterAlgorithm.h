@@ -314,6 +314,8 @@ protected:
     bool                        m_shouldPerformSliceId;             ///< Whether to identify slices and select most appropriate pfos
     bool                        m_printOverallRecoStatus;           ///< Whether to print current operation status messages
     bool                        m_visualizeOverallRecoStatus;       ///< Whether to display results of current operations
+    bool                        m_shouldRunNeutrinoSliceOnly;       ///< Whether to run only the neutrino slice
+    bool                        m_shouldRunTestBeamSliceOnly;       ///< Whether to run only the test beam particle slice
     bool                        m_shouldRemoveOutOfTimeHits;        ///< Whether to remove out of time hits
 
     PandoraInstanceList         m_crWorkerInstances;                ///< The list of cosmic-ray reconstruction worker instances

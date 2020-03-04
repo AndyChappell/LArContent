@@ -44,6 +44,8 @@ MasterAlgorithm::MasterAlgorithm() :
     m_shouldPerformSliceId(true),
     m_printOverallRecoStatus(false),
     m_visualizeOverallRecoStatus(false),
+    m_shouldRunNeutrinoSliceOnly(false),
+    m_shouldRunTestBeamSliceOnly(false),
     m_shouldRemoveOutOfTimeHits(true),
     m_pSlicingWorkerInstance(nullptr),
     m_pSliceNuWorkerInstance(nullptr),
@@ -509,9 +511,129 @@ StatusCode MasterAlgorithm::RunSlicing(const VolumeIdToHitListMap &volumeIdToHit
 
 StatusCode MasterAlgorithm::RunSliceReconstruction(SliceVector &sliceVector, SliceHypotheses &nuSliceHypotheses, SliceHypotheses &crSliceHypotheses) const
 {
-    unsigned int sliceCounter(0);
+    unsigned int sliceCounter{0};
+    unsigned int bestSliceIndex{0};
+    float bestParticleWeight{0.f};
+    MCParticleList bestMCParticleList{};
 
+    // Get the index of the best neutrino slice
     for (const CaloHitList &sliceHits : sliceVector)
+    {
+        CaloHitList localHitList{};
+
+        for (const CaloHit *const pSliceCaloHit : sliceHits)
+        {
+            // ATTN Must ensure we copy the hit actually owned by master instance; access differs with/without slicing enabled
+            localHitList.push_back(m_shouldRunSlicing ?
+                    static_cast<const CaloHit*>(pSliceCaloHit->GetParentAddress()) :
+                    pSliceCaloHit);
+        }
+
+        float targetParticleWeight{0.f};
+        float totalWeight{0.f};
+        std::set<std::string> parentSet{};
+        for (const CaloHit *const pCaloHit : localHitList)
+        {
+            float thisTargetParticleWeight{0.f}, thisTotalWeight{0.f};
+            const MCParticleWeightMap &hitMCParticleWeightMap(pCaloHit->GetMCParticleWeightMap());
+
+            if (hitMCParticleWeightMap.empty())
+                continue;
+
+            MCParticleList mcParticleList;
+            for (const auto &mapEntry : hitMCParticleWeightMap)
+                mcParticleList.push_back(mapEntry.first);
+            mcParticleList.sort(LArMCParticleHelper::SortByMomentum);
+
+            for (const MCParticle *const pMCParticle : mcParticleList)
+            {
+                const float weight{hitMCParticleWeightMap.at(pMCParticle)};
+                const MCParticle *const pParentMCParticle{LArMCParticleHelper::GetParentMCParticle(pMCParticle)};
+
+                if (m_shouldRunNeutrinoSliceOnly && LArMCParticleHelper::IsNeutrino(pParentMCParticle))
+                    thisTargetParticleWeight += weight;
+                else if (m_shouldRunTestBeamSliceOnly && LArMCParticleHelper::IsBeamParticle(pParentMCParticle))
+                {
+                    thisTargetParticleWeight += weight;
+                    parentSet.emplace(std::to_string(pParentMCParticle->GetParticleId()));
+                }
+
+                thisTotalWeight += weight;
+            }
+
+            // ATTN normalise arbitrary input weights at this point
+            if (thisTotalWeight > std::numeric_limits<float>::epsilon())
+            {
+                thisTargetParticleWeight *= 1.f / thisTotalWeight;
+                thisTotalWeight = 1.f;
+            }
+            else
+            {
+                thisTargetParticleWeight = 0.f;
+                thisTotalWeight = 0.f;
+            }
+
+            targetParticleWeight += thisTargetParticleWeight;
+            totalWeight += thisTotalWeight;
+        }
+
+        float targetParticleWeightNorm = targetParticleWeight / totalWeight;
+        if (targetParticleWeightNorm > bestParticleWeight)
+        {
+            bestParticleWeight = targetParticleWeightNorm;
+            bestSliceIndex = sliceCounter;
+
+            bestMCParticleList.clear();
+            MCParticleList ancestorMCParticleList{};
+            MCParticleList descendentMCParticleList{};
+            for (const CaloHit *const pCaloHit : localHitList)
+            {
+                const MCParticleWeightMap &hitMCParticleWeightMap(pCaloHit->GetMCParticleWeightMap());
+
+                if (hitMCParticleWeightMap.empty())
+                    continue;
+
+                for (const auto &mapEntry : hitMCParticleWeightMap)
+                {
+                    const auto currentMCParticle = mapEntry.first;
+                    bestMCParticleList.push_back(currentMCParticle);
+                    LArMCParticleHelper::GetAllDescendentMCParticles(currentMCParticle, descendentMCParticleList);
+                    LArMCParticleHelper::GetAllAncestorMCParticles(currentMCParticle, ancestorMCParticleList);
+                }
+            }
+            bestMCParticleList.insert(bestMCParticleList.end(),
+                    descendentMCParticleList.begin(), descendentMCParticleList.end());
+            for (const auto ancestor : ancestorMCParticleList)
+                if (std::find(bestMCParticleList.begin(), bestMCParticleList.end(), ancestor) ==
+                        bestMCParticleList.end())
+                    bestMCParticleList.push_back(ancestor);
+        }
+        ++sliceCounter;
+    }
+
+    SliceVector finalSliceVector{};
+    if (m_shouldRunNeutrinoSliceOnly || m_shouldRunTestBeamSliceOnly)
+    {
+        bestMCParticleList.sort(LArMCParticleHelper::SortByMomentum);
+        const MCParticleList *pCurrentMCParticleList{nullptr};
+        PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetCurrentList(
+                    *this, pCurrentMCParticleList));
+        finalSliceVector.push_back(sliceVector[bestSliceIndex]);
+        std::string bestParticleListName{"BestMCParticleList"};
+
+        PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::SaveList<MCParticleList>(
+                    *this, bestMCParticleList, bestParticleListName));
+        PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::ReplaceCurrentList<MCParticle>(
+                    *this, bestParticleListName));
+
+        PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetCurrentList(
+                    *this, pCurrentMCParticleList));
+    }
+    else
+        finalSliceVector = sliceVector;
+
+    sliceCounter = 0;
+    for (const CaloHitList &sliceHits : finalSliceVector)
     {
         for (const CaloHit *const pSliceCaloHit : sliceHits)
         {
@@ -528,7 +650,7 @@ StatusCode MasterAlgorithm::RunSliceReconstruction(SliceVector &sliceVector, Sli
         if (m_shouldRunNeutrinoRecoOption)
         {
             if (m_printOverallRecoStatus)
-                std::cout << "Running nu worker instance for slice " << (sliceCounter + 1) << " of " << sliceVector.size() << std::endl;
+                std::cout << "Running nu worker instance for slice " << (sliceCounter + 1) << " of " << finalSliceVector.size() << std::endl;
 
             const PfoList *pSliceNuPfos(nullptr);
             PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraApi::ProcessEvent(*m_pSliceNuWorkerInstance));
@@ -546,7 +668,7 @@ StatusCode MasterAlgorithm::RunSliceReconstruction(SliceVector &sliceVector, Sli
         if (m_shouldRunCosmicRecoOption)
         {
             if (m_printOverallRecoStatus)
-                std::cout << "Running cr worker instance for slice " << (sliceCounter + 1) << " of " << sliceVector.size() << std::endl;
+                std::cout << "Running cr worker instance for slice " << (sliceCounter + 1) << " of " << finalSliceVector.size() << std::endl;
 
             const PfoList *pSliceCRPfos(nullptr);
             PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraApi::ProcessEvent(*m_pSliceCRWorkerInstance));
@@ -622,8 +744,8 @@ StatusCode MasterAlgorithm::Reset()
 StatusCode MasterAlgorithm::Copy(const Pandora *const pPandora, const CaloHit *const pCaloHit) const
 {
     // TODO Protection to ensure that only calo hits owned by the master instance are copied?
-    // TODO Might ultimately want to create LArCaloHits in worker instances, rather than CaloHits, just as we create LArMCParticles, below
-    PandoraApi::CaloHit::Parameters parameters;
+    const LArCaloHit *const pLArCaloHit = dynamic_cast<const LArCaloHit*>(pCaloHit);
+    LArCaloHitParameters parameters;
     parameters.m_positionVector = pCaloHit->GetPositionVector();
     parameters.m_expectedDirection = pCaloHit->GetExpectedDirection();
     parameters.m_cellNormalVector = pCaloHit->GetCellNormalVector();
@@ -645,18 +767,23 @@ StatusCode MasterAlgorithm::Copy(const Pandora *const pPandora, const CaloHit *c
     parameters.m_isInOuterSamplingLayer = pCaloHit->IsInOuterSamplingLayer();
     // ATTN Parent of calo hit in worker is corresponding calo hit in master
     parameters.m_pParentAddress = static_cast<const void*>(pCaloHit);
-    PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraApi::CaloHit::Create(*pPandora, parameters));
+    parameters.m_larTPCVolumeId = pLArCaloHit->GetLArTPCVolumeId();
+
+    LArCaloHitFactory larFactory{};
+
+    PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraApi::CaloHit::Create(
+                *pPandora, parameters, larFactory));
 
     if (m_passMCParticlesToWorkerInstances)
     {
         MCParticleVector mcParticleVector;
-        for (const auto &weightMapEntry : pCaloHit->GetMCParticleWeightMap()) mcParticleVector.push_back(weightMapEntry.first);
+        for (const auto &weightMapEntry : pLArCaloHit->GetMCParticleWeightMap()) mcParticleVector.push_back(weightMapEntry.first);
         std::sort(mcParticleVector.begin(), mcParticleVector.end(), LArMCParticleHelper::SortByMomentum);
 
         for (const MCParticle *const pMCParticle : mcParticleVector)
         {
-            PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraApi::SetCaloHitToMCParticleRelationship(*pPandora, pCaloHit,
-                pMCParticle, pCaloHit->GetMCParticleWeightMap().at(pMCParticle)));
+            PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraApi::SetCaloHitToMCParticleRelationship(
+                        *pPandora, pLArCaloHit, pMCParticle, pLArCaloHit->GetMCParticleWeightMap().at(pMCParticle)));
         }
     }
 
@@ -1176,6 +1303,11 @@ StatusCode MasterAlgorithm::ReadSettings(const TiXmlHandle xmlHandle)
     PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadValue(xmlHandle, "RecreatedClusterListName", m_recreatedClusterListName));
     PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadValue(xmlHandle, "RecreatedVertexListName", m_recreatedVertexListName));
     PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "InTimeMaxX0", m_inTimeMaxX0));
+
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
+        "ShouldRunNeutrinoSliceOnly", m_shouldRunNeutrinoSliceOnly));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
+        "ShouldRunTestBeamSliceOnly", m_shouldRunTestBeamSliceOnly));
 
     return STATUS_CODE_SUCCESS;
 }
