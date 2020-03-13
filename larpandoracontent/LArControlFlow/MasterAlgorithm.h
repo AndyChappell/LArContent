@@ -316,6 +316,9 @@ protected:
     bool                        m_visualizeOverallRecoStatus;       ///< Whether to display results of current operations
     bool                        m_shouldRunNeutrinoSliceOnly;       ///< Whether to run only the neutrino slice
     bool                        m_shouldRunTestBeamSliceOnly;       ///< Whether to run only the test beam particle slice
+    float                       m_reducedSliceThreshold;            ///< Minimum variable threshold for reduced slice acceptance
+    std::string                 m_reducedSliceCutVariable;          ///< Variable to cut on for reduced slice acceptance
+    int                         m_reducedSliceMax;                  ///< Maximum number of reduced slices to accept
     bool                        m_shouldRemoveOutOfTimeHits;        ///< Whether to remove out of time hits
 
     PandoraInstanceList         m_crWorkerInstances;                ///< The list of cosmic-ray reconstruction worker instances
