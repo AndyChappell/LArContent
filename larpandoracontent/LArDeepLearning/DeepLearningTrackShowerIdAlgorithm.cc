@@ -59,26 +59,50 @@ DeepLearningTrackShowerIdAlgorithm::~DeepLearningTrackShowerIdAlgorithm()
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-bool isNeutronDaughter(const MCParticle *const mcParticle)
+bool IsDescendentOf(const MCParticle *const mcParticle, const int ancestorPdg)
 {
     const MCParticle* particle = mcParticle;
-    while(!particle->GetParentList().empty())
+    if (std::abs(particle->GetParticleId()) == ancestorPdg)
+        return true;
+
+    while (!particle->GetParentList().empty())
     {   
-        if(particle->GetParentList().size() > 1)
+        if (particle->GetParentList().size() > 1)
             throw StatusCodeException(STATUS_CODE_INVALID_PARAMETER);
 
         const MCParticle* pParent = *(particle->GetParentList().begin());
         const int pdg = std::abs(pParent->GetParticleId());
-        if (pdg == 2112)
-        {
+        if (pdg == ancestorPdg)
             return true;
-        }   
+
         particle = pParent;
     }
 
     return false;
 }
 
+//------------------------------------------------------------------------------
+
+const MCParticle* GetLeadingShowerCandidate(const MCParticle *const mcParticle)
+{
+    const MCParticle* particle = mcParticle;
+    while (!particle->GetParentList().empty())
+    {   
+        if (particle->GetParentList().size() > 1)
+            throw StatusCodeException(STATUS_CODE_INVALID_PARAMETER);
+
+        const MCParticle* pParent = *(particle->GetParentList().begin());
+        const int pdg = std::abs(pParent->GetParticleId());
+        if (pdg != 11 && pdg != 22)
+            return particle;
+
+        particle = pParent;
+    }
+
+    return mcParticle;
+}
+
+//------------------------------------------------------------------------------
 
 StatusCode DeepLearningTrackShowerIdAlgorithm::Run()
 {
@@ -171,15 +195,20 @@ StatusCode DeepLearningTrackShowerIdAlgorithm::Train()
         // Only care about reconstructability with respect to the current view, so skip good view check
         parameters.m_minHitsForGoodView = 0;
         // Turn off max photo propagation for now, only care about killing off daughters of neutrons
-        parameters.m_maxPhotonPropagation = std::numeric_limits<float>::max();
+        //parameters.m_maxPhotonPropagation = std::numeric_limits<float>::max();
+        parameters.m_foldBackHierarchy = false;
         LArMCParticleHelper::MCContributionMap targetMCParticleToHitsMap;
         LArMCParticleHelper::SelectReconstructableMCParticles(pMCParticleList, pCaloHitList,
                 parameters, LArMCParticleHelper::IsBeamNeutrinoFinalState, targetMCParticleToHitsMap);
 
+        const int TRACK{1}, SHOWER{2}, MIP{3}, HIP{4}, MICHEL{5},
+              EM_ACTIVITY{6}, NEUTRON{7}, NON_RECO{8};
+        std::vector<int> counter({0, 0, 0, 0, 0, 0, 0, 0, 0});
         for (const CaloHit *pCaloHit : *pCaloHitList)
         {
-            int isReconstructable = 1;
-            int pdg(-1);
+            int isReconstructable{1};
+            int pdg{-1};
+            int hitClass{0};
 
             try
             {
@@ -188,14 +217,47 @@ StatusCode DeepLearningTrackShowerIdAlgorithm::Train()
                 if (targetMCParticleToHitsMap.find(pMCParticle) == targetMCParticleToHitsMap.end())
                 {
                     ++discardedHits;
+                    hitClass = NON_RECO;
                     isReconstructable = 0;
                 }
                 pdg = pMCParticle->GetParticleId();
                 if (isReconstructable)
                 {
-                    if(isNeutronDaughter(pMCParticle))
+                    if (IsDescendentOf(pMCParticle, 2112))
                     {
-                        isReconstructable = 0;
+                        hitClass = NEUTRON;
+                    }
+                    else if (IsDescendentOf(pMCParticle, 111))
+                    {
+                        hitClass = SHOWER;
+                    }
+                    else if (std::abs(pdg) == 11)
+                    {
+                        if (IsDescendentOf(pMCParticle, 13))
+                            hitClass = MICHEL;
+                        else if (GetLeadingShowerCandidate(pMCParticle)->GetEnergy() < 0.033)
+                            hitClass = EM_ACTIVITY;
+                        else
+                            hitClass = SHOWER;
+                    }
+                    else if (std::abs(pdg) == 22)
+                    {
+                        if (GetLeadingShowerCandidate(pMCParticle)->GetEnergy() < 0.033)
+                            hitClass = EM_ACTIVITY;
+                        else
+                            hitClass = SHOWER;
+                    }
+                    else if (std::abs(pdg) == 2212 || std::abs(pdg) > 1e9)
+                    {
+                        hitClass = HIP;
+                    }
+                    else if (std::abs(pdg) == 13 || std::abs(pdg) == 211)
+                    {
+                        hitClass = MIP;
+                    }
+                    else
+                    {
+                        hitClass = TRACK;
                     }
                 }
             }
@@ -204,14 +266,18 @@ StatusCode DeepLearningTrackShowerIdAlgorithm::Train()
                 continue;
             }
 
+            counter[hitClass] += 1;
+
             featureVector.push_back(static_cast<double>(pCaloHit->GetPositionVector().GetX()));
             featureVector.push_back(static_cast<double>(pCaloHit->GetPositionVector().GetY()));
             featureVector.push_back(static_cast<double>(pCaloHit->GetPositionVector().GetZ()));
-            featureVector.push_back(static_cast<double>(pdg));
+            featureVector.push_back(static_cast<double>(hitClass));
             featureVector.push_back(static_cast<double>(isReconstructable));
         }
 
-        std::cout << "Discarding " << discardedHits << " of " << pCaloHitList->size() <<  " hits as non-reconstructable" << std::endl;
+        for (int i = 0; i < counter.size(); ++i)
+            std::cout << "counter[" << i << "] = " << counter[i] << " of " <<
+                pCaloHitList->size()  << std::endl;
 
         LArMvaHelper::ProduceTrainingExample(trainingOutputFileName, true, featureVector);
     }
