@@ -168,13 +168,28 @@ StatusCode DeepLearningTrackShowerIdAlgorithm::ReadSettings(const TiXmlHandle xm
 
 StatusCode DeepLearningTrackShowerIdAlgorithm::Train()
 {
+    const CaloHitList *pCaloHitList2D(nullptr);
+    PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetList(
+                *this, "CaloHitList2D", pCaloHitList2D));
+    const MCParticleList *pMCParticleList(nullptr);
+    PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetCurrentList(
+                *this, pMCParticleList));
+
+    LArMCParticleHelper::PrimaryParameters parameters;
+    // Turn off max photo propagation for now, only care about killing off daughters of neutrons
+    //parameters.m_maxPhotonPropagation = std::numeric_limits<float>::max();
+    parameters.m_maxPhotonPropagation = 100.;
+    //parameters.m_selectInputHits = false;
+    parameters.m_foldBackHierarchy = false;
+    LArMCParticleHelper::MCContributionMap targetMCParticleToHitsMap;
+    LArMCParticleHelper::SelectReconstructableMCParticles(pMCParticleList,
+            pCaloHitList2D, parameters, LArMCParticleHelper::IsBeamNeutrinoFinalState,
+            targetMCParticleToHitsMap);
+
     for (const std::string listName : m_caloHitListNames)
     {
         const CaloHitList *pCaloHitList(nullptr);
         PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetList(*this, listName, pCaloHitList));
-        const MCParticleList *pMCParticleList(nullptr);
-        PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetCurrentList(*this, pMCParticleList));
-
         const bool isU(pCaloHitList->front()->GetHitType() == TPC_VIEW_U ? true : false);
         const bool isV(pCaloHitList->front()->GetHitType() == TPC_VIEW_V ? true : false);
         const bool isW(pCaloHitList->front()->GetHitType() == TPC_VIEW_W ? true : false);
@@ -191,19 +206,12 @@ StatusCode DeepLearningTrackShowerIdAlgorithm::Train()
         featureVector.push_back(static_cast<double>(pCaloHitList->size()));
 
         int discardedHits = 0;
-        LArMCParticleHelper::PrimaryParameters parameters;
-        // Only care about reconstructability with respect to the current view, so skip good view check
-        parameters.m_minHitsForGoodView = 0;
-        // Turn off max photo propagation for now, only care about killing off daughters of neutrons
-        //parameters.m_maxPhotonPropagation = std::numeric_limits<float>::max();
-        parameters.m_foldBackHierarchy = false;
-        LArMCParticleHelper::MCContributionMap targetMCParticleToHitsMap;
-        LArMCParticleHelper::SelectReconstructableMCParticles(pMCParticleList, pCaloHitList,
-                parameters, LArMCParticleHelper::IsBeamNeutrinoFinalState, targetMCParticleToHitsMap);
 
-        const int TRACK{1}, SHOWER{2}, MIP{3}, HIP{4}, MICHEL{5},
-              EM_ACTIVITY{6}, NEUTRON{7}, NON_RECO{8};
-        std::vector<int> counter({0, 0, 0, 0, 0, 0, 0, 0, 0});
+        //const int TRACK{1}, SHOWER{2}, MIP{3}, HIP{4}, MICHEL{5},
+        //      EM_ACTIVITY{6}, NEUTRON{7}, NON_RECO{8};
+        //std::vector<int> counter({0, 0, 0, 0, 0, 0, 0, 0, 0});
+        const int SHOWER{1}, MIP{2}, HIP{3}, MICHEL{4}, NON_RECO{5};
+        std::vector<int> counter({0, 0, 0, 0, 0, 0});
         for (const CaloHit *pCaloHit : *pCaloHitList)
         {
             int isReconstructable{1};
@@ -225,7 +233,8 @@ StatusCode DeepLearningTrackShowerIdAlgorithm::Train()
                 {
                     if (IsDescendentOf(pMCParticle, 2112))
                     {
-                        hitClass = NEUTRON;
+                        hitClass = NON_RECO;
+                        //hitClass = NEUTRON;
                     }
                     else if (IsDescendentOf(pMCParticle, 111))
                     {
@@ -235,17 +244,18 @@ StatusCode DeepLearningTrackShowerIdAlgorithm::Train()
                     {
                         if (IsDescendentOf(pMCParticle, 13))
                             hitClass = MICHEL;
-                        else if (GetLeadingShowerCandidate(pMCParticle)->GetEnergy() < 0.033)
-                            hitClass = EM_ACTIVITY;
+                        //else if (GetLeadingShowerCandidate(pMCParticle)->GetEnergy() < 0.033)
+                        //    hitClass = EM_ACTIVITY;
                         else
                             hitClass = SHOWER;
                     }
                     else if (std::abs(pdg) == 22)
                     {
-                        if (GetLeadingShowerCandidate(pMCParticle)->GetEnergy() < 0.033)
-                            hitClass = EM_ACTIVITY;
-                        else
-                            hitClass = SHOWER;
+                        hitClass = SHOWER;
+                        //if (GetLeadingShowerCandidate(pMCParticle)->GetEnergy() < 0.033)
+                        //    hitClass = EM_ACTIVITY;
+                        //else
+                        //    hitClass = SHOWER;
                     }
                     else if (std::abs(pdg) == 2212 || std::abs(pdg) > 1e9)
                     {
@@ -257,7 +267,8 @@ StatusCode DeepLearningTrackShowerIdAlgorithm::Train()
                     }
                     else
                     {
-                        hitClass = TRACK;
+                        //hitClass = TRACK;
+                        hitClass = MIP;
                     }
                 }
             }
@@ -275,9 +286,11 @@ StatusCode DeepLearningTrackShowerIdAlgorithm::Train()
             featureVector.push_back(static_cast<double>(isReconstructable));
         }
 
+        /*
         for (int i = 0; i < counter.size(); ++i)
             std::cout << "counter[" << i << "] = " << counter[i] << " of " <<
                 pCaloHitList->size()  << std::endl;
+        */
 
         LArMvaHelper::ProduceTrainingExample(trainingOutputFileName, true, featureVector);
     }
