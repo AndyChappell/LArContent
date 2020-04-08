@@ -185,6 +185,7 @@ StatusCode DeepLearningTrackShowerIdAlgorithm::Train()
     LArMCParticleHelper::SelectReconstructableMCParticles(pMCParticleList,
             pCaloHitList2D, parameters, LArMCParticleHelper::IsBeamNeutrinoFinalState,
             targetMCParticleToHitsMap);
+    const float mipThreshold{1.f / 3.f};
 
     for (const std::string listName : m_caloHitListNames)
     {
@@ -204,13 +205,27 @@ StatusCode DeepLearningTrackShowerIdAlgorithm::Train()
         else if (isW) trainingOutputFileName += "_CaloHitListW.txt";
 
         featureVector.push_back(static_cast<double>(pCaloHitList->size()));
-
-        int discardedHits = 0;
+        
+        float chargeMin = std::numeric_limits<float>::max();
+        float chargeMax = -std::numeric_limits<float>::max();
+        for (const CaloHit *pCaloHit : *pCaloHitList)
+        {
+            const float charge{pCaloHit->GetInputEnergy()};
+            if (charge > 0)
+            {
+                if (charge < chargeMin)
+                    chargeMin = charge;
+                if (charge > chargeMax)
+                    chargeMax = charge;
+            }
+        }
+        const float chargeRange{chargeMax > chargeMin ? chargeMax - chargeMin : 1.f};
 
         //const int TRACK{1}, SHOWER{2}, MIP{3}, HIP{4}, MICHEL{5},
         //      EM_ACTIVITY{6}, NEUTRON{7}, NON_RECO{8};
         //std::vector<int> counter({0, 0, 0, 0, 0, 0, 0, 0, 0});
-        const int SHOWER{1}, MIP{2}, HIP{3}, MICHEL{4}, NON_RECO{5};
+        //const int SHOWER{1}, MIP{2}, HIP{3}, MICHEL{4}, NON_RECO{5};
+        const int SHOWER{1}, MIP{2}, HIP{3}, NON_RECO{5};
         std::vector<int> counter({0, 0, 0, 0, 0, 0});
         for (const CaloHit *pCaloHit : *pCaloHitList)
         {
@@ -218,13 +233,21 @@ StatusCode DeepLearningTrackShowerIdAlgorithm::Train()
             int pdg{-1};
             int hitClass{0};
 
+            const float chargeScaled{(pCaloHit->GetInputEnergy() - chargeMin) / chargeRange};
+            const float mips{pCaloHit->GetMipEquivalentEnergy()};
+
+            if (mips < mipThreshold || chargeScaled < 0)
+            {
+                hitClass = NON_RECO;
+                isReconstructable = 0;
+            }
+
             try
             {
                 const MCParticle *const pMCParticle(MCParticleHelper::GetMainMCParticle(pCaloHit));
                 // Throw away non-reconstructable hits
                 if (targetMCParticleToHitsMap.find(pMCParticle) == targetMCParticleToHitsMap.end())
                 {
-                    ++discardedHits;
                     hitClass = NON_RECO;
                     isReconstructable = 0;
                 }
@@ -243,7 +266,8 @@ StatusCode DeepLearningTrackShowerIdAlgorithm::Train()
                     else if (std::abs(pdg) == 11)
                     {
                         if (IsDescendentOf(pMCParticle, 13))
-                            hitClass = MICHEL;
+                            hitClass = SHOWER;
+                            //hitClass = MICHEL;
                         //else if (GetLeadingShowerCandidate(pMCParticle)->GetEnergy() < 0.033)
                         //    hitClass = EM_ACTIVITY;
                         else
@@ -280,10 +304,11 @@ StatusCode DeepLearningTrackShowerIdAlgorithm::Train()
             counter[hitClass] += 1;
 
             featureVector.push_back(static_cast<double>(pCaloHit->GetPositionVector().GetX()));
-            featureVector.push_back(static_cast<double>(pCaloHit->GetPositionVector().GetY()));
+            //featureVector.push_back(static_cast<double>(pCaloHit->GetPositionVector().GetY()));
             featureVector.push_back(static_cast<double>(pCaloHit->GetPositionVector().GetZ()));
             featureVector.push_back(static_cast<double>(hitClass));
-            featureVector.push_back(static_cast<double>(isReconstructable));
+            //featureVector.push_back(static_cast<double>(isReconstructable));
+            featureVector.push_back(static_cast<double>(chargeScaled));
         }
 
         /*
@@ -368,6 +393,21 @@ StatusCode DeepLearningTrackShowerIdAlgorithm::Infer()
         if (!isU && !isV && !isW)
             return STATUS_CODE_NOT_ALLOWED;
 
+        float chargeMin = std::numeric_limits<float>::max();
+        float chargeMax = -std::numeric_limits<float>::max();
+        for (const CaloHit *pCaloHit : *pCaloHitList)
+        {
+            const float charge{pCaloHit->GetInputEnergy()};
+            if (charge > 0)
+            {
+                if (charge < chargeMin)
+                    chargeMin = charge;
+                if (charge > chargeMax)
+                    chargeMax = charge;
+            }
+        }
+        const float chargeRange{chargeMax > chargeMin ? chargeMax - chargeMin : 1.f};
+
         const float tileSize = 128.f;
         const int imageWidth = 256;
         const int imageHeight = 256;
@@ -386,9 +426,7 @@ StatusCode DeepLearningTrackShowerIdAlgorithm::Infer()
         GetSparseTileMap(*pCaloHitList, xMin, zMin, tileSize, nTilesX, sparseMap);
         const int nTiles = sparseMap.size();
 
-        // Normalisation value from training set - should store and load this from file
-        const float PIXEL_VALUE = (255.0 - 0.558497428894043) / 11.920382499694824;
-        CaloHitList trackHits, showerHits, otherHits;
+        CaloHitList trackHits, mipHits, hipHits, showerHits, otherHits;
         // Populate tensor - may need to split the batch into separate single image batches
         //torch::Tensor input = torch::zeros({nTiles, 1, imageHeight, imageWidth});
         for (int i = 0; i < nTiles; ++i)
@@ -407,6 +445,10 @@ StatusCode DeepLearningTrackShowerIdAlgorithm::Infer()
                 const int tile = sparseMap.at(tileZ * nTilesX + tileX);
                 if (tile == i)
                 {
+                    const float chargeScaled{(pCaloHit->GetInputEnergy() - chargeMin) / chargeRange};
+                    const float chargeGray{1.f + 254.f * chargeScaled};
+                    // Normalisation value from training set - should store and load this from file
+                    const float PIXEL_VALUE = (chargeGray - 0.558497428894043) / 11.920382499694824;
                     // Determine hit position within the tile
                     const float localX = std::fmod(x - xMin, tileSize);
                     const float localZ = std::fmod(z - zMin, tileSize);
@@ -447,21 +489,32 @@ StatusCode DeepLearningTrackShowerIdAlgorithm::Infer()
                     //float probTrack = exp(outputAccessor[tile][2][pixelX][pixelZ]);
                     //float probNull = exp(outputAccessor[tile][0][pixelX][pixelZ]);
                     float probShower = exp(outputAccessor[0][1][pixelX][pixelZ]);
-                    float probTrack = exp(outputAccessor[0][2][pixelX][pixelZ]);
+                    float probMIP = exp(outputAccessor[0][2][pixelX][pixelZ]);
+                    float probHIP = exp(outputAccessor[0][3][pixelX][pixelZ]);
                     float probNull = exp(outputAccessor[0][0][pixelX][pixelZ]);
+                    float probTrack = probMIP + probHIP;
                     float recipSum = 1.f / (probShower + probTrack + probNull);
                     probShower *= recipSum;
+                    probMIP *= recipSum;
+                    probHIP *= recipSum;
                     probTrack *= recipSum;
                     probNull *= recipSum;
                     metadata.m_propertiesToAdd["Pshower"] = probShower;
                     metadata.m_propertiesToAdd["Ptrack"] = probTrack;
+                    metadata.m_propertiesToAdd["Pmip"] = probMIP;
+                    metadata.m_propertiesToAdd["Phip"] = probHIP;
                     if (probShower > probTrack && probShower > probNull)
                         showerHits.push_back(pCaloHit);
                     else if (probTrack > probShower && probTrack > probNull)
                         trackHits.push_back(pCaloHit);
                     else
                         otherHits.push_back(pCaloHit);
-                    const StatusCode &statusCode(PandoraContentApi::CaloHit::AlterMetadata(*this, pCaloHit, metadata));
+                    if (probMIP > probHIP && probMIP > probShower && probMIP > probNull)
+                        mipHits.push_back(pCaloHit);
+                    else if (probHIP > probMIP && probHIP > probShower && probHIP > probNull)
+                        hipHits.push_back(pCaloHit);
+                    const StatusCode &statusCode(PandoraContentApi::CaloHit::AlterMetadata(
+                                *this, pCaloHit, metadata));
                     if (statusCode != STATUS_CODE_SUCCESS)
                         std::cout << "Cannot set calo hit meta data" << std::endl;
                 }
@@ -473,9 +526,13 @@ StatusCode DeepLearningTrackShowerIdAlgorithm::Infer()
             const std::string trackListName("TrackHits_" + listName);
             const std::string showerListName("ShowerHits_" + listName);
             const std::string otherListName("OtherHits_" + listName);
+            const std::string mipListName("MIPHits_" + listName);
+            const std::string hipListName("HIPHits_" + listName);
             PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &trackHits, trackListName, BLUE));
             PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &showerHits, showerListName, RED));
             PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &otherHits, otherListName, BLACK));
+            PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &mipHits, mipListName, BLUE));
+            PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &hipHits, hipListName, GREEN));
         }
     }
 
