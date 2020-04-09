@@ -22,7 +22,8 @@ namespace lar_content
 //-----------------------------------------------------------------------------------------------------------------------------------------
 
 TrackShowerMonitoringAlgorithm::TrackShowerMonitoringAlgorithm() :
-    m_showTruth(false)
+    m_showTruth{false},
+    m_showNetworkClass{false}
 {
     this->m_viewToNameMap.insert(std::make_pair(TPC_VIEW_U, "U"));
     this->m_viewToNameMap.insert(std::make_pair(TPC_VIEW_V, "V"));
@@ -52,6 +53,12 @@ StatusCode TrackShowerMonitoringAlgorithm::Run()
     for (const std::string &listName : m_clusterListNames)
     {
         this->VisualizeAvailableClusterList(listName);
+    }
+
+    // Show calo hit network classification
+    if (m_showTruth)
+    {
+        this->VisualizeNetworkClassification();
     }
 
     return STATUS_CODE_SUCCESS;
@@ -171,6 +178,8 @@ void TrackShowerMonitoringAlgorithm::VisualizeAvailableClusterList(const std::st
     }
 }
 
+//-----------------------------------------------------------------------------------------------------------------------------------------
+
 void TrackShowerMonitoringAlgorithm::VisualizeCaloHitTruth() const
 {
     const CaloHitList *pCaloHitList2D(nullptr);
@@ -268,10 +277,43 @@ void TrackShowerMonitoringAlgorithm::VisualizeCaloHitTruth() const
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
+void TrackShowerMonitoringAlgorithm::VisualizeNetworkClassification() const
+{
+    for (const std::string listName : this->m_caloHitListNames)
+    {
+        const CaloHitList *pCaloHitList = nullptr;
+        PandoraContentApi::GetList(*this, listName, pCaloHitList);
+        CaloHitList trackHitsList, showerHitsList;
+        for (const CaloHit *pCaloHit : *pCaloHitList)
+        {
+            auto properties = pCaloHit->GetPropertiesMap();
+            if (properties["Ptrack"] >= properties["Pshower"])
+                trackHitsList.push_back(pCaloHit);
+            else
+                showerHitsList.push_back(pCaloHit);
+        }
+        if (trackHitsList.size() > 0)
+        {
+            std::string tracksName = "NetworkTracks" + this->m_viewToNameMap.at(trackHitsList.front()->GetHitType());
+            PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &trackHitsList, tracksName, MAGENTA));
+        }
+        if (showerHitsList.size() > 0)
+        {
+            std::string showersName = "NetworkShowers" + this->m_viewToNameMap.at(showerHitsList.front()->GetHitType());
+            PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &showerHitsList, showersName, PINK));
+        }
+    }
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
 StatusCode TrackShowerMonitoringAlgorithm::ReadSettings(const TiXmlHandle xmlHandle)
 {
     PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
         "ShowTruth", m_showTruth));
+
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
+        "ShowNetworkClass", m_showNetworkClass));
 
     PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
         "CaloHitList2DName", m_caloHitList2DName));

@@ -194,6 +194,7 @@
     d("LArMCParticleMonitoring",                MCParticleMonitoringAlgorithm)                                                  \
     d("LArVisualMonitoring",                    VisualMonitoringAlgorithm)                                                      \
     d("LArTrackShowerMonitoring",               TrackShowerMonitoringAlgorithm)                                                 \
+    d("LArDeepLearningTrackShowerId",           DeepLearningTrackShowerIdAlgorithm)                                             \
     d("LArEventReading",                        EventReadingAlgorithm)                                                          \
     d("LArEventWriting",                        EventWritingAlgorithm)                                                          \
     d("LArCheatingClusterCharacterisation",     CheatingClusterCharacterisationAlgorithm)                                       \
