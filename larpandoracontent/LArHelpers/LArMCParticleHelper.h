@@ -99,6 +99,14 @@ public:
     static bool IsBeamParticle(const pandora::MCParticle *const pMCParticle);
 
     /**
+     *  @brief  Returns true if passed an MCParticle with an ancestor having the given Pdg code
+     *
+     *  @param  pMCParticle the input mc particle
+     *  @param  ancestorPdg the Pdg code to look for in ancestor particles
+     */
+    static bool IsDescendentOf(const pandora::MCParticle *const mcParticle, const int ancestorPdg);
+
+    /**
      *  @brief  Returns true if passed a leading beam MCParticle
      */
     static bool IsLeadingBeamParticle(const pandora::MCParticle *const pMCParticle);

@@ -94,6 +94,30 @@ bool LArMCParticleHelper::IsBeamParticle(const MCParticle *const pMCParticle)
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
+bool LArMCParticleHelper::IsDescendentOf(const MCParticle *const mcParticle, const int ancestorPdg)
+{
+    const MCParticle* particle = mcParticle;
+    if (std::abs(particle->GetParticleId()) == ancestorPdg)
+        return true;
+
+    while (!particle->GetParentList().empty())
+    {   
+        if (particle->GetParentList().size() > 1)
+            throw StatusCodeException(STATUS_CODE_INVALID_PARAMETER);
+
+        const MCParticle* pParent = *(particle->GetParentList().begin());
+        const int pdg = std::abs(pParent->GetParticleId());
+        if (pdg == ancestorPdg)
+            return true;
+
+        particle = pParent;
+    }
+
+    return false;
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
 bool LArMCParticleHelper::IsLeadingBeamParticle(const MCParticle *const pMCParticle)
 {
     // ATTN: Only the parent triggered beam particle has nuance code 2001
