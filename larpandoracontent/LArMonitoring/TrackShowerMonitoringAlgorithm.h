@@ -10,8 +10,18 @@
 
 #include "Pandora/Algorithm.h"
 
+#include "larpandoracontent/LArHelpers/LArMCParticleHelper.h"
+
 namespace lar_content
 {
+
+enum Classification
+{
+    NON_RECO = 0,
+    TRACK,
+    SHOWER,
+    MICHEL
+};
 
 /**
  *  @brief TrackShowerMonitoringAlgorithm class
@@ -23,6 +33,11 @@ public:
      *  @brief  Default constructor
      */
     TrackShowerMonitoringAlgorithm();
+
+    /**
+     *  @brief  Destructor
+     */
+    ~TrackShowerMonitoringAlgorithm();
 
 private:
     pandora::StatusCode Run();
@@ -51,6 +66,34 @@ private:
      *  @brief  Visualize the network classification of calo hits
      */
     void VisualizeNetworkClassification() const;
+
+    /**
+     *  @brief  Create a ROOT tree containing histograms of network classifications
+     *
+     *  @param  listName the PFO list name
+     */
+    void SerializePfoClassification(const std::string &listName) const;
+
+    /**
+     *  @brief  Get pfos from the given list.
+     *
+     *  @param  listName the cluster list name
+     *  @param  pfoList the output pfo list
+     */
+    void GetPfoList(const std::string &listName, const pandora::PfoList* &pPfoList) const;
+
+    /**
+     *  @brief  Get truth tag from a calo hit.
+     *
+     *  @param  caloHit the calo hit
+     *  @param  targetMCParticleToHitsMap the map between MC and calo hits
+     */
+    Classification GetTruthTag(const pandora::CaloHit &caloHit, const LArMCParticleHelper::MCContributionMap &targetMCParticleToHitsMap)
+        const;
+
+    typedef std::map<pandora::HitType, pandora::ClusterList*> ViewToClusterListMap;
+    void MakeClusterMaps(ViewToClusterListMap& trackClusterLists, ViewToClusterListMap& showerClusterLists) const;
+    void DestroyClusterMaps(ViewToClusterListMap& trackClusterLists, ViewToClusterListMap& showerClusterLists) const;
 
     bool                    m_showTruth;                ///< Whether to show calo hits with truth info
     bool                    m_showNetworkClass;         ///< Whether to show calo hits with network classification info

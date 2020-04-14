@@ -30,6 +30,20 @@ TrackShowerMonitoringAlgorithm::TrackShowerMonitoringAlgorithm() :
     this->m_viewToNameMap.insert(std::make_pair(TPC_VIEW_W, "W"));
 }
 
+//-----------------------------------------------------------------------------------------------------------------------------------------
+
+TrackShowerMonitoringAlgorithm::~TrackShowerMonitoringAlgorithm()
+{
+    try
+    {
+        PANDORA_MONITORING_API(SaveTree(this->GetPandora(), "net_tree", "net.root", "UPDATE"));
+    }
+    catch(const StatusCodeException&)
+    {
+        std::cout << "TrackShowerMonitoringAlgorithm: Unable to write tree net_tree to file net.root" << std::endl;
+    }
+}
+
 //------------------------------------------------------------------------------------------------------------------------------------------
 
 StatusCode TrackShowerMonitoringAlgorithm::Run()
@@ -47,6 +61,8 @@ StatusCode TrackShowerMonitoringAlgorithm::Run()
     for (const std::string &listName : m_pfoListNames)
     {
         this->VisualizePfoList(listName);
+        // Create classification histograms
+        this->SerializePfoClassification(listName);
     }
 
     // Show specified lists of clusters
@@ -61,6 +77,7 @@ StatusCode TrackShowerMonitoringAlgorithm::Run()
         this->VisualizeNetworkClassification();
     }
 
+
     return STATUS_CODE_SUCCESS;
 }
 
@@ -69,33 +86,20 @@ StatusCode TrackShowerMonitoringAlgorithm::Run()
 void TrackShowerMonitoringAlgorithm::VisualizePfoList(const std::string &listName) const
 {
     const PfoList *pPfoList = nullptr;
-    if (listName.empty())
+    try
     {
-        if (STATUS_CODE_SUCCESS != PandoraContentApi::GetCurrentList(*this, pPfoList))
-        {
-            if (PandoraContentApi::GetSettings(*this)->ShouldDisplayAlgorithmInfo())
-                std::cout << "TrackShowerMonitoringAlgorithm: current pfo list unavailable." << std::endl;
-            return;
-        }
+        this->GetPfoList(listName, pPfoList);
+        std::cout << "Found pfo list " << pPfoList << std::endl;
     }
-    else
+    catch(const StatusCodeException&)
     {
-        if (STATUS_CODE_SUCCESS != PandoraContentApi::GetList(*this, listName, pPfoList))
-        {
-            if (PandoraContentApi::GetSettings(*this)->ShouldDisplayAlgorithmInfo())
-                std::cout << "TrackShowerMonitoringAlgorithm: pfo list " << listName << " unavailable." << std::endl;
-            return;
-        }
+        if (PandoraContentApi::GetSettings(*this)->ShouldDisplayAlgorithmInfo())
+            std::cout << "TrackShowerMonitoringAlgorithm: pfo list \'" << listName << "\' unavailable." << std::endl;
+        return;
     }
 
-    std::map<HitType, ClusterList*> trackClusterLists;
-    std::map<HitType, ClusterList*> showerClusterLists;
-    const auto hitEnums = {TPC_VIEW_U, TPC_VIEW_V, TPC_VIEW_W};
-    for (const auto hitType : hitEnums)
-    {
-        trackClusterLists.insert(std::make_pair(hitType, new ClusterList()));
-        showerClusterLists.insert(std::make_pair(hitType, new ClusterList()));
-    }
+    ViewToClusterListMap trackClusterLists, showerClusterLists;
+    MakeClusterMaps(trackClusterLists, showerClusterLists);
 
     for (const ParticleFlowObject *pPfo : *pPfoList)
     {
@@ -129,13 +133,7 @@ void TrackShowerMonitoringAlgorithm::VisualizePfoList(const std::string &listNam
         }
     }
 
-    for (const auto hitType : hitEnums)
-    {
-        delete trackClusterLists.at(hitType);
-        delete showerClusterLists.at(hitType);
-    }
-    trackClusterLists.clear();
-    showerClusterLists.clear();
+    DestroyClusterMaps(trackClusterLists, showerClusterLists);
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
@@ -214,43 +212,16 @@ void TrackShowerMonitoringAlgorithm::VisualizeCaloHitTruth() const
         {
             try
             {
-                const MCParticle *const pMCParticle(MCParticleHelper::GetMainMCParticle(pCaloHit));
+                Classification cls{this->GetTruthTag(*pCaloHit, targetMCParticleToHitsMap)};
                 // Throw away non-reconstructable hits
-                if (targetMCParticleToHitsMap.find(pMCParticle) == targetMCParticleToHitsMap.end())
+                if (cls == NON_RECO)
                     continue;
-                
-                const int pdg = pMCParticle->GetParticleId();
-                if (LArMCParticleHelper::IsDescendentOf(pMCParticle, 2112))
-                {
-                    continue;
-                }
-                else if (LArMCParticleHelper::IsDescendentOf(pMCParticle, 111))
-                {
+                else if (cls == TRACK)
+                    trackHitsList.push_back(pCaloHit);
+                else if (cls == SHOWER)
                     showerHitsList.push_back(pCaloHit);
-                }
-                else if (std::abs(pdg) == 11)
-                {
-                    if (LArMCParticleHelper::IsDescendentOf(pMCParticle, 13))
-                        michelHitsList.push_back(pCaloHit);
-                    else
-                        showerHitsList.push_back(pCaloHit);
-                }
-                else if (std::abs(pdg) == 22)
-                {
-                    showerHitsList.push_back(pCaloHit);
-                }
-                else if (std::abs(pdg) == 2212 || std::abs(pdg) > 1e9)
-                {
-                    trackHitsList.push_back(pCaloHit);
-                }
-                else if (std::abs(pdg) == 13 || std::abs(pdg) == 211)
-                {
-                    trackHitsList.push_back(pCaloHit);
-                }
-                else
-                {
-                    trackHitsList.push_back(pCaloHit);
-                }
+                else if (cls == MICHEL)
+                    michelHitsList.push_back(pCaloHit);
             }
             catch (...)
             {
@@ -295,14 +266,202 @@ void TrackShowerMonitoringAlgorithm::VisualizeNetworkClassification() const
         if (trackHitsList.size() > 0)
         {
             std::string tracksName = "NetworkTracks" + this->m_viewToNameMap.at(trackHitsList.front()->GetHitType());
-            PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &trackHitsList, tracksName, MAGENTA));
+            PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &trackHitsList, tracksName, DARKBLUE));
         }
         if (showerHitsList.size() > 0)
         {
             std::string showersName = "NetworkShowers" + this->m_viewToNameMap.at(showerHitsList.front()->GetHitType());
-            PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &showerHitsList, showersName, PINK));
+            PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &showerHitsList, showersName, DARKRED));
         }
     }
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+void TrackShowerMonitoringAlgorithm::SerializePfoClassification(const std::string &listName) const
+{
+    static int e{0};
+    const PfoList *pPfoList = nullptr;
+    try
+    {
+        this->GetPfoList(listName, pPfoList);
+    }
+    catch(const StatusCodeException&)
+    {
+        if (PandoraContentApi::GetSettings(*this)->ShouldDisplayAlgorithmInfo())
+            std::cout << "TrackShowerMonitoringAlgorithm: pfo list \'" << listName << "\' unavailable." << std::endl;
+        return;
+    }
+
+    const CaloHitList *pCaloHitList2D(nullptr);
+    if (STATUS_CODE_SUCCESS != PandoraContentApi::GetList(*this, this->m_caloHitList2DName, pCaloHitList2D))
+    {
+        if (PandoraContentApi::GetSettings(*this)->ShouldDisplayAlgorithmInfo())
+            std::cout << "TrackShowerMonitoringAlgorithm: calo hit list " << this->m_caloHitList2DName << " unavailable." << std::endl;
+        return;
+    }
+    const MCParticleList *pMCParticleList(nullptr);
+    if (STATUS_CODE_SUCCESS != PandoraContentApi::GetCurrentList(*this, pMCParticleList))
+    {
+        if (PandoraContentApi::GetSettings(*this)->ShouldDisplayAlgorithmInfo())
+            std::cout << "TrackShowerMonitoringAlgorithm: current mc particle list unavailable." << std::endl;
+        return;
+    }
+
+    LArMCParticleHelper::PrimaryParameters parameters;
+    // Turn off max photo propagation for now, only care about killing off daughters of neutrons
+    parameters.m_maxPhotonPropagation = 100.;
+    parameters.m_foldBackHierarchy = false;
+    LArMCParticleHelper::MCContributionMap targetMCParticleToHitsMap;
+    LArMCParticleHelper::SelectReconstructableMCParticles(pMCParticleList, pCaloHitList2D, parameters,
+            LArMCParticleHelper::IsBeamNeutrinoFinalState, targetMCParticleToHitsMap);
+
+    int c{0}, p{0};
+    int pfoTrack{0};
+    float mcTrackFraction{0.f};
+    //PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "net_tree", "pfoProb", &pfoProb));
+
+    //PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "net_tree", "trueTrack", &trueTrack));
+    //PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "net_tree", "trueShower", &trueShower));
+
+    for (const ParticleFlowObject *pPfo : *pPfoList)
+    {
+        const ClusterList &pfoClusterList = pPfo->GetClusterList();
+        if (LArPfoHelper::IsTrack(pPfo))
+        {
+            c = 0;
+            pfoTrack = 1;
+            for (const Cluster *pCluster : pfoClusterList)
+            {
+                FloatVector clusterProb, pfoProb;
+                int nMcTrackHits{0};
+                int nMcRecoHits{0};
+                int nNonRecoHits{0};
+                //if (LArClusterHelper::GetClusterHitType(pCluster) == TPC_VIEW_W)
+                {
+                    CaloHitList caloHitList;
+                    pCluster->GetOrderedCaloHitList().FillCaloHitList(caloHitList);;
+                    for (const CaloHit *pCaloHit : caloHitList)
+                    {
+                        Classification cls{this->GetTruthTag(*pCaloHit, targetMCParticleToHitsMap)};
+                        if (cls == TRACK)
+                            nMcTrackHits++;
+                        if (cls != NON_RECO)
+                            nMcRecoHits++;
+                        else
+                            nNonRecoHits++;
+                        auto properties = pCaloHit->GetPropertiesMap();
+                        clusterProb.push_back(properties["Ptrack"]);
+                        pfoProb.push_back(properties["Ptrack"]);
+                    }
+                    mcTrackFraction = static_cast<float>(nMcTrackHits) / nMcRecoHits;
+                    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "net_tree", "eventId", e));
+                    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "net_tree", "pfoId", p));
+                    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "net_tree", "pfoIsTrack", pfoTrack));
+                    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "net_tree", "clusterMcTrackFraction", mcTrackFraction));
+                    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "net_tree", "clusterId", c));
+                    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "net_tree", "clusterProb", &clusterProb));
+                    PANDORA_MONITORING_API(FillTree(this->GetPandora(), "net_tree"));
+                    c++;
+                }
+            }
+        }
+        else if (LArPfoHelper::IsShower(pPfo))
+        {
+            c = 0;
+            pfoTrack = 0;
+            // TODO
+        }
+        p++;
+    }
+}
+
+//-----------------------------------------------------------------------------------------------------------------------------------------
+
+void TrackShowerMonitoringAlgorithm::GetPfoList(const std::string &listName, const PfoList* &pPfoList) const
+{
+    if (listName.empty())
+    {
+        if (STATUS_CODE_SUCCESS != PandoraContentApi::GetCurrentList(*this, pPfoList))
+            throw StatusCodeException(STATUS_CODE_NOT_FOUND);
+    }
+    else
+    {
+        if (STATUS_CODE_SUCCESS != PandoraContentApi::GetList(*this, listName, pPfoList))
+            throw StatusCodeException(STATUS_CODE_NOT_FOUND);
+    }
+}
+
+//-----------------------------------------------------------------------------------------------------------------------------------------
+
+Classification TrackShowerMonitoringAlgorithm::GetTruthTag(const pandora::CaloHit &caloHit,
+        const LArMCParticleHelper::MCContributionMap &targetMCParticleToHitsMap) const
+{
+    const MCParticle *const pMCParticle(MCParticleHelper::GetMainMCParticle(&caloHit));
+    // Throw away non-reconstructable hits
+    if (targetMCParticleToHitsMap.find(pMCParticle) == targetMCParticleToHitsMap.end())
+        return NON_RECO;
+    
+    const int pdg = pMCParticle->GetParticleId();
+    if (LArMCParticleHelper::IsDescendentOf(pMCParticle, 2112))
+    {
+        return NON_RECO;
+    }
+    else if (LArMCParticleHelper::IsDescendentOf(pMCParticle, 111))
+    {
+        return SHOWER;
+    }
+    else if (std::abs(pdg) == 11)
+    {
+        if (LArMCParticleHelper::IsDescendentOf(pMCParticle, 13))
+            return MICHEL;
+        else
+            return SHOWER;
+    }
+    else if (std::abs(pdg) == 22)
+    {
+        return SHOWER;
+    }
+    else if (std::abs(pdg) == 2212 || std::abs(pdg) > 1e9)
+    {
+        return TRACK;
+    }
+    else if (std::abs(pdg) == 13 || std::abs(pdg) == 211)
+    {
+        return TRACK;
+    }
+    else
+    {
+        return TRACK;
+    }
+}
+
+//-----------------------------------------------------------------------------------------------------------------------------------------
+
+void TrackShowerMonitoringAlgorithm::MakeClusterMaps(ViewToClusterListMap& trackClusterLists, ViewToClusterListMap& showerClusterLists)
+    const
+{
+    const auto hitEnums = {TPC_VIEW_U, TPC_VIEW_V, TPC_VIEW_W};
+    for (const auto hitType : hitEnums)
+    {
+        trackClusterLists.insert(std::make_pair(hitType, new ClusterList()));
+        showerClusterLists.insert(std::make_pair(hitType, new ClusterList()));
+    }
+}
+
+//-----------------------------------------------------------------------------------------------------------------------------------------
+
+void TrackShowerMonitoringAlgorithm::DestroyClusterMaps(ViewToClusterListMap& trackClusterLists, ViewToClusterListMap& showerClusterLists)
+    const
+{
+    const auto hitEnums = {TPC_VIEW_U, TPC_VIEW_V, TPC_VIEW_W};
+    for (const auto hitType : hitEnums)
+    {
+        delete trackClusterLists.at(hitType);
+        delete showerClusterLists.at(hitType);
+    }
+    trackClusterLists.clear();
+    showerClusterLists.clear();
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
