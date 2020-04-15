@@ -316,50 +316,45 @@ void TrackShowerMonitoringAlgorithm::SerializePfoClassification(const std::strin
     LArMCParticleHelper::SelectReconstructableMCParticles(pMCParticleList, pCaloHitList2D, parameters,
             LArMCParticleHelper::IsBeamNeutrinoFinalState, targetMCParticleToHitsMap);
 
-    int c{0}, p{0};
-    int pfoTrack{0};
-    float mcTrackFraction{0.f};
-    //PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "net_tree", "pfoProb", &pfoProb));
-
-    //PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "net_tree", "trueTrack", &trueTrack));
-    //PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "net_tree", "trueShower", &trueShower));
-
+    int p{0};
     for (const ParticleFlowObject *pPfo : *pPfoList)
     {
         const ClusterList &pfoClusterList = pPfo->GetClusterList();
         if (LArPfoHelper::IsTrack(pPfo))
         {
-            c = 0;
-            pfoTrack = 1;
+            int c{0}, pfoTrack{1};
             for (const Cluster *pCluster : pfoClusterList)
             {
                 FloatVector clusterProb, pfoProb;
-                int nMcTrackHits{0};
-                int nMcRecoHits{0};
-                int nNonRecoHits{0};
                 //if (LArClusterHelper::GetClusterHitType(pCluster) == TPC_VIEW_W)
                 {
+                    float trackEnergy{0.f}, clusterEnergy{0.f};
                     CaloHitList caloHitList;
                     pCluster->GetOrderedCaloHitList().FillCaloHitList(caloHitList);;
                     for (const CaloHit *pCaloHit : caloHitList)
                     {
                         Classification cls{this->GetTruthTag(*pCaloHit, targetMCParticleToHitsMap)};
+                        float energy = pCaloHit->GetInputEnergy();
+                        energy = energy > 0.f ? energy : 0.f;
                         if (cls == TRACK)
-                            nMcTrackHits++;
-                        if (cls != NON_RECO)
-                            nMcRecoHits++;
+                        {
+                            trackEnergy += energy;
+                            clusterEnergy += energy;
+                        }
                         else
-                            nNonRecoHits++;
+                        {
+                            clusterEnergy += energy;
+                        }
                         auto properties = pCaloHit->GetPropertiesMap();
                         clusterProb.push_back(properties["Ptrack"]);
                         pfoProb.push_back(properties["Ptrack"]);
                     }
-                    mcTrackFraction = static_cast<float>(nMcTrackHits) / nMcRecoHits;
                     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "net_tree", "eventId", e));
                     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "net_tree", "pfoId", p));
-                    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "net_tree", "pfoIsTrack", pfoTrack));
-                    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "net_tree", "clusterMcTrackFraction", mcTrackFraction));
                     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "net_tree", "clusterId", c));
+                    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "net_tree", "pfoIsTrack", pfoTrack));
+                    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "net_tree", "clusterTrackEnergy", trackEnergy));
+                    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "net_tree", "clusterEnergy", clusterEnergy));
                     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "net_tree", "clusterProb", &clusterProb));
                     PANDORA_MONITORING_API(FillTree(this->GetPandora(), "net_tree"));
                     c++;
@@ -368,8 +363,6 @@ void TrackShowerMonitoringAlgorithm::SerializePfoClassification(const std::strin
         }
         else if (LArPfoHelper::IsShower(pPfo))
         {
-            c = 0;
-            pfoTrack = 0;
             // TODO
         }
         p++;
