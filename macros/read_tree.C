@@ -18,8 +18,12 @@ void read_tree()
     std::map<int, float> pfoEnergy;
     std::map<int, bool> pfoRecoTrack;
 
+    TCanvas canvas("c1", "c1", 1024, 768);
+    canvas.cd();
+    canvas.Print("clusters.pdf[");
     while (reader.Next())
     {
+
         if (pfoHists.find(*pfoId) == pfoHists.end())
         {
             std::string pfoHistname = "pfo_hist_E" + std::to_string(*eventId) + "_P" + std::to_string(*pfoId);
@@ -31,26 +35,59 @@ void read_tree()
         }
         std::string idStr = "_E" + std::to_string(*eventId) + "_P" + std::to_string(*pfoId) + "_C" + std::to_string(*clusterId);
         std::string clusterHistname = "cluster_hist" + idStr;
-        TH1F frequencies(clusterHistname.c_str(), "Track probailities", 25, 0.f, 1.f);
+        TH1F* hist = new TH1F(clusterHistname.c_str(), "P(Track) Distribution", 25, 0.f, 1.f);
         for (int i = 0; i < clusterProb->size(); ++i)
         {
-            frequencies.Fill(clusterProb->at(i));
+            hist->Fill(clusterProb->at(i));
             pfoHists.at(*pfoId)->Fill(clusterProb->at(i));
             pfoTrackEnergy.at(*pfoId) += *clusterTrackEnergy;
             pfoEnergy.at(*pfoId) += *clusterEnergy;
         }
-        frequencies.SetDirectory(0);
-        TCanvas canvas("c1", "c1", 1024, 768);
-        canvas.cd();
-        frequencies.Draw();
-        std::string filename = std::string(frequencies.GetName()) + ".pdf";
-        canvas.SaveAs(filename.c_str());
-    }
+        hist->SetDirectory(0);
+        hist->Scale(1.f / hist->Integral(), "nosw2");
+        hist->Draw();
+        canvas.Update();
 
+        TPaveStats* stats = dynamic_cast<TPaveStats*>(canvas.GetPrimitive("stats"));
+        stats->SetName("clusterstats");
+        TList* listOfLines = stats->GetListOfLines();
+
+        Font_t font = stats->GetLineWith("Mean")->GetTextFont();
+        Float_t fontSize = stats->GetLineWith("Mean")->GetTextSize();
+        // Remove lines
+        listOfLines->Remove(stats->GetLineWith("Std Dev"));
+
+        // Add lines
+        std::string rmsStr = "RMS = " + std::to_string(hist->GetRMS());
+        TLatex rmsTxt(0, 0, rmsStr.c_str());
+        rmsTxt.SetTextFont(font); rmsTxt.SetTextSize(fontSize);
+        listOfLines->Add(&rmsTxt);
+
+        std::string recoStr = "Reco Track = " + std::to_string(pfoRecoTrack.at(*pfoId));
+        TLatex recoTxt(0, 0, recoStr.c_str());
+        recoTxt.SetTextFont(font); recoTxt.SetTextSize(fontSize);
+        listOfLines->Add(&recoTxt);
+
+        bool isMC = *clusterTrackEnergy >= (0.5f * *clusterEnergy) ? true : false;
+        std::string mcStr = "MC Track = " + std::to_string(isMC);
+        TLatex mcTxt(0, 0, mcStr.c_str());
+        mcTxt.SetTextFont(font); mcTxt.SetTextSize(fontSize);
+        listOfLines->Add(&mcTxt);
+
+        // Stop the stats being redrawn
+        hist->SetStats(0);
+        canvas.Modified();
+
+        canvas.Print("clusters.pdf");
+
+        delete hist;
+    }
+    canvas.Print("clusters.pdf]");
+
+    canvas.cd();
+    canvas.Print("pfos.pdf[");
     for (const auto [key, hist] : pfoHists)
     {
-        TCanvas canvas("c1", "c1", 1024, 768);
-        canvas.cd();
         //hist->Scale(1.f / hist->Integral(), "nosw2 width");
         hist->Scale(1.f / hist->Integral(), "nosw2");
         hist->Draw();
@@ -86,9 +123,9 @@ void read_tree()
         hist->SetStats(0);
         canvas.Modified();
 
-        std::string filename = std::string(hist->GetName()) + ".pdf";
-        canvas.SaveAs(filename.c_str());
+        canvas.Print("pfos.pdf");
     }
+    canvas.Print("pfos.pdf]");
 
     file->Close();
 }
