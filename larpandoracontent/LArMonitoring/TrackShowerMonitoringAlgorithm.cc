@@ -60,6 +60,7 @@ StatusCode TrackShowerMonitoringAlgorithm::Run()
     // Show specified lists of pfo
     for (const std::string &listName : m_pfoListNames)
     {
+        //this->VisualizePfoId(listName);
         this->VisualizePfoList(listName);
         // Create classification histograms
         this->SerializePfoClassification(listName);
@@ -134,6 +135,36 @@ void TrackShowerMonitoringAlgorithm::VisualizePfoList(const std::string &listNam
     }
 
     DestroyClusterMaps(trackClusterLists, showerClusterLists);
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+void TrackShowerMonitoringAlgorithm::VisualizePfoId(const std::string &listName) const
+{
+    const int nColors{9};
+    Color colors[nColors] = {BLACK, RED, GREEN, BLUE, MAGENTA, CYAN, ORANGE, YELLOW, GRAY};
+    const PfoList *pPfoList = nullptr;
+    try
+    {
+        this->GetPfoList(listName, pPfoList);
+        std::cout << "Found pfo list " << pPfoList << std::endl;
+    }
+    catch(const StatusCodeException&)
+    {
+        if (PandoraContentApi::GetSettings(*this)->ShouldDisplayAlgorithmInfo())
+            std::cout << "TrackShowerMonitoringAlgorithm: pfo list \'" << listName << "\' unavailable." << std::endl;
+        return;
+    }
+
+    int c{0}, p{0};
+    for (const ParticleFlowObject *pPfo : *pPfoList)
+    {
+        const ClusterList &clusterList = pPfo->GetClusterList();
+        std::string name = "pfo_" + std::to_string(p);
+        PANDORA_MONITORING_API(VisualizeClusters(this->GetPandora(), &clusterList, name, colors[c]));
+        c = ++c < nColors ? c : 0;
+        p++;
+    }
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
@@ -333,7 +364,11 @@ void TrackShowerMonitoringAlgorithm::SerializePfoClassification(const std::strin
                 {
                     float trackEnergy{0.f}, clusterEnergy{0.f};
                     CaloHitList caloHitList;
-                    pCluster->GetOrderedCaloHitList().FillCaloHitList(caloHitList);;
+                    pCluster->GetOrderedCaloHitList().FillCaloHitList(caloHitList);
+                    std::cout << "E" << e << " P" << p << " C" << c << "(" <<
+                        this->m_viewToNameMap.at(LArClusterHelper::GetClusterHitType(pCluster)) << ") : " <<
+                        caloHitList.size() << std::endl;
+
                     for (const CaloHit *pCaloHit : caloHitList)
                     {
                         Classification cls{this->GetTruthTag(*pCaloHit, targetMCParticleToHitsMap)};

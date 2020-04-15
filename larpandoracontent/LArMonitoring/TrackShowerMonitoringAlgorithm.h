@@ -51,6 +51,13 @@ private:
     void VisualizePfoList(const std::string &listName) const;
 
     /**
+     *  @brief  Visualize PFOs. Each PFO gets its own colour, consistent across views
+     *
+     *  @param  listName the PFO list name
+     */
+    void VisualizePfoId(const std::string &listName) const;
+
+    /**
      *  @brief  Visualize available clusters
      *
      *  @param  listName the cluster list name
