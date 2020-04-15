@@ -290,6 +290,7 @@ void TrackShowerMonitoringAlgorithm::SerializePfoClassification(const std::strin
     {
         if (PandoraContentApi::GetSettings(*this)->ShouldDisplayAlgorithmInfo())
             std::cout << "TrackShowerMonitoringAlgorithm: pfo list \'" << listName << "\' unavailable." << std::endl;
+        e++;
         return;
     }
 
@@ -298,6 +299,7 @@ void TrackShowerMonitoringAlgorithm::SerializePfoClassification(const std::strin
     {
         if (PandoraContentApi::GetSettings(*this)->ShouldDisplayAlgorithmInfo())
             std::cout << "TrackShowerMonitoringAlgorithm: calo hit list " << this->m_caloHitList2DName << " unavailable." << std::endl;
+        e++;
         return;
     }
     const MCParticleList *pMCParticleList(nullptr);
@@ -305,6 +307,7 @@ void TrackShowerMonitoringAlgorithm::SerializePfoClassification(const std::strin
     {
         if (PandoraContentApi::GetSettings(*this)->ShouldDisplayAlgorithmInfo())
             std::cout << "TrackShowerMonitoringAlgorithm: current mc particle list unavailable." << std::endl;
+        e++;
         return;
     }
 
@@ -367,6 +370,7 @@ void TrackShowerMonitoringAlgorithm::SerializePfoClassification(const std::strin
         }
         p++;
     }
+    e++;
 }
 
 //-----------------------------------------------------------------------------------------------------------------------------------------

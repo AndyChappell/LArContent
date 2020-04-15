@@ -13,25 +13,25 @@ void read_tree()
     TTreeReaderValue<Float_t> clusterEnergy(reader, "clusterEnergy");
     TTreeReaderValue<std::vector<float>> clusterProb(reader, "clusterProb");
 
-    std::map<int, TH1F*> pfoHists;
-    std::map<int, float> pfoTrackEnergy;
-    std::map<int, float> pfoEnergy;
-    std::map<int, bool> pfoRecoTrack;
+    std::map<std::pair<int, int>, TH1F*> pfoHists;
+    std::map<std::pair<int, int>, float> pfoTrackEnergy;
+    std::map<std::pair<int, int>, float> pfoEnergy;
+    std::map<std::pair<int, int>, bool> pfoRecoTrack;
 
     TCanvas canvas("c1", "c1", 1024, 768);
     canvas.cd();
     canvas.Print("clusters.pdf[");
     while (reader.Next())
     {
-
-        if (pfoHists.find(*pfoId) == pfoHists.end())
+        const std::pair key = std::make_pair(*eventId, *pfoId);
+        if (pfoHists.find(key) == pfoHists.end())
         {
             std::string pfoHistname = "pfo_hist_E" + std::to_string(*eventId) + "_P" + std::to_string(*pfoId);
-            pfoHists.insert(std::make_pair(*pfoId, new TH1F(pfoHistname.c_str(), "P(Track) Distribution", 25, 0.f, 1.f)));
-            pfoHists.at(*pfoId)->SetDirectory(0);
-            pfoTrackEnergy.insert(std::make_pair(*pfoId, 0.f));
-            pfoEnergy.insert(std::make_pair(*pfoId, 0.f));
-            pfoRecoTrack.insert(std::make_pair(*pfoId, *pfoIsTrack == 1));
+            pfoHists.insert(std::make_pair(key, new TH1F(pfoHistname.c_str(), "P(Track) Distribution", 25, 0.f, 1.f)));
+            pfoHists.at(key)->SetDirectory(0);
+            pfoTrackEnergy.insert(std::make_pair(key, 0.f));
+            pfoEnergy.insert(std::make_pair(key, 0.f));
+            pfoRecoTrack.insert(std::make_pair(key, *pfoIsTrack == 1));
         }
         std::string idStr = "_E" + std::to_string(*eventId) + "_P" + std::to_string(*pfoId) + "_C" + std::to_string(*clusterId);
         std::string clusterHistname = "cluster_hist" + idStr;
@@ -39,9 +39,9 @@ void read_tree()
         for (int i = 0; i < clusterProb->size(); ++i)
         {
             hist->Fill(clusterProb->at(i));
-            pfoHists.at(*pfoId)->Fill(clusterProb->at(i));
-            pfoTrackEnergy.at(*pfoId) += *clusterTrackEnergy;
-            pfoEnergy.at(*pfoId) += *clusterEnergy;
+            pfoHists.at(key)->Fill(clusterProb->at(i));
+            pfoTrackEnergy.at(key) += *clusterTrackEnergy;
+            pfoEnergy.at(key) += *clusterEnergy;
         }
         hist->SetDirectory(0);
         hist->Scale(1.f / hist->Integral(), "nosw2");
@@ -63,7 +63,7 @@ void read_tree()
         rmsTxt.SetTextFont(font); rmsTxt.SetTextSize(fontSize);
         listOfLines->Add(&rmsTxt);
 
-        std::string recoStr = "Reco Track = " + std::to_string(pfoRecoTrack.at(*pfoId));
+        std::string recoStr = "Reco Track = " + std::to_string(pfoRecoTrack.at(key));
         TLatex recoTxt(0, 0, recoStr.c_str());
         recoTxt.SetTextFont(font); recoTxt.SetTextSize(fontSize);
         listOfLines->Add(&recoTxt);
@@ -83,6 +83,12 @@ void read_tree()
         delete hist;
     }
     canvas.Print("clusters.pdf]");
+
+    TH1F* mcTracks = new TH1F("mcTracks", "P(Track) Distribution", 25, 0.f, 1.f);
+    mcTracks->SetLineWidth(2);
+    TH1F* mcShowers = new TH1F("mcShowers", "P(Track) Distribution", 25, 0.f, 1.f);
+    mcShowers->SetLineColor(kRed);
+    mcShowers->SetLineWidth(2);
 
     canvas.cd();
     canvas.Print("pfos.pdf[");
@@ -114,6 +120,16 @@ void read_tree()
         listOfLines->Add(&recoTxt);
 
         bool isMC = pfoTrackEnergy.at(key) >= (0.5f * pfoEnergy.at(key)) ? true : false;
+        if (isMC)
+        {
+            for (int i = 0; i < hist->GetNbinsX(); ++i)
+                mcTracks->SetBinContent(i, mcTracks->GetBinContent(i) + hist->GetBinContent(i));
+        }
+        else
+        {
+            for (int i = 0; i < hist->GetNbinsX(); ++i)
+                mcShowers->SetBinContent(i, mcShowers->GetBinContent(i) + hist->GetBinContent(i));
+        }
         std::string mcStr = "MC Track = " + std::to_string(isMC);
         TLatex mcTxt(0, 0, mcStr.c_str());
         mcTxt.SetTextFont(font); mcTxt.SetTextSize(fontSize);
@@ -126,6 +142,19 @@ void read_tree()
         canvas.Print("pfos.pdf");
     }
     canvas.Print("pfos.pdf]");
+
+    canvas.cd();
+    mcTracks->Scale(1.f / mcTracks->Integral(), "nosw2");
+    mcShowers->Scale(1.f / mcShowers->Integral(), "nosw2");
+    mcTracks->SetMaximum(std::max(mcTracks->GetMaximum(), mcShowers->GetMaximum()));
+    mcShowers->SetMaximum(std::max(mcTracks->GetMaximum(), mcShowers->GetMaximum()));
+    mcTracks->Draw();
+    mcShowers->Draw("same");
+
+    canvas.Print("global.pdf");
+
+    delete mcTracks;
+    delete mcShowers;
 
     file->Close();
 }
