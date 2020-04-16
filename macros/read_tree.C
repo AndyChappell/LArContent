@@ -94,6 +94,18 @@ void read_tree()
     canvas.Print("pfos.pdf[");
     for (const auto [key, hist] : pfoHists)
     {
+        bool isMC = pfoTrackEnergy.at(key) >= (0.5f * pfoEnergy.at(key)) ? true : false;
+        if (isMC)
+        {
+            for (int i = 0; i < hist->GetNbinsX(); ++i)
+                mcTracks->SetBinContent(i, mcTracks->GetBinContent(i) + hist->GetBinContent(i));
+        }
+        else
+        {
+            for (int i = 0; i < hist->GetNbinsX(); ++i)
+                mcShowers->SetBinContent(i, mcShowers->GetBinContent(i) + hist->GetBinContent(i));
+        }
+
         //hist->Scale(1.f / hist->Integral(), "nosw2 width");
         hist->Scale(1.f / hist->Integral(), "nosw2");
         hist->Draw();
@@ -119,17 +131,6 @@ void read_tree()
         recoTxt.SetTextFont(font); recoTxt.SetTextSize(fontSize);
         listOfLines->Add(&recoTxt);
 
-        bool isMC = pfoTrackEnergy.at(key) >= (0.5f * pfoEnergy.at(key)) ? true : false;
-        if (isMC)
-        {
-            for (int i = 0; i < hist->GetNbinsX(); ++i)
-                mcTracks->SetBinContent(i, mcTracks->GetBinContent(i) + hist->GetBinContent(i));
-        }
-        else
-        {
-            for (int i = 0; i < hist->GetNbinsX(); ++i)
-                mcShowers->SetBinContent(i, mcShowers->GetBinContent(i) + hist->GetBinContent(i));
-        }
         std::string mcStr = "MC Track = " + std::to_string(isMC);
         TLatex mcTxt(0, 0, mcStr.c_str());
         mcTxt.SetTextFont(font); mcTxt.SetTextSize(fontSize);
@@ -143,6 +144,7 @@ void read_tree()
     }
     canvas.Print("pfos.pdf]");
 
+    gStyle->SetOptStat(0);
     canvas.cd();
     mcTracks->Scale(1.f / mcTracks->Integral(), "nosw2");
     mcShowers->Scale(1.f / mcShowers->Integral(), "nosw2");
