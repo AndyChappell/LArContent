@@ -60,7 +60,7 @@ StatusCode TrackShowerMonitoringAlgorithm::Run()
     // Show specified lists of pfo
     for (const std::string &listName : m_pfoListNames)
     {
-        //this->VisualizePfoId(listName);
+        this->VisualizePfoId(listName);
         this->VisualizePfoList(listName);
         // Create classification histograms
         this->SerializePfoClassification(listName);
@@ -90,7 +90,6 @@ void TrackShowerMonitoringAlgorithm::VisualizePfoList(const std::string &listNam
     try
     {
         this->GetPfoList(listName, pPfoList);
-        std::cout << "Found pfo list " << pPfoList << std::endl;
     }
     catch(const StatusCodeException&)
     {
@@ -429,42 +428,50 @@ void TrackShowerMonitoringAlgorithm::GetPfoList(const std::string &listName, con
 Classification TrackShowerMonitoringAlgorithm::GetTruthTag(const pandora::CaloHit &caloHit,
         const LArMCParticleHelper::MCContributionMap &targetMCParticleToHitsMap) const
 {
-    const MCParticle *const pMCParticle(MCParticleHelper::GetMainMCParticle(&caloHit));
-    // Throw away non-reconstructable hits
-    if (targetMCParticleToHitsMap.find(pMCParticle) == targetMCParticleToHitsMap.end())
-        return NON_RECO;
-    
-    const int pdg = pMCParticle->GetParticleId();
-    if (LArMCParticleHelper::IsDescendentOf(pMCParticle, 2112))
+    try
     {
-        return NON_RECO;
-    }
-    else if (LArMCParticleHelper::IsDescendentOf(pMCParticle, 111))
-    {
-        return SHOWER;
-    }
-    else if (std::abs(pdg) == 11)
-    {
-        if (LArMCParticleHelper::IsDescendentOf(pMCParticle, 13))
-            return MICHEL;
-        else
+        // This can throw an exception if a best MC particle is not found - probably due to zero weights
+        const MCParticle *const pMCParticle(MCParticleHelper::GetMainMCParticle(&caloHit));
+        // Throw away non-reconstructable hits
+        if (targetMCParticleToHitsMap.find(pMCParticle) == targetMCParticleToHitsMap.end())
+            return NON_RECO;
+        
+        const int pdg = pMCParticle->GetParticleId();
+        if (LArMCParticleHelper::IsDescendentOf(pMCParticle, 2112))
+        {
+            return NON_RECO;
+        }
+        else if (LArMCParticleHelper::IsDescendentOf(pMCParticle, 111))
+        {
             return SHOWER;
+        }
+        else if (std::abs(pdg) == 11)
+        {
+            if (LArMCParticleHelper::IsDescendentOf(pMCParticle, 13))
+                return MICHEL;
+            else
+                return SHOWER;
+        }
+        else if (std::abs(pdg) == 22)
+        {
+            return SHOWER;
+        }
+        else if (std::abs(pdg) == 2212 || std::abs(pdg) > 1e9)
+        {
+            return TRACK;
+        }
+        else if (std::abs(pdg) == 13 || std::abs(pdg) == 211)
+        {
+            return TRACK;
+        }
+        else
+        {
+            return TRACK;
+        }
     }
-    else if (std::abs(pdg) == 22)
+    catch(...)
     {
-        return SHOWER;
-    }
-    else if (std::abs(pdg) == 2212 || std::abs(pdg) > 1e9)
-    {
-        return TRACK;
-    }
-    else if (std::abs(pdg) == 13 || std::abs(pdg) == 211)
-    {
-        return TRACK;
-    }
-    else
-    {
-        return TRACK;
+        return NON_RECO;
     }
 }
 
