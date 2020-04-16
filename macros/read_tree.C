@@ -39,10 +39,42 @@ void read_tree()
         for (int i = 0; i < clusterProb->size(); ++i)
         {
             hist->Fill(clusterProb->at(i));
+            // Should probably fill a PFO level vector and apply RMS90 to that and fill pfoHists later from that
             pfoHists.at(key)->Fill(clusterProb->at(i));
             pfoTrackEnergy.at(key) += *clusterTrackEnergy;
             pfoEnergy.at(key) += *clusterEnergy;
         }
+        float mean = hist->GetMean();
+        float rms = hist->GetRMS();
+        delete hist;
+
+        std::sort(clusterProb->begin(), clusterProb->end());
+        std::vector<float> sample(clusterProb->begin(), clusterProb->end());
+        const int N = static_cast<int>(std::floor(0.1 * clusterProb->size()));
+        for (int i = 0; i < N; ++i)
+        {
+            std::vector<float> lsample(sample.begin(), sample.end() - 1);
+            TH1F lhist("lhist", "P(Track) Distribution", 25, 0.f, 1.f);
+            for (float p : lsample)
+                lhist.Fill(p);
+            std::vector<float> rsample(sample.begin() + 1, sample.end());
+            TH1F rhist("rhist", "P(Track) Distribution", 25, 0.f, 1.f);
+            for (float p : rsample)
+                rhist.Fill(p);
+            float lrms = lhist.GetRMS();
+            float rrms = lhist.GetRMS();
+            if (lrms < rrms)
+                sample = lsample;
+            else
+                sample = rsample;
+        }
+        // Build 90% sample of hits with lowest RMS
+        hist = new TH1F(clusterHistname.c_str(), "P(Track) Distribution", 25, 0.f, 1.f);
+        for (float p : sample)
+            hist->Fill(p);
+        float mean90 = hist->GetMean();
+        float rms90 = hist->GetRMS();
+
         hist->SetDirectory(0);
         hist->Scale(1.f / hist->Integral(), "nosw2");
         hist->Draw();
@@ -55,13 +87,29 @@ void read_tree()
         Font_t font = stats->GetLineWith("Mean")->GetTextFont();
         Float_t fontSize = stats->GetLineWith("Mean")->GetTextSize();
         // Remove lines
+        listOfLines->Remove(stats->GetLineWith("Mean"));
         listOfLines->Remove(stats->GetLineWith("Std Dev"));
 
         // Add lines
-        std::string rmsStr = "RMS = " + std::to_string(hist->GetRMS());
+        std::string meanStr = "Mean = " + std::to_string(mean);
+        TLatex meanTxt(0, 0, meanStr.c_str());
+        meanTxt.SetTextFont(font); meanTxt.SetTextSize(fontSize);
+        listOfLines->Add(&meanTxt);
+
+        std::string rmsStr = "RMS = " + std::to_string(rms);
         TLatex rmsTxt(0, 0, rmsStr.c_str());
         rmsTxt.SetTextFont(font); rmsTxt.SetTextSize(fontSize);
         listOfLines->Add(&rmsTxt);
+
+        std::string mean90Str = "Mean90 = " + std::to_string(mean90);
+        TLatex mean90Txt(0, 0, mean90Str.c_str());
+        mean90Txt.SetTextFont(font); mean90Txt.SetTextSize(fontSize);
+        listOfLines->Add(&mean90Txt);
+
+        std::string rms90Str = "RMS90 = " + std::to_string(rms90);
+        TLatex rms90Txt(0, 0, rms90Str.c_str());
+        rms90Txt.SetTextFont(font); rms90Txt.SetTextSize(fontSize);
+        listOfLines->Add(&rms90Txt);
 
         std::string recoStr = "Reco Track = " + std::to_string(pfoRecoTrack.at(key));
         TLatex recoTxt(0, 0, recoStr.c_str());
