@@ -1,6 +1,5 @@
 void read_tree()
 {
-    //gStyle->SetOptStat(0);
     TFile* file = TFile::Open("net.root");
 
     TTreeReader reader("net_tree", file);
@@ -136,6 +135,7 @@ void read_tree()
     mcShowers->SetLineColor(kRed);
     mcShowers->SetLineWidth(2);
 
+    int muRmsPerf[2][3]{0}, muRms90Perf[2][3]{0}, tailPerf[2][3]{0};
     canvas.cd();
     canvas.Print("pfos.pdf[");
     for (const auto [key, probs] : pfoProb)
@@ -149,6 +149,19 @@ void read_tree()
         delete hist;
 
         std::sort(probs->begin(), probs->end());
+        // Calculated left and right fractions
+        int nShower{0}, nTrack{0};
+        for (float p : *probs)
+        {
+            if (p < 0.5)
+                nShower++;
+            else
+                nTrack++;
+        }
+        float fShower{static_cast<float>(nShower) / (nShower + nTrack)};
+        float fTrack{1.f - fShower};
+
+        // Cut sample size to 90% based on minimum RMS
         std::vector<float> sample(probs->begin(), probs->end());
         const int N = static_cast<int>(std::floor(0.1 * probs->size()));
         for (int i = 0; i < N; ++i)
@@ -223,6 +236,16 @@ void read_tree()
         rms90Txt.SetTextFont(font); rms90Txt.SetTextSize(fontSize);
         listOfLines->Add(&rms90Txt);
 
+        std::string sfracStr = "Sfrac = " + std::to_string(fShower);
+        TLatex sfracTxt(0, 0, sfracStr.c_str());
+        sfracTxt.SetTextFont(font); sfracTxt.SetTextSize(fontSize);
+        listOfLines->Add(&sfracTxt);
+
+        std::string tfracStr = "Tfrac = " + std::to_string(fTrack);
+        TLatex tfracTxt(0, 0, tfracStr.c_str());
+        tfracTxt.SetTextFont(font); tfracTxt.SetTextSize(fontSize);
+        listOfLines->Add(&tfracTxt);
+
         std::string recoStr = "Reco Track = " + std::to_string(pfoRecoTrack.at(key));
         TLatex recoTxt(0, 0, recoStr.c_str());
         recoTxt.SetTextFont(font); recoTxt.SetTextSize(fontSize);
@@ -239,9 +262,65 @@ void read_tree()
 
         canvas.Print("pfos.pdf");
 
+        int row{pfoRecoTrack.at(key) == isMC ? 0 : 1};  // Reco correct : Reco wrong
+        int state{mean >= 0.5 ?
+            (mean - rms > 0.5 ? 1 : 2) :        // Track  : Ambiguous
+            (mean + rms < 0.5 ? 0 : 2) };       // Shower : Ambiguous
+        int col{state != 2 && isMC == state ?
+            0 :                                 // Network correct
+            state != 2 ? 1 : 2};                // Network wrong : Ambiguous
+        muRmsPerf[row][col]++;
+
+        state = mean90 >= 0.5 ?
+            (mean90 - rms90 > 0.5 ? 1 : 2) :    // Track  : Ambiguous
+            (mean90 + rms90 < 0.5 ? 0 : 2);     // Shower : Ambiguous
+        col = state != 2 && isMC == state ?
+            0 :                                 // Network correct
+            state != 2 ? 1 : 2;                 // Network wrong : Ambiguous
+        muRms90Perf[row][col]++;
+
+        float threshold = 2.f / 3.f;
+        state = fTrack >= threshold ?
+            1 :                                 // Track
+            fTrack <= 1.f - threshold ? 0 : 2;  // Shower : Ambiguous
+        col = state != 2 && isMC == state ?
+            0 :                                 // Network correct
+            state != 2 ? 1 : 2;                 // Network wrong : Ambiguous
+        tailPerf[row][col]++;
+
         delete hist;
     }
     canvas.Print("pfos.pdf]");
+
+    std::cout << "RMS:" << std::endl;
+    for (int r = 0; r <= 1; ++r)
+    {
+        for (int c = 0; c <= 2; ++c)
+        {
+            std::cout << muRmsPerf[r][c] << "   ";
+        }
+        std::cout << std::endl;
+    }
+
+    std::cout << "\nRMS90:" << std::endl;
+    for (int r = 0; r <= 1; ++r)
+    {
+        for (int c = 0; c <= 2; ++c)
+        {
+            std::cout << muRms90Perf[r][c] << "   ";
+        }
+        std::cout << std::endl;
+    }
+
+    std::cout << "\nTails:" << std::endl;
+    for (int r = 0; r <= 1; ++r)
+    {
+        for (int c = 0; c <= 2; ++c)
+        {
+            std::cout << tailPerf[r][c] << "   ";
+        }
+        std::cout << std::endl;
+    }
 
     gStyle->SetOptStat(0);
     canvas.cd();
@@ -253,6 +332,9 @@ void read_tree()
     mcShowers->Draw("same");
 
     canvas.Print("global.pdf");
+
+    for (const auto [key, probs] : pfoProb)
+        delete probs;
 
     delete mcTracks;
     delete mcShowers;
