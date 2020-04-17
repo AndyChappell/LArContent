@@ -23,7 +23,8 @@ namespace lar_content
 
 TrackShowerMonitoringAlgorithm::TrackShowerMonitoringAlgorithm() :
     m_showTruth{false},
-    m_showNetworkClass{false}
+    m_showNetworkClass{false},
+    m_visualize{false}
 {
     this->m_viewToNameMap.insert(std::make_pair(TPC_VIEW_U, "U"));
     this->m_viewToNameMap.insert(std::make_pair(TPC_VIEW_V, "V"));
@@ -52,7 +53,7 @@ StatusCode TrackShowerMonitoringAlgorithm::Run()
                 DETECTOR_VIEW_XZ,  -1.f, 1.f, 1.f));
 
     // Show calo hit truth
-    if (m_showTruth)
+    if (m_visualize && m_showTruth)
     {
         this->VisualizeCaloHitTruth();
     }
@@ -60,24 +61,29 @@ StatusCode TrackShowerMonitoringAlgorithm::Run()
     // Show specified lists of pfo
     for (const std::string &listName : m_pfoListNames)
     {
-        this->VisualizePfoId(listName);
-        this->VisualizePfoList(listName);
+        if (m_visualize)
+        {
+            this->VisualizePfoId(listName);
+            this->VisualizePfoList(listName);
+        }
         // Create classification histograms
         this->SerializePfoClassification(listName);
     }
 
     // Show specified lists of clusters
-    for (const std::string &listName : m_clusterListNames)
+    if (m_visualize)
     {
-        this->VisualizeAvailableClusterList(listName);
+        for (const std::string &listName : m_clusterListNames)
+        {
+            this->VisualizeAvailableClusterList(listName);
+        }
     }
 
     // Show calo hit network classification
-    if (m_showTruth)
+    if (m_visualize && m_showTruth)
     {
         this->VisualizeNetworkClassification();
     }
-
 
     return STATUS_CODE_SUCCESS;
 }
@@ -512,6 +518,9 @@ StatusCode TrackShowerMonitoringAlgorithm::ReadSettings(const TiXmlHandle xmlHan
 
     PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
         "ShowNetworkClass", m_showNetworkClass));
+
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
+        "Visualize", m_visualize));
 
     PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
         "CaloHitList2DName", m_caloHitList2DName));

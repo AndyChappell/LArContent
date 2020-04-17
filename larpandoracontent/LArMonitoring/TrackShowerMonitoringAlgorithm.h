@@ -104,6 +104,7 @@ private:
 
     bool                    m_showTruth;                ///< Whether to show calo hits with truth info
     bool                    m_showNetworkClass;         ///< Whether to show calo hits with network classification info
+    bool                    m_visualize;                ///< Whether to visualize the events
 
     pandora::StringVector   m_clusterListNames;         ///< Names of cluster lists to show
     pandora::StringVector   m_pfoListNames;             ///< Names of pfo lists to show
