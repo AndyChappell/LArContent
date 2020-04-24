@@ -1,8 +1,8 @@
-void read_tree()
+void read_tree(const char* filename)
 {
-    TFile* file = TFile::Open("net.root");
+    TFile* file = TFile::Open(filename);
 
-    TTreeReader reader("net_tree", file);
+    TTreeReader reader("pfo_tree", file);
 
     TTreeReaderValue<Int_t> eventId(reader, "eventId");
     TTreeReaderValue<Int_t> pfoId(reader, "pfoId");

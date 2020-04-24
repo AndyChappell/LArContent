@@ -65,6 +65,14 @@ private:
     void VisualizeAvailableClusterList(const std::string &listName) const;
 
     /**
+     *  @brief  Visualize available clusters. Intended to make individual cluster identification easy
+     *          and consistent with serialization
+     *
+     *  @param  listName the cluster list name
+     */
+    void VisualizeClusterId(const std::string &listName) const;
+
+    /**
      *  @brief  Visualize the calo hit truth
      */
     void VisualizeCaloHitTruth() const;
@@ -80,6 +88,11 @@ private:
      *  @param  listName the PFO list name
      */
     void SerializePfoClassification(const std::string &listName) const;
+
+    /**
+     *  @brief  Create a ROOT tree containing histograms of network classifications
+     */
+    void SerializeAvailableClusterClassification() const;
 
     /**
      *  @brief  Get pfos from the given list.
@@ -102,6 +115,8 @@ private:
     void MakeClusterMaps(ViewToClusterListMap& trackClusterLists, ViewToClusterListMap& showerClusterLists) const;
     void DestroyClusterMaps(ViewToClusterListMap& trackClusterLists, ViewToClusterListMap& showerClusterLists) const;
 
+    int                     m_event;                    ///< Tracks the current event number
+
     bool                    m_showTruth;                ///< Whether to show calo hits with truth info
     bool                    m_showNetworkClass;         ///< Whether to show calo hits with network classification info
     bool                    m_visualize;                ///< Whether to visualize the events
@@ -110,6 +125,10 @@ private:
     pandora::StringVector   m_pfoListNames;             ///< Names of pfo lists to show
     pandora::StringVector   m_caloHitListNames;         ///< Names of calo hit lists to show
     std::string             m_caloHitList2DName;        ///< Name of 2D calo hit list to show
+
+    std::string             m_rootFileName;             ///< Name of the output root file
+    std::string             m_pfoTreeName;              ///< Name of the TTree containing PFO information
+    std::string             m_clusterTreeName;          ///< Name of the TTree containing available cluster information
 
     std::map<pandora::HitType, std::string> m_viewToNameMap;
 };
