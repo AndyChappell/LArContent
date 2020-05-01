@@ -42,6 +42,7 @@ private:
     float                     m_zMinW;               ///< Min Z used in training model in W view
     float                     m_zMaxW;               ///< Max Z used in training model in W view
     int                       m_nBins;               ///< Number of bins used in training model (assumption is same number in X and Z)
+    int                       m_event;               ///< The current event number
     bool                      m_visualize;           ///< Whether to visualize the track shower ID scores
     bool                      m_useTrainingMode;     ///< Training mode
     bool                      m_profile;

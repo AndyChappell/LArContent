@@ -30,6 +30,7 @@ DeepLearningTrackShowerIdAlgorithm::DeepLearningTrackShowerIdAlgorithm() :
     m_zMinV(0),
     m_zMinW(-25),
     m_nBins(512),
+    m_event(-1),
     m_visualize(false),
     m_useTrainingMode(false),
     m_profile(false),
@@ -106,6 +107,7 @@ const MCParticle* GetLeadingShowerCandidate(const MCParticle *const mcParticle)
 
 StatusCode DeepLearningTrackShowerIdAlgorithm::Run()
 {
+    ++m_event;
     if (m_useTrainingMode)
         return Train();
     else
@@ -204,6 +206,7 @@ StatusCode DeepLearningTrackShowerIdAlgorithm::Train()
         else if (isV) trainingOutputFileName += "_CaloHitListV.txt";
         else if (isW) trainingOutputFileName += "_CaloHitListW.txt";
 
+        featureVector.push_back(static_cast<double>(m_event));
         featureVector.push_back(static_cast<double>(pCaloHitList->size()));
         
         float chargeMin = std::numeric_limits<float>::max();
@@ -304,18 +307,10 @@ StatusCode DeepLearningTrackShowerIdAlgorithm::Train()
             counter[hitClass] += 1;
 
             featureVector.push_back(static_cast<double>(pCaloHit->GetPositionVector().GetX()));
-            //featureVector.push_back(static_cast<double>(pCaloHit->GetPositionVector().GetY()));
             featureVector.push_back(static_cast<double>(pCaloHit->GetPositionVector().GetZ()));
             featureVector.push_back(static_cast<double>(hitClass));
-            //featureVector.push_back(static_cast<double>(isReconstructable));
             featureVector.push_back(static_cast<double>(chargeScaled));
         }
-
-        /*
-        for (int i = 0; i < counter.size(); ++i)
-            std::cout << "counter[" << i << "] = " << counter[i] << " of " <<
-                pCaloHitList->size()  << std::endl;
-        */
 
         LArMvaHelper::ProduceTrainingExample(trainingOutputFileName, true, featureVector);
     }
