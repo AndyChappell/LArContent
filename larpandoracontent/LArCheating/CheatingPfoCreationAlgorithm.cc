@@ -23,7 +23,9 @@ CheatingPfoCreationAlgorithm::CheatingPfoCreationAlgorithm() :
     m_addVertices(true),
     m_replaceCurrentVertexList(false),
     m_minGoodHitTypes(0),
-    m_nHitsForGoodHitType(10)
+    m_nHitsForGoodHitType(10),
+    m_onlyTrackPfos(false),
+    m_onlyShowerPfos(false)
 {
 }
 
@@ -114,6 +116,15 @@ void CheatingPfoCreationAlgorithm::CreatePfos(const MCParticleToClusterListMap &
 
     for (const MCParticle *const pMCParticle : mcParticleVector)
     {
+        if (m_onlyTrackPfos || m_onlyShowerPfos)
+        {
+            const int pdg(pMCParticle->GetParticleId());
+            const bool isShower(std::abs(pdg) == 11 || std::abs(pdg) == 22);
+            if (m_onlyTrackPfos && isShower)
+                continue;
+            else if (m_onlyShowerPfos && !isShower)
+                continue;
+        }
         const ClusterList &clusterList(mcParticleToClusterListMap.at(pMCParticle));
 
         if (clusterList.empty())
@@ -235,6 +246,18 @@ StatusCode CheatingPfoCreationAlgorithm::ReadSettings(const TiXmlHandle xmlHandl
 
     PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
         "NHitsForGoodHitType", m_nHitsForGoodHitType));
+
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
+        "OnlyTrackPfos", m_onlyTrackPfos));
+
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
+        "OnlyShowerPfos", m_onlyShowerPfos));
+        
+    if (m_onlyTrackPfos && m_onlyShowerPfos)
+    {
+        std::cout << "CheatingPfoCreationAlgorithm::ReadSettings: OnlyTrackPfos and OnlyShowerPfos are both set!" << std::endl;
+        return STATUS_CODE_NOT_ALLOWED;
+    }
 
     return STATUS_CODE_SUCCESS;
 }

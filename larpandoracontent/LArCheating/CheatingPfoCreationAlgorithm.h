@@ -77,6 +77,8 @@ private:
     unsigned int            m_minGoodHitTypes;              ///< The min number of good hit types in the clusters collected for a given mc particle
     unsigned int            m_nHitsForGoodHitType;          ///< The min number of hits of a particular hit type in order to declare the hit type is good
     ParticleIdList          m_particleIdList;               ///< The list of particle ids to consider for pfo creation; will consider all ids if empty
+    bool                    m_onlyTrackPfos;                ///< Whether to create only track PFOs
+    bool                    m_onlyShowerPfos;               ///< Whether to create only shower PFOs
 };
 
 } // namespace lar_content
