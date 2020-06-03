@@ -34,7 +34,8 @@ DeepLearningTrackShowerIdAlgorithm::DeepLearningTrackShowerIdAlgorithm() :
     m_visualize(false),
     m_useTrainingMode(false),
     m_profile(false),
-    m_trainingOutputFile("")
+    m_trainingOutputFile(""),
+    m_confusion{{0., 0., 0.}, {0., 0., 0.}, {0., 0., 0.}}
 {
     const float span(980);
     m_xMax = m_xMin + span;
@@ -56,6 +57,10 @@ DeepLearningTrackShowerIdAlgorithm::~DeepLearningTrackShowerIdAlgorithm()
             std::cout << "DeepLearningTrackShowerIdAlgorithm: Unable to write tree to file" << std::endl;
         }
     }
+    std::cout << "Confusion Matrix:" << std::endl;
+    std::cout << m_confusion[0][0] << "   " << m_confusion[0][1] << "   " << m_confusion[0][2] << std::endl;
+    std::cout << m_confusion[1][0] << "   " << m_confusion[1][1] << "   " << m_confusion[1][2] << std::endl;
+    std::cout << m_confusion[2][0] << "   " << m_confusion[2][1] << "   " << m_confusion[2][2] << std::endl;
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
@@ -228,13 +233,15 @@ StatusCode DeepLearningTrackShowerIdAlgorithm::Train()
         //      EM_ACTIVITY{6}, NEUTRON{7}, NON_RECO{8};
         //std::vector<int> counter({0, 0, 0, 0, 0, 0, 0, 0, 0});
         //const int SHOWER{1}, MIP{2}, HIP{3}, MICHEL{4}, NON_RECO{5};
-        const int SHOWER{1}, MIP{2}, HIP{3}, NON_RECO{5};
+        //const int SHOWER{1}, MIP{2}, HIP{3}, NON_RECO{5};
+        const int SHOWER{1}, TRACK{2}, LOW_ENERGY{3}, NON_RECO{5};
         std::vector<int> counter({0, 0, 0, 0, 0, 0});
         for (const CaloHit *pCaloHit : *pCaloHitList)
         {
             int isReconstructable{1};
             int pdg{-1};
             int hitClass{0};
+            int nuance{0};
 
             const float chargeScaled{(pCaloHit->GetInputEnergy() - chargeMin) / chargeRange};
             const float mips{pCaloHit->GetMipEquivalentEnergy()};
@@ -254,49 +261,29 @@ StatusCode DeepLearningTrackShowerIdAlgorithm::Train()
                     hitClass = NON_RECO;
                     isReconstructable = 0;
                 }
-                pdg = pMCParticle->GetParticleId();
+                pdg = std::abs(pMCParticle->GetParticleId());
                 if (isReconstructable)
                 {
+                    nuance = LArMCParticleHelper::GetNuanceCode(LArMCParticleHelper::GetParentMCParticle(pMCParticle));
                     if (IsDescendentOf(pMCParticle, 2112))
                     {
-                        hitClass = NON_RECO;
-                        //hitClass = NEUTRON;
+                        hitClass = LOW_ENERGY;
                     }
-                    else if (IsDescendentOf(pMCParticle, 111))
+                    else if (pdg == 11 || pdg == 22)
                     {
-                        hitClass = SHOWER;
-                    }
-                    else if (std::abs(pdg) == 11)
-                    {
-                        if (IsDescendentOf(pMCParticle, 13))
-                            hitClass = SHOWER;
-                            //hitClass = MICHEL;
-                        //else if (GetLeadingShowerCandidate(pMCParticle)->GetEnergy() < 0.033)
-                        //    hitClass = EM_ACTIVITY;
+                        if (pMCParticle->GetEnergy() < 0.05)
+                            hitClass = LOW_ENERGY;
                         else
                             hitClass = SHOWER;
                     }
-                    else if (std::abs(pdg) == 22)
-                    {
-                        hitClass = SHOWER;
-                        //if (GetLeadingShowerCandidate(pMCParticle)->GetEnergy() < 0.033)
-                        //    hitClass = EM_ACTIVITY;
-                        //else
-                        //    hitClass = SHOWER;
-                    }
-                    else if (std::abs(pdg) == 2212 || std::abs(pdg) > 1e9)
-                    {
-                        hitClass = HIP;
-                    }
-                    else if (std::abs(pdg) == 13 || std::abs(pdg) == 211)
-                    {
-                        hitClass = MIP;
-                    }
                     else
                     {
-                        //hitClass = TRACK;
-                        hitClass = MIP;
+                        hitClass = TRACK;
                     }
+                }
+                else
+                {
+                    continue;
                 }
             }
             catch (...)
@@ -306,6 +293,7 @@ StatusCode DeepLearningTrackShowerIdAlgorithm::Train()
 
             counter[hitClass] += 1;
 
+            featureVector.push_back(static_cast<double>(nuance));
             featureVector.push_back(static_cast<double>(pCaloHit->GetPositionVector().GetX()));
             featureVector.push_back(static_cast<double>(pCaloHit->GetPositionVector().GetZ()));
             featureVector.push_back(static_cast<double>(hitClass));
@@ -367,9 +355,14 @@ StatusCode DeepLearningTrackShowerIdAlgorithm::Infer()
     {
         pModule = torch::jit::load(m_modelFileName);
     }
+    catch (const std::exception &e)
+    {
+        std::cout << "Error loading PyTorch module: " << e.what() << std::endl;
+        return STATUS_CODE_FAILURE;
+    }
     catch (...)
     {
-        std::cout << "Error loading the PyTorch module" << std::endl;
+        std::cout << "Unknown error loading the PyTorch module" << std::endl;
         return STATUS_CODE_FAILURE;
     }
 
@@ -475,6 +468,10 @@ StatusCode DeepLearningTrackShowerIdAlgorithm::Infer()
                 const int tile = sparseMap.at(tileZ * nTilesX + tileX);
                 if (tile == i)
                 {
+                    // For testing only
+                    const MCParticle *const pMCParticle(MCParticleHelper::GetMainMCParticle(pCaloHit));
+                    // End testing
+
                     const int pixelX(std::get<2>(pixelMap));
                     const int pixelZ(std::get<3>(pixelMap));
 
@@ -512,6 +509,21 @@ StatusCode DeepLearningTrackShowerIdAlgorithm::Infer()
                                 *this, pCaloHit, metadata));
                     if (statusCode != STATUS_CODE_SUCCESS)
                         std::cout << "Cannot set calo hit meta data" << std::endl;
+                    if (isW)
+                    {   // For testing only
+                        int pdg = std::abs(pMCParticle->GetParticleId());
+                        bool isLowEnergy = pMCParticle->GetEnergy() < 0.05;
+                        bool isTrueShower = pdg == 11 || pdg == 22;
+                        if (isTrueShower && isLowEnergy)
+                            isTrueShower = false;
+                        else
+                            isLowEnergy = false;
+                        bool isClsShower = (probShower > probMIP) && (probShower > probHIP);
+                        bool isClsLowE = (probHIP > probMIP) && (probHIP > probShower);
+                        int trueIdx = isTrueShower ? 1 : (isLowEnergy ? 2 : 0);
+                        int clsIdx = isClsShower ? 1 : (isClsLowE ? 2 : 0);
+                        m_confusion[trueIdx][clsIdx]++;
+                    }
                 }
             }
         }
