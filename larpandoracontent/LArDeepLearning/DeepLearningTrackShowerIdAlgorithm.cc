@@ -35,7 +35,7 @@ DeepLearningTrackShowerIdAlgorithm::DeepLearningTrackShowerIdAlgorithm() :
     m_useTrainingMode(false),
     m_profile(false),
     m_trainingOutputFile(""),
-    m_confusion{{0., 0., 0.}, {0., 0., 0.}, {0., 0., 0.}}
+    m_confusion{{0., 0.}, {0., 0.}}
 {
     const float span(980);
     m_xMax = m_xMin + span;
@@ -58,9 +58,8 @@ DeepLearningTrackShowerIdAlgorithm::~DeepLearningTrackShowerIdAlgorithm()
         }
     }
     std::cout << "Confusion Matrix:" << std::endl;
-    std::cout << m_confusion[0][0] << "   " << m_confusion[0][1] << "   " << m_confusion[0][2] << std::endl;
-    std::cout << m_confusion[1][0] << "   " << m_confusion[1][1] << "   " << m_confusion[1][2] << std::endl;
-    std::cout << m_confusion[2][0] << "   " << m_confusion[2][1] << "   " << m_confusion[2][2] << std::endl;
+    std::cout << m_confusion[0][0] << "   " << m_confusion[0][1] << std::endl;
+    std::cout << m_confusion[1][0] << "   " << m_confusion[1][1] << std::endl;
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
@@ -229,12 +228,7 @@ StatusCode DeepLearningTrackShowerIdAlgorithm::Train()
         }
         const float chargeRange{chargeMax > chargeMin ? chargeMax - chargeMin : 1.f};
 
-        //const int TRACK{1}, SHOWER{2}, MIP{3}, HIP{4}, MICHEL{5},
-        //      EM_ACTIVITY{6}, NEUTRON{7}, NON_RECO{8};
-        //std::vector<int> counter({0, 0, 0, 0, 0, 0, 0, 0, 0});
-        //const int SHOWER{1}, MIP{2}, HIP{3}, MICHEL{4}, NON_RECO{5};
-        //const int SHOWER{1}, MIP{2}, HIP{3}, NON_RECO{5};
-        const int SHOWER{1}, TRACK{2}, LOW_ENERGY{3}, NON_RECO{5};
+        const int SHOWER{1}, TRACK{2}, NON_RECO{5};
         std::vector<int> counter({0, 0, 0, 0, 0, 0});
         for (const CaloHit *pCaloHit : *pCaloHitList)
         {
@@ -266,13 +260,13 @@ StatusCode DeepLearningTrackShowerIdAlgorithm::Train()
                 {
                     nuance = LArMCParticleHelper::GetNuanceCode(LArMCParticleHelper::GetParentMCParticle(pMCParticle));
                     if (IsDescendentOf(pMCParticle, 2112))
-                    {
-                        hitClass = LOW_ENERGY;
+                    {   // Low energy, track-like
+                        hitClass = TRACK;
                     }
                     else if (pdg == 11 || pdg == 22)
                     {
                         if (pMCParticle->GetEnergy() < 0.05)
-                            hitClass = LOW_ENERGY;
+                            hitClass = TRACK;
                         else
                             hitClass = SHOWER;
                     }
@@ -396,7 +390,6 @@ StatusCode DeepLearningTrackShowerIdAlgorithm::Infer()
         }
         const float chargeRange{chargeMax > chargeMin ? chargeMax - chargeMin : 1.f};
 
-        const float tileSize = 128.f;
         const int imageWidth = 256;
         const int imageHeight = 256;
         // Get bounds of hit region
@@ -404,127 +397,82 @@ StatusCode DeepLearningTrackShowerIdAlgorithm::Infer()
         GetHitRegion(*pCaloHitList, xMin, xMax, zMin, zMax);
         const float xRange = xMax - xMin;
         const float zRange = zMax - zMin;
-        int nTilesX = static_cast<int>(std::ceil(xRange / tileSize));
-        int nTilesZ = static_cast<int>(std::ceil(zRange / tileSize));
-        // Need to add 1 to number of tiles for ranges exactly matching tile size and for zero ranges
-        if (std::fmod(xRange, tileSize) == 0.f) ++nTilesX;
-        if (std::fmod(zRange, tileSize) == 0.f) ++nTilesZ;
 
-        std::map<int, int> sparseMap;
-        GetSparseTileMap(*pCaloHitList, xMin, zMin, tileSize, nTilesX, sparseMap);
-        const int nTiles = sparseMap.size();
-
-        CaloHitList trackHits, mipHits, hipHits, showerHits, otherHits;
-        // Populate tensor - may need to split the batch into separate single image batches
-        //torch::Tensor input = torch::zeros({nTiles, 1, imageHeight, imageWidth});
-        for (int i = 0; i < nTiles; ++i)
+        CaloHitList trackHits, showerHits, otherHits;
+        torch::Tensor input = torch::zeros({1, 1, imageHeight, imageWidth});
+        typedef std::map<const CaloHit*, std::tuple<int, int>> CaloHitToPixelMap;
+        CaloHitToPixelMap caloHitToPixelMap;
+        auto accessor = input.accessor<float, 4>();
+        for (const CaloHit *pCaloHit : *pCaloHitList)
         {
-            torch::Tensor input = torch::zeros({1, 1, imageHeight, imageWidth});
-            typedef std::map<const CaloHit*, std::tuple<int, int, int, int>> CaloHitToPixelMap;
-            CaloHitToPixelMap caloHitToPixelMap;
-            auto accessor = input.accessor<float, 4>();
-            for (const CaloHit *pCaloHit : *pCaloHitList)
-            {
-                const float x(pCaloHit->GetPositionVector().GetX());
-                const float z(pCaloHit->GetPositionVector().GetZ());
-                // Determine which tile the hit will be assigned to
-                const int tileX = static_cast<int>(std::floor((x - xMin) / tileSize));
-                const int tileZ = static_cast<int>(std::floor((z - zMin) / tileSize));
-                const int tile = sparseMap.at(tileZ * nTilesX + tileX);
-                if (tile == i)
-                {
-                    const float chargeScaled{(pCaloHit->GetInputEnergy() - chargeMin) / chargeRange};
-                    const float chargeGray{1.f + 254.f * chargeScaled};
-                    // Normalisation value from training set - should store and load this from file
-                    const float PIXEL_VALUE = (chargeGray - 0.558497428894043) / 11.920382499694824;
-                    // Determine hit position within the tile
-                    const float localX = std::fmod(x - xMin, tileSize);
-                    const float localZ = std::fmod(z - zMin, tileSize);
-                    // Determine hit pixel within the tile
-                    const int pixelX = static_cast<int>(std::floor(localX * imageHeight / tileSize));
-                    const int pixelZ = static_cast<int>(std::floor(localZ * imageWidth / tileSize));
-                    //accessor[tile][0][pixelX][pixelZ] = PIXEL_VALUE;
-                    accessor[0][0][pixelX][pixelZ] = PIXEL_VALUE;
-                    caloHitToPixelMap.insert(std::make_pair(pCaloHit, std::make_tuple(tileX, tileZ, pixelX, pixelZ)));
-                }
-            }
+            const float x(pCaloHit->GetPositionVector().GetX());
+            const float z(pCaloHit->GetPositionVector().GetZ());
+            const float chargeScaled{(pCaloHit->GetInputEnergy() - chargeMin) / chargeRange};
+            const float chargeGray{1.f + 254.f * chargeScaled};
+            // Normalisation value from training set - should store and load this from file
+            const float PIXEL_VALUE = (chargeGray - 0.0) / 255.0;
+            // Determine hit pixel within the tile
+            int pixelX = static_cast<int>(std::floor(imageWidth*(x - xMin)/xRange));
+            int pixelZ = static_cast<int>(std::floor(imageHeight*(z - zMin)/zRange));
+            pixelX = pixelX == imageWidth ? imageWidth - 1 : pixelX;
+            pixelZ = pixelZ == imageHeight ? imageHeight - 1 : pixelZ;
+            //accessor[tile][0][pixelX][pixelZ] = PIXEL_VALUE;
+            accessor[0][0][pixelZ][pixelX] = PIXEL_VALUE;
+            caloHitToPixelMap.insert(std::make_pair(pCaloHit, std::make_tuple(pixelX, pixelZ)));
+        }
 
-            // Pass as input the input Tensor containing the calo hit picture
-            std::vector<torch::jit::IValue> inputs;
-            inputs.push_back(input);
+        // Pass as input the input Tensor containing the calo hit picture
+        std::vector<torch::jit::IValue> inputs;
+        inputs.push_back(input);
 
-            // Run the input through the trained model and get the output accessor
-            at::Tensor output = pModule.forward(inputs).toTensor();
-            auto outputAccessor = output.accessor<float, 4>();
+        // Run the input through the trained model and get the output accessor
+        at::Tensor output = pModule.forward(inputs).toTensor();
+        auto outputAccessor = output.accessor<float, 4>();
 
-            for (const CaloHit *pCaloHit : *pCaloHitList)
-            {
-                auto found = caloHitToPixelMap.find(pCaloHit);
-                if (found == caloHitToPixelMap.end()) continue;
-                auto pixelMap = found->second;
-                //auto pixelMap = caloHitToPixelMap.at(pCaloHit);
-                const int tileX(std::get<0>(pixelMap));
-                const int tileZ(std::get<1>(pixelMap));
-                const int tile = sparseMap.at(tileZ * nTilesX + tileX);
-                if (tile == i)
-                {
-                    // For testing only
-                    const MCParticle *const pMCParticle(MCParticleHelper::GetMainMCParticle(pCaloHit));
-                    // End testing
+        for (const CaloHit *pCaloHit : *pCaloHitList)
+        {
+            auto found = caloHitToPixelMap.find(pCaloHit);
+            if (found == caloHitToPixelMap.end()) continue;
+            auto pixelMap = found->second;
+            // For testing only
+            const MCParticle *const pMCParticle(MCParticleHelper::GetMainMCParticle(pCaloHit));
+            // End testing
 
-                    const int pixelX(std::get<2>(pixelMap));
-                    const int pixelZ(std::get<3>(pixelMap));
+            const int pixelX(std::get<0>(pixelMap));
+            const int pixelZ(std::get<1>(pixelMap));
 
-                    object_creation::CaloHit::Metadata metadata;
-                    // Apply softmax to loss to get actual probability
-                    //float probShower = exp(outputAccessor[tile][1][pixelX][pixelZ]);
-                    //float probTrack = exp(outputAccessor[tile][2][pixelX][pixelZ]);
-                    //float probNull = exp(outputAccessor[tile][0][pixelX][pixelZ]);
-                    float probShower = exp(outputAccessor[0][1][pixelX][pixelZ]);
-                    float probMIP = exp(outputAccessor[0][2][pixelX][pixelZ]);
-                    float probHIP = exp(outputAccessor[0][3][pixelX][pixelZ]);
-                    float probNull = exp(outputAccessor[0][0][pixelX][pixelZ]);
-                    float probTrack = probMIP + probHIP;
-                    float recipSum = 1.f / (probShower + probTrack + probNull);
-                    probShower *= recipSum;
-                    probMIP *= recipSum;
-                    probHIP *= recipSum;
-                    probTrack *= recipSum;
-                    probNull *= recipSum;
-                    metadata.m_propertiesToAdd["Pshower"] = probShower;
-                    metadata.m_propertiesToAdd["Ptrack"] = probTrack;
-                    metadata.m_propertiesToAdd["Pmip"] = probMIP;
-                    metadata.m_propertiesToAdd["Phip"] = probHIP;
-                    if (probShower > probTrack && probShower > probNull)
-                        showerHits.push_back(pCaloHit);
-                    else if (probTrack > probShower && probTrack > probNull)
-                        trackHits.push_back(pCaloHit);
-                    else
-                        otherHits.push_back(pCaloHit);
-                    if (probMIP > probHIP && probMIP > probShower && probMIP > probNull)
-                        mipHits.push_back(pCaloHit);
-                    else if (probHIP > probMIP && probHIP > probShower && probHIP > probNull)
-                        hipHits.push_back(pCaloHit);
-                    const StatusCode &statusCode(PandoraContentApi::CaloHit::AlterMetadata(
-                                *this, pCaloHit, metadata));
-                    if (statusCode != STATUS_CODE_SUCCESS)
-                        std::cout << "Cannot set calo hit meta data" << std::endl;
-                    if (isW)
-                    {   // For testing only
-                        int pdg = std::abs(pMCParticle->GetParticleId());
-                        bool isLowEnergy = pMCParticle->GetEnergy() < 0.05;
-                        bool isTrueShower = pdg == 11 || pdg == 22;
-                        if (isTrueShower && isLowEnergy)
-                            isTrueShower = false;
-                        else
-                            isLowEnergy = false;
-                        bool isClsShower = (probShower > probMIP) && (probShower > probHIP);
-                        bool isClsLowE = (probHIP > probMIP) && (probHIP > probShower);
-                        int trueIdx = isTrueShower ? 1 : (isLowEnergy ? 2 : 0);
-                        int clsIdx = isClsShower ? 1 : (isClsLowE ? 2 : 0);
-                        m_confusion[trueIdx][clsIdx]++;
-                    }
-                }
+            object_creation::CaloHit::Metadata metadata;
+            // Apply softmax to loss to get actual probability
+            float probShower = exp(outputAccessor[0][1][pixelZ][pixelX]);
+            float probTrack = exp(outputAccessor[0][2][pixelZ][pixelX]);
+            float probNull = exp(outputAccessor[0][0][pixelZ][pixelX]);
+            float recipSum = 1.f / (probShower + probTrack + probNull);
+            probShower *= recipSum;
+            probTrack *= recipSum;
+            probNull *= recipSum;
+            metadata.m_propertiesToAdd["Pshower"] = probShower;
+            metadata.m_propertiesToAdd["Ptrack"] = probTrack;
+            if (probShower > probTrack && probShower > probNull)
+                showerHits.push_back(pCaloHit);
+            else if (probTrack > probShower && probTrack > probNull)
+                trackHits.push_back(pCaloHit);
+            else
+                otherHits.push_back(pCaloHit);
+            const StatusCode &statusCode(PandoraContentApi::CaloHit::AlterMetadata(
+                        *this, pCaloHit, metadata));
+            if (statusCode != STATUS_CODE_SUCCESS)
+                std::cout << "Cannot set calo hit meta data" << std::endl;
+            if (isW)
+            {   // For testing only
+                int pdg = std::abs(pMCParticle->GetParticleId());
+                bool isLowEnergy = pMCParticle->GetEnergy() < 0.05;
+                bool isTrueShower = pdg == 11 || pdg == 22;
+                if (isTrueShower && isLowEnergy)
+                    isTrueShower = false;
+                bool isClsShower = probShower > probTrack;
+                int trueIdx = isTrueShower ? 1 : 0;
+                int clsIdx = isClsShower ? 1 : 0;
+                m_confusion[trueIdx][clsIdx]++;
             }
         }
 
@@ -533,13 +481,9 @@ StatusCode DeepLearningTrackShowerIdAlgorithm::Infer()
             const std::string trackListName("TrackHits_" + listName);
             const std::string showerListName("ShowerHits_" + listName);
             const std::string otherListName("OtherHits_" + listName);
-            const std::string mipListName("MIPHits_" + listName);
-            const std::string hipListName("HIPHits_" + listName);
             PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &trackHits, trackListName, BLUE));
             PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &showerHits, showerListName, RED));
             PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &otherHits, otherListName, BLACK));
-            PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &mipHits, mipListName, BLUE));
-            PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &hipHits, hipListName, GREEN));
         }
     }
 

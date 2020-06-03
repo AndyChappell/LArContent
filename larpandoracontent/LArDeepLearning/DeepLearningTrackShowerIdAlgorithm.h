@@ -47,7 +47,7 @@ private:
     bool                      m_useTrainingMode;     ///< Training mode
     bool                      m_profile;
     std::string               m_trainingOutputFile;  ///< Output file name for training examples
-    double                    m_confusion[3][3];     ///< Confusion matrix for inference assessment
+    double                    m_confusion[2][2];     ///< Confusion matrix for inference assessment
 };
 
 } // namespace lar_content
