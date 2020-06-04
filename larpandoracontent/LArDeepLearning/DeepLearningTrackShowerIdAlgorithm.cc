@@ -395,8 +395,8 @@ StatusCode DeepLearningTrackShowerIdAlgorithm::Infer()
         // Get bounds of hit region
         float xMin{}; float xMax{}; float zMin{}; float zMax{};
         GetHitRegion(*pCaloHitList, xMin, xMax, zMin, zMax);
-        const float xRange = xMax - xMin;
-        const float zRange = zMax - zMin;
+        const float xRange = (xMax - xMin) > std::numeric_limits<float>::epsilon() ? xMax - xMin : 1.f;
+        const float zRange = (zMax - zMin) > std::numeric_limits<float>::epsilon() ? zMax - zMin : 1.f;
 
         CaloHitList trackHits, showerHits, otherHits;
         torch::Tensor input = torch::zeros({1, 1, imageHeight, imageWidth});
