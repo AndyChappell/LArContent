@@ -8,9 +8,6 @@
 
 #include "Pandora/AlgorithmHeaders.h"
 
-#include "larpandoracontent/LArHelpers/LArClusterHelper.h"
-#include "larpandoracontent/LArHelpers/LArGeometryHelper.h"
-
 #include "larpandoracontent/LArTrackShowerId/NnClusterCharacterisationAlgorithm.h"
 
 using namespace pandora;
@@ -49,11 +46,7 @@ bool NnClusterCharacterisationAlgorithm::IsClearTrack(const Cluster *const pClus
     {
         const float critical{mu - sigma};
         if (critical > 0.5f)    // Track
-        {
-            if (pCluster->GetParticleId() != MU_MINUS)
-                std::cout << "Changing cluster with " << pCluster->GetNCaloHits() << " hits to track" << std::endl;
             return true;
-        }
         else                    // Ambiguous, go with the current Id
             return pCluster->GetParticleId() == MU_MINUS;
     }
@@ -61,11 +54,7 @@ bool NnClusterCharacterisationAlgorithm::IsClearTrack(const Cluster *const pClus
     {
         const float critical{mu + sigma};
         if (critical < 0.5f)    // Track
-        {
-            if (pCluster->GetParticleId() == MU_MINUS)
-                std::cout << "Changing cluster with " << pCluster->GetNCaloHits() << " hits to shower" << std::endl;
             return false;
-        }
         else                    // Ambiguous, go with the current Id
             return pCluster->GetParticleId() == MU_MINUS;
     }
