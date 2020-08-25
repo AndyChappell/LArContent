@@ -345,6 +345,68 @@ public:
      *  @param  rhs second point
      */
     static bool SortCoordinatesByPosition(const pandora::CartesianVector &lhs, const pandora::CartesianVector &rhs);
+
+    /**
+     *  @brief  Get the points that constitute a concave hull of the cluster. From doi: 10.5220/0002080800610068
+     *
+     *  @param  pCluster the cluster whose hull should be found
+     *  @param  k the number of neighbours to consider while determining the next edge of the hull
+     *  @param  concaveHull the calo hits that consistute the concave hull
+     */
+    static void GetConcaveHull(const pandora::Cluster *const pCluster, const int k, pandora::CaloHitList &concaveHull);
+
+    /**
+     *  @brief  Determine if three points are in a counter-clockwise order.
+     *
+     *          Approach follows the method used by Bryce Boe: https://bryceboe.com/2006/10/23/line-segment-intersection-algorithm,
+     *          which essentially looks at the slopes of the lines AB and AC, if the slope of AB is less than the slope of AC, they're
+     *          counter-clockwise.
+     *
+     *          Note that this assumes the CartesianVectors are 2D in practice, with coordinates x and z specified.
+     *
+     *  @param  a the first point in the triplet
+     *  @param  b the second point in the triplet
+     *  @param  c the third point in the triplet
+     *
+     *  @return true if abc is in counter-clockwise order, false otherwise (inc. colinear and coincident points)
+     */
+    static bool IsCounterClockwise(const pandora::CartesianVector &a, const pandora::CartesianVector &b, const pandora::CartesianVector &c);
+
+    /**
+     *  @brief  Determine if the line segments AB and CD intersect.
+     *
+     *          Approach follows the method used by Bryce Boe: https://bryceboe.com/2006/10/23/line-segment-intersection-algorithm,
+     *          which uses the fact that the segments intersect if points A and B are separated by line segment CD and points C and D are
+     *          separated by line segment AB. This in turn implies that the triangles ACD and BCD have opposite orientations (CW v CCW), as
+     *          do the triangles ABC and ABD.
+     *
+     *          Note that this assumes the CartesianVectors are 2D in practice, with coordinates x and z specified.
+     *
+     *  @param  a the first point in line segment AB
+     *  @param  b the second point in line segment AB
+     *  @param  c the first point in line segment CD
+     *  @param  d the second point in line segment CD
+     *
+     *  @return true if line segment AB intersects line segment CD, false otherwise (inc. colinear and coincident points)
+     */
+    static bool Intersects(const pandora::CartesianVector &a, const pandora::CartesianVector &b, const pandora::CartesianVector &c,
+        const pandora::CartesianVector &d);
+
+    /**
+     *  @brief  Determine if the points A, B and C are colinear.
+     *
+     *          Compute area of the triangle formed via determinant, if it's zero, they're colinear,
+     *
+     *          Note that this assumes the CartesianVectors are 2D in practice, with coordinates x and z specified.
+     *
+     *  @param  a the first point
+     *  @param  b the second point
+     *  @param  c the third point
+     *
+     *  @return true if A, B and C are colinear, false otherwise
+     */
+    static bool Colinear(const pandora::CartesianVector &a, const pandora::CartesianVector &b, const pandora::CartesianVector &c);
+
 };
 
 } // namespace lar_content

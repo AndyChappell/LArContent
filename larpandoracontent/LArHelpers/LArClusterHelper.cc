@@ -10,7 +10,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <deque>
 #include <limits>
+#include <list>
 
 using namespace pandora;
 
@@ -726,6 +728,219 @@ bool LArClusterHelper::SortCoordinatesByPosition(const CartesianVector &lhs, con
         return (deltaPosition.GetX() > std::numeric_limits<float>::epsilon());
 
     return (deltaPosition.GetY() > std::numeric_limits<float>::epsilon());
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+void LArClusterHelper::GetConcaveHull(const Cluster *const pCluster, const int k, CaloHitList &concaveHull)
+{
+    const OrderedCaloHitList &caloHits{pCluster->GetOrderedCaloHitList()};
+    int nPoints{0};
+    for (auto iter = caloHits.begin(); iter != caloHits.end(); ++iter)
+        nPoints += iter->second->size();
+    if (nPoints <= 3)
+    {   // Strictly < 3 points doesn't form a concave hull, but we still want the points anyway
+        for (auto iter = caloHits.begin(); iter != caloHits.end(); ++iter)
+            for (auto hitIter = iter->second->begin(); hitIter != iter->second->end(); ++hitIter)
+                concaveHull.push_back(*hitIter);
+        std::cout << "Found trivial hull. Hits: " << concaveHull.size() << std::endl;
+        return;
+    }
+    // In general k should be at least 3, but if there aren't at least k neighbours left in the dataset, set it to the number of neighbours
+    const int kk{k >= 3 ?
+        std::min(nPoints - 1, k) :
+        std::min(nPoints - 1, 3)};
+    // Set up the input hits - want them sorted, but then want a deque for efficient insertion/removal at front
+    CaloHitList inputCaloHitList;
+    for (auto iter = caloHits.begin(); iter != caloHits.end(); ++iter)
+        for (auto hitIter = iter->second->begin(); hitIter != iter->second->end(); ++hitIter)
+            inputCaloHitList.push_back(*hitIter);
+    inputCaloHitList.sort(LArClusterHelper::SortHitsByPosition);
+    std::deque<const CaloHit*> inputCaloHitQueue;
+    for (const CaloHit *pCaloHit : inputCaloHitList)
+        inputCaloHitQueue.push_back(pCaloHit);
+
+    // Initialise the hull with the first hit (lowest z) and remove from the input queue
+    const CaloHit *pFirstHit{inputCaloHitQueue.front()};
+    const CaloHit *pCurrentHit{pFirstHit};
+    inputCaloHitQueue.pop_front();
+    concaveHull.push_back(pFirstHit);
+    float xmin{pFirstHit->GetPositionVector().GetX()}, zmin{pFirstHit->GetPositionVector().GetZ()};
+
+    int step{2};
+    CartesianVector baseline{-1.f, 0.f, 0.f};
+    typedef std::map<float, const CaloHit*, std::greater<float>> DistanceNeighbourMap;
+    DistanceNeighbourMap distanceNeighbourMap;
+    while ((pCurrentHit != pFirstHit || step == 2) && !inputCaloHitQueue.empty())
+    {
+        if (step == 5)
+        {   // Need to add the starting point back to the candidate list to be able to close the hull, but must wait until 4 points have
+            // been added or you trivially end up with a triangle
+            inputCaloHitQueue.push_back(pFirstHit);
+        }
+        // Find the kk nearest neighbours to the current hit
+        distanceNeighbourMap.clear();
+        for (const CaloHit *pCaloHit : inputCaloHitQueue)
+        {
+            if (pCurrentHit == pCaloHit)
+                continue;
+            const float delta{(pCurrentHit->GetPositionVector() - pCaloHit->GetPositionVector()).GetMagnitudeSquared()};
+            const int size{static_cast<int>(distanceNeighbourMap.size())};
+            if (size < kk)
+            {   // Don't yet have kk nearest neighbours, so just add it to the map
+                distanceNeighbourMap.emplace(delta, pCaloHit);
+            }
+            else
+            {   // Already have kk neighbours, check if the current hit is closer
+                // Map is automatically sorted by descending distance, so only need to check the first element
+                auto iter = distanceNeighbourMap.begin();
+                if (delta < iter->first)
+                {
+                    distanceNeighbourMap.erase(iter);
+                    distanceNeighbourMap.emplace(delta, pCaloHit);
+                }
+            }
+        }
+        if (step < 5 && distanceNeighbourMap.size() < kk)
+        {   // Can get some edge cases where the first hit hasn't been added back, but there are too few neighbours
+            const float delta{(pCurrentHit->GetPositionVector() - pFirstHit->GetPositionVector()).GetMagnitudeSquared()};
+            distanceNeighbourMap.emplace(delta, pFirstHit);
+        }
+
+        // Calculated the clockwise angle between most recent edge and each candidate edge (default to horizontal baseline if current
+        // hull has less than two hits
+        DistanceNeighbourMap angleNeighbourMap;
+        for (auto iter = distanceNeighbourMap.begin(); iter != distanceNeighbourMap.end(); ++iter)
+        {
+            // Order of vertices in baseline and new edge matters for a clockwise result
+            // +z
+            // ^
+            // |
+            //  ---> +x
+            const CartesianVector &proposedVec{iter->second->GetPositionVector() - pCurrentHit->GetPositionVector()};
+            float dot2d{proposedVec.GetX() * baseline.GetX() + proposedVec.GetZ() * baseline.GetZ()};
+            float det2d{proposedVec.GetX() * baseline.GetZ() - proposedVec.GetZ() * baseline.GetX()};
+            // Clockwise angle can be computed from atan2 by using fact that dot product is proportional to cosine, while determinant
+            // is proportional to sine. Range is [-180, 180], so add 360 if < 0.
+            float angle{std::atan2(det2d, dot2d)};
+            if (angle < 0.f)
+                angle += static_cast<float>(2 * M_PI);
+            angleNeighbourMap.emplace(angle, iter->second);
+        }
+        if (angleNeighbourMap.empty())
+            break;
+        bool intersects{true};
+        const CaloHit *pCandidate{nullptr};
+        for (auto iter = angleNeighbourMap.begin(); iter != angleNeighbourMap.end() && intersects; ++iter)
+        {   // Pick the first candidate that doesn't result in an edge that intersects any existing edges
+            pCandidate = iter->second;
+            auto start{pCandidate == pFirstHit ? std::next(concaveHull.begin()) : concaveHull.begin()};
+            auto finish{std::prev(concaveHull.end())};
+
+            intersects = false;
+            for (auto hullIter = start; hullIter != finish && hullIter != concaveHull.end(); ++hullIter)
+            {
+                // Get the edge associated with the current hull vertex
+                const CaloHit *h0{*hullIter};
+                const CaloHit *h1{*std::next(hullIter)};
+                if (h1 == pCurrentHit || h0 == pCurrentHit)
+                    continue;
+                intersects = LArClusterHelper::Intersects(h0->GetPositionVector(), h1->GetPositionVector(), pCurrentHit->GetPositionVector(),
+                    pCandidate->GetPositionVector());
+
+                if (intersects)
+                    break;
+            }
+        }
+        if (intersects)
+        {   // No solution for current value of k, try again with a larger valuea
+            concaveHull.clear();
+            GetConcaveHull(pCluster, 2 * kk - 1, concaveHull);
+            return;
+        }
+        // Update the baseline vector as the edge from the candidate hit to the previously added hit
+        baseline = pCurrentHit->GetPositionVector() - pCandidate->GetPositionVector();
+        pCurrentHit = pCandidate;
+        concaveHull.push_back(pCurrentHit);
+        const CartesianVector &hitPos{pCurrentHit->GetPositionVector()};
+
+        if (xmin > hitPos.GetX())
+            xmin = hitPos.GetX();
+        if (zmin > hitPos.GetZ())
+            zmin = hitPos.GetZ();
+
+        // Remove the hit added to the hull from the list of hits to consider
+        auto iter = std::find(inputCaloHitQueue.begin(), inputCaloHitQueue.end(), pCurrentHit);
+        inputCaloHitQueue.erase(iter);
+        ++step;
+    }
+    bool fullyContained{true};
+    const CartesianVector externalPos{xmin - 1.f, 0.f, zmin - 1.f};
+    // Check that all hits reside within the hull - Jordan Curve Theorem: Define a ray starting outside the hull (simple bounding box is
+    // sufficient to determine the start point) and terminating at a hit under consideration, an odd number of edge crossings implies the
+    // hit is inside.
+    for (const CaloHit *pCaloHit : inputCaloHitQueue)
+    {
+        int crossings{0};
+        const CartesianVector &hitPos{pCaloHit->GetPositionVector()};
+        auto start{concaveHull.begin()};
+        auto finish{std::prev(concaveHull.end())};
+        for (auto hullIter = start; hullIter != finish && hullIter != concaveHull.end(); ++hullIter)
+        {
+            // Get the edge associated with the current hull vertex
+            const CaloHit *h0{*hullIter};
+            const CaloHit *h1{*std::next(hullIter)};
+
+            if (LArClusterHelper::Intersects(h0->GetPositionVector(), h1->GetPositionVector(), externalPos, hitPos))
+                ++crossings;
+        }
+        // Get the edge connecting the first and last points in the hull to ensure the surface is closed
+        if (!(crossings % 2))
+        {
+            fullyContained = false;
+            break;
+        }
+    }
+    if (!fullyContained)
+    {   // Hull does not contain all hits, try again with a larger k
+        concaveHull.clear();
+        GetConcaveHull(pCluster, 2 * kk - 1, concaveHull);
+    }
+    std::cout << "Found hull(" << kk << "). Reduced hits from " << nPoints << " to " << concaveHull.size() << std::endl;
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+bool LArClusterHelper::IsCounterClockwise(const CartesianVector &a, const CartesianVector &b, const CartesianVector &c)
+{
+    return (c.GetZ()- a.GetZ())*(b.GetX() - a.GetX()) > (b.GetZ() - a.GetZ())*(c.GetX() - a.GetX());
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+bool LArClusterHelper::Intersects(const CartesianVector &a, const CartesianVector &b, const CartesianVector &c, const CartesianVector &d)
+{
+    bool acdCCW{LArClusterHelper::IsCounterClockwise(a, c, d)};
+    bool bcdCCW{LArClusterHelper::IsCounterClockwise(b, c, d)};
+    bool abcCCW{LArClusterHelper::IsCounterClockwise(a, b, c)};
+    bool abdCCW{LArClusterHelper::IsCounterClockwise(a, b, d)};
+    bool diff1{acdCCW != bcdCCW};
+    bool diff2{abcCCW != abdCCW};
+    if (diff1 && diff2)
+        return true;
+    else if (diff1 || diff2)
+        return LArClusterHelper::Colinear(a, b, d);
+    else
+        return false;
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+bool LArClusterHelper::Colinear(const CartesianVector &a, const CartesianVector &b, const CartesianVector &c)
+{
+    const float dz1{b.GetZ() - c.GetZ()}, dz2{c.GetZ() - b.GetZ()}, dz3{a.GetZ() - b.GetZ()};
+    const float area{a.GetX()*dz1 + b.GetX()*dz2 + c.GetX()*dz3};
+    return std::fabs(area) < std::numeric_limits<float>::epsilon();
 }
 
 } // namespace lar_content

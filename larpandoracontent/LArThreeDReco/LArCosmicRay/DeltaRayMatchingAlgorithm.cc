@@ -249,8 +249,31 @@ void DeltaRayMatchingAlgorithm::OneViewMatching(ClusterLengthMap &clusterLengthM
 void DeltaRayMatchingAlgorithm::ThreeViewMatching(const ClusterVector &clusters1, const ClusterVector &clusters2, const ClusterVector &clusters3,
     ClusterLengthMap &clusterLengthMap, PfoLengthMap &pfoLengthMap, ParticleList &particleList) const
 {
+    PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1.f, 1.f, 1.f));
     if (clusters1.empty() || clusters2.empty() || clusters3.empty())
         return;
+
+    Color color{GREEN};
+    for (const Cluster *const pCluster : clusters3)
+    {
+        const OrderedCaloHitList &orderedCaloHitList(pCluster->GetOrderedCaloHitList());
+        CaloHitList thisCluster;
+        CaloHitList thisHull;
+        for (OrderedCaloHitList::const_iterator iter = orderedCaloHitList.begin(); iter != orderedCaloHitList.end(); ++iter)
+        {
+            const CaloHitList *pCaloHitList{iter->second};
+            for (const CaloHit *pCaloHit : *pCaloHitList)
+                thisCluster.push_back(pCaloHit);
+        }
+        PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &thisCluster, "ClusterHits", color));
+        std::cout << "Cluster: " << thisCluster.size() << std::endl;
+        LArClusterHelper::GetConcaveHull(pCluster, 3, thisHull);
+        PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &thisHull, "ConcaveHull", RED));
+        color = static_cast<Color>(color + 1);
+        if (color == GRAY)
+            color = GREEN;
+    }
+    PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
 
     for (const Cluster *const pCluster1 : clusters1)
     {
