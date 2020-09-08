@@ -738,12 +738,12 @@ void LArClusterHelper::GetConcaveHull(const Cluster *const pCluster, const int k
     int nPoints{0};
     for (auto iter = caloHits.begin(); iter != caloHits.end(); ++iter)
         nPoints += iter->second->size();
-    if (nPoints <= 3)
+    if (nPoints <= 10)
     {   // Strictly < 3 points doesn't form a concave hull, but we still want the points anyway
+        // 10 hits or fewer is rarely wortwhile to compute, just keep everything
         for (auto iter = caloHits.begin(); iter != caloHits.end(); ++iter)
             for (auto hitIter = iter->second->begin(); hitIter != iter->second->end(); ++hitIter)
                 concaveHull.push_back(*hitIter);
-        std::cout << "Found trivial hull. Hits: " << concaveHull.size() << std::endl;
         return;
     }
     // In general k should be at least 3, but if there aren't at least k neighbours left in the dataset, set it to the number of neighbours
@@ -766,6 +766,7 @@ void LArClusterHelper::GetConcaveHull(const Cluster *const pCluster, const int k
     inputCaloHitQueue.pop_front();
     concaveHull.push_back(pFirstHit);
     float xmin{pFirstHit->GetPositionVector().GetX()}, zmin{pFirstHit->GetPositionVector().GetZ()};
+    float xmax{xmin}, zmax{zmin};
 
     int step{2};
     CartesianVector baseline{-1.f, 0.f, 0.f};
@@ -868,6 +869,10 @@ void LArClusterHelper::GetConcaveHull(const Cluster *const pCluster, const int k
             xmin = hitPos.GetX();
         if (zmin > hitPos.GetZ())
             zmin = hitPos.GetZ();
+        if (xmax < hitPos.GetX())
+            xmax = hitPos.GetX();
+        if (zmax < hitPos.GetZ())
+            zmax = hitPos.GetZ();
 
         // Remove the hit added to the hull from the list of hits to consider
         auto iter = std::find(inputCaloHitQueue.begin(), inputCaloHitQueue.end(), pCurrentHit);
@@ -875,13 +880,16 @@ void LArClusterHelper::GetConcaveHull(const Cluster *const pCluster, const int k
         ++step;
     }
     bool fullyContained{true};
-    const CartesianVector externalPos{xmin - 1.f, 0.f, zmin - 1.f};
+    const CartesianVector externalPosMin{xmin - 1.f, 0.f, zmin - 1.f};
+    const CartesianVector externalPosMax{xmax + 1.f, 0.f, zmax + 1.f};
     // Check that all hits reside within the hull - Jordan Curve Theorem: Define a ray starting outside the hull (simple bounding box is
     // sufficient to determine the start point) and terminating at a hit under consideration, an odd number of edge crossings implies the
-    // hit is inside.
+    // hit is inside. Complication caused by frequent colinarity of hits, so need to check from different sides of the hull. If at least
+    // one of these checks yields an odd number of crossings, the hit is inside.
     for (const CaloHit *pCaloHit : inputCaloHitQueue)
     {
-        int crossings{0};
+        int crossingsMin{0};
+        int crossingsMax{0};
         const CartesianVector &hitPos{pCaloHit->GetPositionVector()};
         auto start{concaveHull.begin()};
         auto finish{std::prev(concaveHull.end())};
@@ -891,22 +899,25 @@ void LArClusterHelper::GetConcaveHull(const Cluster *const pCluster, const int k
             const CaloHit *h0{*hullIter};
             const CaloHit *h1{*std::next(hullIter)};
 
-            if (LArClusterHelper::Intersects(h0->GetPositionVector(), h1->GetPositionVector(), externalPos, hitPos))
-                ++crossings;
+            if (LArClusterHelper::Intersects(h0->GetPositionVector(), h1->GetPositionVector(), externalPosMin, hitPos, false))
+                ++crossingsMin;
+            if (LArClusterHelper::Intersects(h0->GetPositionVector(), h1->GetPositionVector(), externalPosMax, hitPos, false))
+                ++crossingsMax;
         }
         // Get the edge connecting the first and last points in the hull to ensure the surface is closed
-        if (!(crossings % 2))
+        if (!(crossingsMin % 2 || crossingsMax % 2))
         {
             fullyContained = false;
             break;
         }
     }
-    if (!fullyContained)
+    if (!fullyContained && (kk + 1 < inputCaloHitList.size()))
     {   // Hull does not contain all hits, try again with a larger k
         concaveHull.clear();
         GetConcaveHull(pCluster, 2 * kk - 1, concaveHull);
     }
-    std::cout << "Found hull(" << kk << "). Reduced hits from " << nPoints << " to " << concaveHull.size() << std::endl;
+    if (concaveHull.front() == concaveHull.back())
+        concaveHull.pop_back();
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
@@ -918,7 +929,8 @@ bool LArClusterHelper::IsCounterClockwise(const CartesianVector &a, const Cartes
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-bool LArClusterHelper::Intersects(const CartesianVector &a, const CartesianVector &b, const CartesianVector &c, const CartesianVector &d)
+bool LArClusterHelper::Intersects(const CartesianVector &a, const CartesianVector &b, const CartesianVector &c, const CartesianVector &d,
+    const bool allowColinear)
 {
     bool acdCCW{LArClusterHelper::IsCounterClockwise(a, c, d)};
     bool bcdCCW{LArClusterHelper::IsCounterClockwise(b, c, d)};
@@ -929,7 +941,7 @@ bool LArClusterHelper::Intersects(const CartesianVector &a, const CartesianVecto
     if (diff1 && diff2)
         return true;
     else if (diff1 || diff2)
-        return LArClusterHelper::Colinear(a, b, d);
+        return allowColinear && LArClusterHelper::Colinear(a, b, d);
     else
         return false;
 }

@@ -386,11 +386,12 @@ public:
      *  @param  b the second point in line segment AB
      *  @param  c the first point in line segment CD
      *  @param  d the second point in line segment CD
+     *  @param  allowColinear If true, colinear points count as intersection, otherwise they don't
      *
      *  @return true if line segment AB intersects line segment CD, false otherwise (inc. colinear and coincident points)
      */
     static bool Intersects(const pandora::CartesianVector &a, const pandora::CartesianVector &b, const pandora::CartesianVector &c,
-        const pandora::CartesianVector &d);
+        const pandora::CartesianVector &d, const bool allowColinear = true);
 
     /**
      *  @brief  Determine if the points A, B and C are colinear.
