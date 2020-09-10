@@ -412,9 +412,10 @@ public:
      *  @param  nuSliceHypotheses the parent pfos representing the neutrino outcome for each slice
      *  @param  crSliceHypotheses the parent pfos representing the cosmic-ray muon outcome for each slice
      *  @param  sliceNuPfos to receive the list of selected pfos
+     *  @param  pfoToProbabilityMap the map of Pfos to probability they are cosmic-ray
      */
     virtual void SelectOutputPfos(const pandora::Algorithm *const pAlgorithm, const SliceHypotheses &nuSliceHypotheses,
-        const SliceHypotheses &crSliceHypotheses, pandora::PfoList &selectedPfos) = 0;
+        const SliceHypotheses &crSliceHypotheses, pandora::PfoList &selectedPfos, const PfoToFloatMap &pfoToProbabilityMap) = 0;
 };
 
 //------------------------------------------------------------------------------------------------------------------------------------------

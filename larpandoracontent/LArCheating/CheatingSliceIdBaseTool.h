@@ -22,7 +22,7 @@ class CheatingSliceIdBaseTool : public SliceIdBaseTool
 {
 public:
     virtual void SelectOutputPfos(const pandora::Algorithm *const pAlgorithm, const SliceHypotheses &nuSliceHypotheses,
-        const SliceHypotheses &crSliceHypotheses, pandora::PfoList &selectedPfos) = 0;
+        const SliceHypotheses &crSliceHypotheses, pandora::PfoList &selectedPfos, const PfoToFloatMap &pfoToProbabilityMap) = 0;
 
     /**
      *  @brief  Get the target particle weight in a list of pfos

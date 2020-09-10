@@ -22,7 +22,7 @@ SimpleNeutrinoIdTool::SimpleNeutrinoIdTool() : m_selectAllNeutrinos(true), m_sel
 //------------------------------------------------------------------------------------------------------------------------------------------
 
 void SimpleNeutrinoIdTool::SelectOutputPfos(const Algorithm *const pAlgorithm, const SliceHypotheses &nuSliceHypotheses,
-    const SliceHypotheses &crSliceHypotheses, PfoList &selectedPfos)
+    const SliceHypotheses &crSliceHypotheses, PfoList &selectedPfos, const PfoToFloatMap & /*pfoToProbabilityMap*/)
 {
     if (nuSliceHypotheses.size() != crSliceHypotheses.size())
         throw StatusCodeException(STATUS_CODE_INVALID_PARAMETER);

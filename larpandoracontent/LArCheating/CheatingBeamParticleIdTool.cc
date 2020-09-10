@@ -24,8 +24,8 @@ CheatingBeamParticleIdTool::CheatingBeamParticleIdTool() : m_minWeightFraction(0
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-void CheatingBeamParticleIdTool::SelectOutputPfos(const pandora::Algorithm *const /*pAlgorithm*/,
-    const SliceHypotheses &testBeamSliceHypotheses, const SliceHypotheses &crSliceHypotheses, PfoList &selectedPfos)
+void CheatingBeamParticleIdTool::SelectOutputPfos(const pandora::Algorithm *const /*pAlgorithm*/, const SliceHypotheses &testBeamSliceHypotheses,
+    const SliceHypotheses &crSliceHypotheses, PfoList &selectedPfos, const PfoToFloatMap & /*pfoToProbabilityMap*/)
 {
     if (testBeamSliceHypotheses.size() != crSliceHypotheses.size())
         throw StatusCodeException(STATUS_CODE_INVALID_PARAMETER);
