@@ -48,6 +48,15 @@ public:
     static void GetOrderedPfoVector(const LArMCParticleHelper::PfoContributionMap &pfoToReconstructable2DHitsMap, pandora::PfoVector &orderedPfoVector);
 
     /**
+     *  @brief  Order input clusters by their number of hits.
+     *
+     *  @param  clusterToReconstructable2DHitsMap the input vector of mappings from clusters to their reconstructable hits
+     *  @param  orderedClusterVector the output vector of ordered clusters
+     */
+    static void GetOrderedClusterVector(const LArMCParticleHelper::ClusterContributionMap &clusterToReconstructable2DHitsMap,
+        pandora::ClusterVector &orderedClusterVector);
+
+    /**
      *  @brief  Print details of selected MCParticles to the terminal in a table.
      *
      *  @param  selectedMCParticleToGoodHitsMap the input mapping from selected reconstructable MCParticles to their good hits

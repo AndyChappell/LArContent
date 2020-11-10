@@ -14,6 +14,7 @@
 
 #include "Helpers/MCParticleHelper.h"
 
+#include "larpandoracontent/LArHelpers/LArClusterHelper.h"
 #include "larpandoracontent/LArHelpers/LArMonitoringHelper.h"
 #include "larpandoracontent/LArHelpers/LArPfoHelper.h"
 #include "larpandoracontent/LArHelpers/LArFormattingHelper.h"
@@ -113,6 +114,37 @@ void LArMonitoringHelper::GetOrderedPfoVector(const LArMCParticleHelper::PfoCont
     // Check that all elements of the vector are unique
     const unsigned int nPfos(orderedPfoVector.size());
     if (std::distance(orderedPfoVector.begin(), std::unique(orderedPfoVector.begin(), orderedPfoVector.end())) != nPfos)
+        throw StatusCodeException(STATUS_CODE_ALREADY_PRESENT);
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+void LArMonitoringHelper::GetOrderedClusterVector(const LArMCParticleHelper::ClusterContributionMap &clusterToReconstructable2DHitsMap,
+    pandora::ClusterVector &orderedClusterVector)
+{
+    // Copy map contents to vector it can be sorted
+    std::vector<LArMCParticleHelper::ClusterCaloHitListPair> clusterToReconstructable2DHitsVect;
+    std::copy(clusterToReconstructable2DHitsMap.begin(), clusterToReconstructable2DHitsMap.end(),
+        std::back_inserter(clusterToReconstructable2DHitsVect));
+
+    // Sort by number of hits descending
+    std::sort(clusterToReconstructable2DHitsVect.begin(), clusterToReconstructable2DHitsVect.end(),
+        [] (const LArMCParticleHelper::ClusterCaloHitListPair &a, const LArMCParticleHelper::ClusterCaloHitListPair &b) -> bool
+        {
+            // Sort by number of true hits
+            if (a.second.size() != b.second.size())
+                return (a.second.size() > b.second.size());
+
+            // Default to normal cluster sorting
+            return LArClusterHelper::SortByNHits(a.first, b.first);
+        });
+
+    for (const LArMCParticleHelper::ClusterCaloHitListPair &clusterCaloHitPair : clusterToReconstructable2DHitsVect)
+        orderedClusterVector.push_back(clusterCaloHitPair.first);
+
+    // Check that all elements of the vector are unique
+    const unsigned int nClusters(orderedClusterVector.size());
+    if (std::distance(orderedClusterVector.begin(), std::unique(orderedClusterVector.begin(), orderedClusterVector.end())) != nClusters)
         throw StatusCodeException(STATUS_CODE_ALREADY_PRESENT);
 }
 

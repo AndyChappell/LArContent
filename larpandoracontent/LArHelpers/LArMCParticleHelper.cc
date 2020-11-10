@@ -630,6 +630,30 @@ void LArMCParticleHelper::GetTestBeamHierarchyPfoToReconstructable2DHitsMap(cons
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
+void LArMCParticleHelper::GetClusterToReconstructable2DHitsMap(const pandora::ClusterList &clusterList, const MCContributionMap &selectedMCToHitsMap,
+    ClusterContributionMap &clusterToReconstructable2DHitsMap)
+{
+    LArMCParticleHelper::GetClusterToReconstructable2DHitsMap(clusterList, MCContributionMapVector({selectedMCToHitsMap}),
+        clusterToReconstructable2DHitsMap);
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+void LArMCParticleHelper::GetClusterToReconstructable2DHitsMap(const pandora::ClusterList &clusterList,
+    const MCContributionMapVector &selectedMCToHitsMaps, ClusterContributionMap &clusterToReconstructable2DHitsMap)
+{
+    for (const Cluster *const pCluster : clusterList)
+    {
+        CaloHitList caloHitList;
+        LArMCParticleHelper::CollectReconstructable2DHits(pCluster, selectedMCToHitsMaps, caloHitList);
+
+        if (!clusterToReconstructable2DHitsMap.insert(ClusterContributionMap::value_type(pCluster, caloHitList)).second)
+            throw StatusCodeException(STATUS_CODE_ALREADY_PRESENT);
+    }
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
 void LArMCParticleHelper::GetPfoMCParticleHitSharingMaps(const PfoContributionMap &pfoToReconstructable2DHitsMap, const MCContributionMapVector &selectedMCParticleToHitsMaps,
     PfoToMCParticleHitSharingMap &pfoToMCParticleHitSharingMap, MCParticleToPfoHitSharingMap &mcParticleToPfoHitSharingMap)
 {
@@ -684,6 +708,23 @@ void LArMCParticleHelper::GetPfoMCParticleHitSharingMaps(const PfoContributionMa
         }
     }
 }
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+CaloHitList LArMCParticleHelper::GetSharedHits(const CaloHitList &hitListA, const CaloHitList &hitListB)
+{
+    CaloHitList sharedHits;
+
+    for (const CaloHit *const pCaloHit : hitListA)
+    {
+        if (std::find(hitListB.begin(), hitListB.end(), pCaloHit) != hitListB.end())
+            sharedHits.push_back(pCaloHit);
+    }
+
+    return sharedHits;
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
 
 // private
 //------------------------------------------------------------------------------------------------------------------------------------------
@@ -757,6 +798,39 @@ void LArMCParticleHelper::CollectReconstructable2DHits(const PfoList &pfoList, c
         for (const MCContributionMap &mcParticleToHitsMap : selectedMCParticleToHitsMaps)
         {
             // ATTN This map is unordered, but this does not impact search for specific target hit
+            for (const MCContributionMap::value_type &mapEntry : mcParticleToHitsMap)
+            {
+                if (std::find(mapEntry.second.begin(), mapEntry.second.end(), pCaloHit) != mapEntry.second.end())
+                {
+                    isTargetHit = true;
+                    break;
+                }
+            }
+            if (isTargetHit) break;
+        }
+
+        if (isTargetHit)
+            reconstructableCaloHitList2D.push_back(pCaloHit);
+    }
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+void LArMCParticleHelper::CollectReconstructable2DHits(const pandora::Cluster *const pCluster, const MCContributionMapVector &selectedMCToHitsMaps,
+    pandora::CaloHitList &reconstructableCaloHitList2D)
+{
+    const CaloHitList &isolatedCaloHitList{pCluster->GetIsolatedCaloHitList()};
+    CaloHitList caloHitList;
+    pCluster->GetOrderedCaloHitList().FillCaloHitList(caloHitList);
+    for (const CaloHit *pCaloHit : isolatedCaloHitList)
+        caloHitList.push_back(pCaloHit);
+
+    // Filter for only reconstructable hits
+    for (const CaloHit *const pCaloHit : caloHitList)
+    {
+        bool isTargetHit{false};
+        for (const MCContributionMap &mcParticleToHitsMap : selectedMCToHitsMaps)
+        {   // ATTN This map is unordered, but this does not impact search for specific target hit
             for (const MCContributionMap::value_type &mapEntry : mcParticleToHitsMap)
             {
                 if (std::find(mapEntry.second.begin(), mapEntry.second.end(), pCaloHit) != mapEntry.second.end())
@@ -995,21 +1069,5 @@ bool LArMCParticleHelper::PassMCParticleChecks(const MCParticle *const pOriginal
 
     return false;
 }
-
-//------------------------------------------------------------------------------------------------------------------------------------------
-
-CaloHitList LArMCParticleHelper::GetSharedHits(const CaloHitList &hitListA, const CaloHitList &hitListB)
-{
-    CaloHitList sharedHits;
-
-    for (const CaloHit *const pCaloHit : hitListA)
-    {
-        if (std::find(hitListB.begin(), hitListB.end(), pCaloHit) != hitListB.end())
-            sharedHits.push_back(pCaloHit);
-    }
-
-    return sharedHits;
-}
-
 
 } // namespace lar_content
