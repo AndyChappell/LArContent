@@ -13,6 +13,7 @@
 #include "Pandora/Pandora.h"
 
 #include "larpandoradlcontent/LArControlFlow/DLMasterAlgorithm.h"
+#include "larpandoradlcontent/LArMonitoring/DlClusterValidationAlgorithm.h"
 #include "larpandoradlcontent/LArMonitoring/DlHitValidationAlgorithm.h"
 #include "larpandoradlcontent/LArTrackShowerId/DlHitTrackShowerIdAlgorithm.h"
 #include "larpandoradlcontent/LArTrackShowerId/DlPfoCharacterisationAlgorithm.h"
@@ -21,6 +22,7 @@
 
 #define LAR_DL_ALGORITHM_LIST(d)                                                                                                   \
     d("LArDLMaster",                            DLMasterAlgorithm)                                                                 \
+    d("LArDLClusterValidation",                 DlClusterValidationAlgorithm)                                                      \
     d("LArDLHitValidation",                     DlHitValidationAlgorithm)                                                          \
     d("LArDLHitTrackShowerId",                  DlHitTrackShowerIdAlgorithm)                                                       \
     d("LArDLPfoCharacterisation",               DlPfoCharacterisationAlgorithm)
