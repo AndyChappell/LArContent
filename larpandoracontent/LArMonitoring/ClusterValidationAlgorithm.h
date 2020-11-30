@@ -69,7 +69,7 @@ private:
 
     std::string                                             m_caloHitListName;              ///< Name of input calo hit list
     std::string                                             m_mcParticleListName;           ///< Name of input MC particle list
-    pandora::StringVector                                   m_clusterListNames;             ///< Names of input cluster lists
+    std::string                                             m_clusterListName;              ///< Name of input cluster list
 
     bool                                                    m_writeToTree;                  ///< Whether to write validation details to tree
     std::string                                             m_treeName;                     ///< Name of output tree

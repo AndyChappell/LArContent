@@ -17,6 +17,8 @@ namespace lar_content
 {
 
 ClusterValidationAlgorithm::ClusterValidationAlgorithm() :
+    m_caloHitListName("CaloHitList2D"),
+    m_mcParticleListName("Input"),
     m_writeToTree(false),
     m_eventNumber(-1),
     m_criteria(LArMCParticleHelper::IsBeamNeutrinoFinalState)
@@ -31,10 +33,7 @@ ClusterValidationAlgorithm::~ClusterValidationAlgorithm()
     {
         try
         {
-            std::string clusterTreeName{m_treeName + "_cluster"};
-            std::string mcTreeName{m_treeName + "_mc"};
-            PANDORA_MONITORING_API(SaveTree(this->GetPandora(), mcTreeName.c_str(), m_fileName.c_str(), "UPDATE"));
-            PANDORA_MONITORING_API(SaveTree(this->GetPandora(), clusterTreeName.c_str(), m_fileName.c_str(), "UPDATE"));
+            PANDORA_MONITORING_API(SaveTree(this->GetPandora(), m_treeName.c_str(), m_fileName.c_str(), "UPDATE"));
         }
         catch (const StatusCodeException &)
         {
@@ -59,17 +58,18 @@ StatusCode ClusterValidationAlgorithm::Run()
     LArMCParticleHelper::MCContributionMap allMCToHitsMap;
     this->GetMCToHitsMaps(pMCParticleList, pCaloHitList, targetMCToHitsMap, allMCToHitsMap);
 
-    LArMCParticleHelper::ClusterContributionMap clusterToHitsMap;
-    for (std::string clusterListName : m_clusterListNames)
+    const ClusterList *pClusterList{nullptr};
+    PandoraContentApi::GetList(*this, m_clusterListName, pClusterList);
+
+    if(!pClusterList)
     {
-        const ClusterList *pClusterList{nullptr};
-        PandoraContentApi::GetList(*this, clusterListName, pClusterList);
-
-        if(!pClusterList)
-            continue;
-
-        LArMCParticleHelper::GetClusterToReconstructable2DHitsMap(*pClusterList, allMCToHitsMap, clusterToHitsMap);
+        std::cout << "ClusterValidationAlgorithm::Run - Could not find cluster list \'" << m_clusterListName << "\'" << std::endl;
+        return STATUS_CODE_NOT_FOUND;
     }
+
+    LArMCParticleHelper::ClusterContributionMap clusterToHitsMap;
+    LArMCParticleHelper::GetClusterToReconstructable2DHitsMap(*pClusterList, allMCToHitsMap, clusterToHitsMap);
+
     // ATTN : Ensure all mc primaries have an entry in mcToClusterHitSharingMap, even if no associated clusters.
     MCParticleVector mcPrimaryVector;
     LArMonitoringHelper::GetOrderedMCParticleVector({allMCToHitsMap}, mcPrimaryVector);
@@ -101,8 +101,6 @@ void ClusterValidationAlgorithm::GetMCToHitsMaps(const pandora::MCParticleList *
 void ClusterValidationAlgorithm::ProcessOutput(const LArMCParticleHelper::MCContributionMap &mcToHitsMap,
     const LArMCParticleHelper::ClusterContributionMap &clusterToHitsMap)
 {
-    std::string clusterTreeName{m_treeName + "_cluster"};
-    std::string mcTreeName{m_treeName + "_mc"};
     MCParticleVector mcVector;
     LArMonitoringHelper::GetOrderedMCParticleVector({mcToHitsMap}, mcVector);
     ClusterVector clusterVector;
@@ -128,9 +126,6 @@ void ClusterValidationAlgorithm::ProcessOutput(const LArMCParticleHelper::MCCont
 
         const CaloHitList &mcHitList{mcToHitsMap.at(pMC)};
         const int pdg{pMC->GetParticleId()};
-        const int nMCHitsU{static_cast<int>(LArMonitoringHelper::CountHitsByType(TPC_VIEW_U, mcHitList))};
-        const int nMCHitsV{static_cast<int>(LArMonitoringHelper::CountHitsByType(TPC_VIEW_V, mcHitList))};
-        const int nMCHitsW{static_cast<int>(LArMonitoringHelper::CountHitsByType(TPC_VIEW_W, mcHitList))};
 
         if (hasMatch)
         {   // Potential match to at least 1 cluster, get details
@@ -143,71 +138,34 @@ void ClusterValidationAlgorithm::ProcessOutput(const LArMCParticleHelper::MCCont
                 const int clusterId(clusterToIdMap.at(pCluster));
                 const CaloHitList &clusterHitList(clusterToHitsMap.at(pCluster));
                 const HitType view{clusterHitList.front()->GetHitType()};
+                const int viewInt{static_cast<int>(view)};
                 const int nSharedHits{static_cast<int>(sharedHitList.size())};
                 const int nClusterHits{static_cast<int>(clusterHitList.size())};
                 const int nMCHits{static_cast<int>(LArMonitoringHelper::CountHitsByType(view, mcHitList))};
 
-                int nMCSharedHitsU{0}, nMCSharedHitsV{0}, nMCSharedHitsW{0};
-                int nContributingHitsU{0}, nContributingHitsV{0}, nContributingHitsW{0};
-                if (view == TPC_VIEW_U)
-                {
-                    nMCSharedHitsU = nSharedHits;
-                    nContributingHitsU = nClusterHits;
-                }
-                if (view == TPC_VIEW_V)
-                {
-                    nMCSharedHitsV = nSharedHits;
-                    nContributingHitsV = nClusterHits;
-                }
-                if (view == TPC_VIEW_W)
-                {
-                    nMCSharedHitsW = nSharedHits;
-                    nContributingHitsW = nClusterHits;
-                }
-
-                // Record cluster-centric information if it was the best match - CONSIDER: Might want to retain non-matching too
-                PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), clusterTreeName.c_str(), "eventNumber", m_eventNumber));
-                PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), clusterTreeName.c_str(), "clusterId", clusterId));
-                PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), clusterTreeName.c_str(), "mcId", mcIndex));
-                PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), clusterTreeName.c_str(), "pdg", pdg));
-                PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), clusterTreeName.c_str(), "nMCHits", nMCHits));
-                PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), clusterTreeName.c_str(), "nSharedHits", nSharedHits));
-                PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), clusterTreeName.c_str(), "nClusterHits", nClusterHits));
-                PANDORA_MONITORING_API(FillTree(this->GetPandora(), clusterTreeName.c_str()));
-
-                // Record the MC information relating to this cluster, want all clusters, not just the best
-                PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), mcTreeName.c_str(), "eventNumber", m_eventNumber));
-                PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), mcTreeName.c_str(), "clusterId", clusterId));
-                PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), mcTreeName.c_str(), "mcId", mcIndex));
-                PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), mcTreeName.c_str(), "pdg", pdg));
-                PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), mcTreeName.c_str(), "nMCHitsU", nMCHitsU));
-                PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), mcTreeName.c_str(), "nMCHitsV", nMCHitsV));
-                PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), mcTreeName.c_str(), "nMCHitsW", nMCHitsW));
-                PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), mcTreeName.c_str(), "nSharedHitsU", nMCSharedHitsU));
-                PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), mcTreeName.c_str(), "nSharedHitsV", nMCSharedHitsV));
-                PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), mcTreeName.c_str(), "nSharedHitsW", nMCSharedHitsW));
-                PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), mcTreeName.c_str(), "nContributingHitsU", nContributingHitsU));
-                PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), mcTreeName.c_str(), "nContributingHitsV", nContributingHitsV));
-                PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), mcTreeName.c_str(), "nContributingHitsW", nContributingHitsW));
-                PANDORA_MONITORING_API(FillTree(this->GetPandora(), mcTreeName.c_str()));
+                // Record cluster and MC information
+                PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treeName.c_str(), "eventNumber", m_eventNumber));
+                PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treeName.c_str(), "clusterId", clusterId));
+                PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treeName.c_str(), "view", viewInt));
+                PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treeName.c_str(), "mcId", mcIndex));
+                PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treeName.c_str(), "pdg", pdg));
+                PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treeName.c_str(), "nMCHits", nMCHits));
+                PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treeName.c_str(), "nSharedHits", nSharedHits));
+                PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treeName.c_str(), "nClusterHits", nClusterHits));
+                PANDORA_MONITORING_API(FillTree(this->GetPandora(), m_treeName.c_str()));
             }
         }
         else
         {   // No matching clusters
-            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), mcTreeName.c_str(), "eventNumber", m_eventNumber));
-            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), mcTreeName.c_str(), "clusterId", -1));
-            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), mcTreeName.c_str(), "mcId", mcIndex));
-            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), mcTreeName.c_str(), "pdg", pdg));
-            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), mcTreeName.c_str(), "nMCHitsU", nMCHitsU));
-            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), mcTreeName.c_str(), "nMCHitsV", nMCHitsV));
-            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), mcTreeName.c_str(), "nMCHitsW", nMCHitsW));
-            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), mcTreeName.c_str(), "nSharedHitsU", 0));
-            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), mcTreeName.c_str(), "nSharedHitsV", 0));
-            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), mcTreeName.c_str(), "nSharedHitsW", 0));
-            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), mcTreeName.c_str(), "nContributingHitsU", 0));
-            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), mcTreeName.c_str(), "nContributingHitsV", 0));
-            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), mcTreeName.c_str(), "nContributingHitsW", 0));
-            PANDORA_MONITORING_API(FillTree(this->GetPandora(), mcTreeName.c_str()));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treeName.c_str(), "eventNumber", m_eventNumber));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treeName.c_str(), "clusterId", -1));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treeName.c_str(), "view", -1));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treeName.c_str(), "mcId", mcIndex));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treeName.c_str(), "pdg", pdg));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treeName.c_str(), "nMCHits", 0));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treeName.c_str(), "nSharedHits", 0));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treeName.c_str(), "nClusterHits", 0));
+            PANDORA_MONITORING_API(FillTree(this->GetPandora(), m_treeName.c_str()));
         }
 
         ++mcIndex;
@@ -218,10 +176,9 @@ void ClusterValidationAlgorithm::ProcessOutput(const LArMCParticleHelper::MCCont
 
 StatusCode ClusterValidationAlgorithm::ReadSettings(const pandora::TiXmlHandle xmlHandle)
 {
-    PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadValue(xmlHandle, "CaloHitListName", m_caloHitListName));
-    PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadValue(xmlHandle, "MCParticleListName", m_mcParticleListName));
-    PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadVectorOfValues(xmlHandle,
-        "ClusterListNames", m_clusterListNames));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "CaloHitListName", m_caloHitListName));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "MCParticleListName", m_mcParticleListName));
+    PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadValue(xmlHandle, "ClusterListName", m_clusterListName));
 
     PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "WriteToTree",
         m_writeToTree));
