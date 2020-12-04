@@ -28,6 +28,8 @@ class LArCaloHitParameters : public object_creation::CaloHit::Parameters
 {
 public:
     pandora::InputUInt      m_larTPCVolumeId;       ///< The lar tpc volume id
+    pandora::InputFloat     m_pTrack;               ///< The probability that the hit is track-like
+    pandora::InputFloat     m_pShower;              ///< The probability that the hit is shower-like
 };
 
 //------------------------------------------------------------------------------------------------------------------------------------------
@@ -65,6 +67,20 @@ public:
      *  @return the probability the hit is shower-like
      */
     float GetShowerProbability() const;
+
+    /**
+     *  @brief  Get the probability that the hit is track-like
+     *
+     *  @return the probability the hit is track-like
+     */
+    pandora::InputFloat GetInputTrackProbability() const;
+
+    /**
+     *  @brief  Get the probability that the hit is shower-like
+     *
+     *  @return the probability the hit is shower-like
+     */
+    pandora::InputFloat GetInputShowerProbability() const;
 
     /**
      *  @brief  Set the probability that the hit is track-like
@@ -131,7 +147,9 @@ public:
 
 inline LArCaloHit::LArCaloHit(const LArCaloHitParameters &parameters) :
     object_creation::CaloHit::Object(parameters),
-    m_larTPCVolumeId(parameters.m_larTPCVolumeId.Get())
+    m_larTPCVolumeId(parameters.m_larTPCVolumeId.Get()),
+    m_pTrack(parameters.m_pTrack),
+    m_pShower(parameters.m_pShower)
 {
 }
 
@@ -154,6 +172,20 @@ inline float LArCaloHit::GetTrackProbability() const
 inline float LArCaloHit::GetShowerProbability() const
 {
     return m_pShower.Get();
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+inline pandora::InputFloat LArCaloHit::GetInputTrackProbability() const
+{
+    return m_pTrack;
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+inline pandora::InputFloat LArCaloHit::GetInputShowerProbability() const
+{
+    return m_pShower;
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------

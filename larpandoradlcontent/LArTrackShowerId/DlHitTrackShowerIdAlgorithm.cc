@@ -79,13 +79,17 @@ StatusCode DlHitTrackShowerIdAlgorithm::Train()
         else if (view == TPC_VIEW_W) trainingOutputFileName += "_CaloHitListW.csv";
 
         LArMCParticleHelper::PrimaryParameters parameters;
-        // Only care about reconstructability with respect to the current view, so skip good view check
+        // Turn off reconstructability criteria and don't fold back the hierarchy, we want the finest granularity we can get
+        parameters.m_minPrimaryGoodHits = 0;
         parameters.m_minHitsForGoodView = 0;
-        // Turn off max photo propagation for now, only care about killing off daughters of neutrons
+        parameters.m_minHitSharingFraction = 0.f;
         parameters.m_maxPhotonPropagation = std::numeric_limits<float>::max();
+        parameters.m_foldBackHierarchy = false;
+
+        // ATTN - Currently this only runs over cosmics, want this to be more flexible
         LArMCParticleHelper::MCContributionMap targetMCParticleToHitsMap;
         LArMCParticleHelper::SelectReconstructableMCParticles(pMCParticleList, pCaloHitList, parameters,
-            LArMCParticleHelper::IsBeamNeutrinoFinalState, targetMCParticleToHitsMap);
+            LArMCParticleHelper::IsCosmicRay, targetMCParticleToHitsMap);
 
         LArMvaHelper::MvaFeatureVector featureVector;
         for (const CaloHit *pCaloHit : *pCaloHitList)
@@ -96,6 +100,8 @@ StatusCode DlHitTrackShowerIdAlgorithm::Train()
             try
             {
                 const MCParticle *const pMCParticle(MCParticleHelper::GetMainMCParticle(pCaloHit));
+                if (!pMCParticle)
+                    continue;
                 // Throw away non-reconstructable hits
                 if (targetMCParticleToHitsMap.find(pMCParticle) == targetMCParticleToHitsMap.end())
                     continue;
@@ -105,6 +111,7 @@ StatusCode DlHitTrackShowerIdAlgorithm::Train()
                 if (inputEnergy < 0.f)
                     continue;
 
+                // Note, could use GetIsDR and GetIsDecay from LArMCParticle for michel and em activity tagging
                 const int pdg{std::abs(pMCParticle->GetParticleId())};
                 if (pdg == 11 || pdg == 22)
                     tag = SHOWER;
