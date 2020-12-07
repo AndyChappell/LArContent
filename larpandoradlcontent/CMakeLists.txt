@@ -14,6 +14,7 @@ set( subdir_list LArControlFlow
                  LArHelpers
                  LArMonitoring
                  LArTrackShowerId
+                 LArVertexing
 )
 
 cet_make( LIBRARY_NAME LArPandoraDLContent
