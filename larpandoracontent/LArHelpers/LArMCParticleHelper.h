@@ -65,6 +65,7 @@ public:
         float         m_maxPhotonPropagation;     ///< the maximum photon propagation length
         float         m_minHitSharingFraction;    ///< the minimum Hit sharing fraction
         bool          m_foldBackHierarchy;        ///< whether to fold the hierarchy back to the primary (neutrino) or leading particles (test beam)
+        bool          m_foldToLeadingShower;      ///< whether to fold daughter particles of showers back to the leading shower particle
     };
 
     /**
@@ -141,6 +142,15 @@ public:
     static bool IsLeading(const pandora::MCParticle *const pMCParticle);
 
     /**
+     *  @brief  Whether a provided mc particle constitutes a leading shower particle
+     *
+     *  @param  pMCParticle the address of the mc particle
+     *
+     *  @return boolean
+     */
+    static bool IsLeadingShower(const pandora::MCParticle *const pMCParticle);
+
+    /**
      *  @brief  Determine the position in the hierarchy for the MCParticle
      *
      *  @param  pMCParticle the address of the mc particle
@@ -157,6 +167,15 @@ public:
      *  @return boolean
      */
     static bool IsVisible(const pandora::MCParticle *const pMCParticle);
+
+    /**
+     *  @brief  Whether a mc particle is an electron or photon
+     *
+     *  @param  pMCParticle the input mc particle
+     *
+     *  @return boolean
+     */
+    static bool IsEGamma(const pandora::MCParticle *const pMCParticle);
 
     /**
      *  @brief  Get neutrino MC particles from an input MC particle list
@@ -184,6 +203,15 @@ public:
     static const pandora::MCParticle *GetPrimaryMCParticle(const pandora::MCParticle *const pMCParticle);
 
     /**
+     *  @brief  Get the primary parent mc particle, or the leading shower parent mc particle if it exists
+     *
+     *  @param  pMCParticle the input mc particle
+     *
+     *  @return address of the primary or leading shower parent mc particle
+     */
+    static const pandora::MCParticle *GetPrimaryOrLeadingShowerMCParticle(const pandora::MCParticle *const pMCParticle);
+
+    /**
      *  @brief  Get the leading particle in the hierarchy, for use at ProtoDUNE
      *
      *  @param  pMCParticle the input mc particle
@@ -191,6 +219,24 @@ public:
      *  @return address of the primary parent mc particle
      */
     static const pandora::MCParticle *GetLeadingMCParticle(const pandora::MCParticle *const pMCParticle, const int hierarchyTierLimit = 1);
+
+    /**
+     *  @brief  Get the leading particle in the hierarchy, or the leading shower particle if it exists, for use at ProtoDUNE
+     *
+     *  @param  pMCParticle the input mc particle
+     *
+     *  @return address of the primary parent mc particle
+     */
+    static const pandora::MCParticle *GetLeadingOrLeadingShowerMCParticle(const pandora::MCParticle *const pMCParticle);
+
+    /**
+     *  @brief  Get the leading leading shower particle if it exists
+     *
+     *  @param  pMCParticle the input mc particle
+     *
+     *  @return address of the primary parent mc particle
+     */
+    static const pandora::MCParticle *GetLeadingShowerMCParticle(const pandora::MCParticle *const pMCParticle);
 
     /**
      *  @brief  Get vector of primary MC particles from an input list of MC particles
@@ -207,6 +253,30 @@ public:
      *  @param  mcLeadingVector the output mc particle vector
      */
     static void GetLeadingMCParticleList(const pandora::MCParticleList *const pMCParticleList, pandora::MCParticleVector &mcLeadingVector);
+
+    /**
+     *  @brief  Get vector of leading shower MC particles from an input list of MC particles
+     *
+     *  @param  pMCParticleList the input mc particle list
+     *  @param  mcVector the output mc particle vector
+     */
+    static void GetLeadingShowerMCParticleList(const pandora::MCParticleList *const pMCParticleList, pandora::MCParticleVector &mcVector);
+
+    /**
+     *  @brief  Get vector of primary or leading shower MC particles from an input list of MC particles
+     *
+     *  @param  pMCParticleList the input mc particle list
+     *  @param  mcVector the output mc particle vector
+     */
+    static void GetPrimaryOrLeadingShowerMCParticleList(const pandora::MCParticleList *const pMCParticleList, pandora::MCParticleVector &mcVector);
+
+    /**
+     *  @brief  Get vector of MC particles with shower daughters folded back to leading shower from an input list of MC particles
+     *
+     *  @param  pMCParticleList the input mc particle list
+     *  @param  mcVector the output mc particle vector
+     */
+    static void GetMCParticleListWithLeadingShowers(const pandora::MCParticleList *const pMCParticleList, pandora::MCParticleVector &mcVector);
 
     /**
      *  @brief  Get the parent mc particle
@@ -236,28 +306,38 @@ public:
         pandora::MCParticleList &ancestorMCParticleList);
 
     /**
-     *  @brief  Get mapping from individual mc particles (in a provided list) and their primary parent mc particles
+     *  @brief  Get mapping from individual mc particles (in a provided list) and their primary parent mc particles. If leading showers are
+     *          kept, shower daughter showers are mapped back to the leading shower mc particle, and the leading shower mc particle is
+     *          mapped to itself
      *
      *  @param  pMCParticleList the input mc particle list
      *  @param  mcPrimaryMap the output mapping between mc particles and their parents
+     *  @param  keepLeadingShower whether to keep leading shower particles - default = false
      */
-    static void GetMCPrimaryMap(const pandora::MCParticleList *const pMCParticleList, MCRelationMap &mcPrimaryMap);
+    static void GetMCPrimaryMap(const pandora::MCParticleList *const pMCParticleList, MCRelationMap &mcPrimaryMap,
+        const bool keepLeadingShower = false);
 
     /**
-     *  @brief  Get mapping from individual mc particles (in a provided list) and their leading parent mc particles
+     *  @brief  Get mapping from individual mc particles (in a provided list) and their leading parent mc particles. If leading showers are
+     *          kept, shower daughter showers are mapped back to the leading shower mc particle, and the leading shower mc particle is
+     *          mapped to itself
      *
      *  @param  pMCParticleList the input mc particle list
      *  @param  mcLeadingMap the output mapping between mc particles and their leading parent
+     *  @param  keepLeadingShower whether to keep leading shower particles - default = false
      */
-    static void GetMCLeadingMap(const pandora::MCParticleList *const pMCParticleList, MCRelationMap &mcLeadingMap);
+    static void GetMCLeadingMap(const pandora::MCParticleList *const pMCParticleList, MCRelationMap &mcLeadingMap,
+        const bool keepLeadingShower = false);
 
     /**
      *  @brief  Get mapping from individual mc particles (in a provided list) to themselves (to be used when not folding particles to their primaries)
      *
      *  @param  pMCParticleList the input mc particle list
      *  @param  mcToSelfMap the output mapping between mc particles and themselves
+     *  @param  foldToLeadingShower whether to map shower daugthers back to the leading shower mc particle - default = false
      */
-    static void GetMCToSelfMap(const pandora::MCParticleList *const pMCParticleList, MCRelationMap &mcToSelfMap);
+    static void GetMCToSelfMap(const pandora::MCParticleList *const pMCParticleList, MCRelationMap &mcToSelfMap,
+        const bool foldToLeadingShower = false);
 
     /**
      *  @brief  Find the mc particle making the largest contribution to 2D clusters in a specified pfo
@@ -318,9 +398,10 @@ public:
      *  @param  selectedMCParticleToHitsMap the input mapping from selected reconstructable MCParticles to their hits
      *  @param  pfoToReconstructable2DHitsMap the output mapping from Pfos to their reconstructable 2D hits
      *  @param  foldBackHierarchy whether to fold the particle hierarchy back to the primaries
+     *  @param  foldToLeadingShower whether to fold daughter particles of showers back to the leading shower particle
      */
     static void GetPfoToReconstructable2DHitsMap(const pandora::PfoList &pfoList, const MCContributionMap &selectedMCParticleToHitsMap,
-        PfoContributionMap &pfoToReconstructable2DHitsMap, const bool foldBackHierarchy);
+        PfoContributionMap &pfoToReconstructable2DHitsMap, const bool foldBackHierarchy, const bool foldToLeadingShower = false);
 
     /**
      *  @brief  Get mapping from Pfo in reconstructed test beam hierarchy to reconstructable 2D hits (=good hits belonging to a selected
@@ -330,9 +411,10 @@ public:
      *  @param  selectedMCParticleToHitsMap the input mapping from selected reconstructable MCParticles to their hits
      *  @param  pfoToReconstructable2DHitsMap the output mapping from Pfos to their reconstructable 2D hits
      *  @param  foldBackHierarchy whether to fold the particle hierarchy back to the leading particles
+     *  @param  foldToLeadingShower whether to fold daughter particles of showers back to the leading shower particle
      */
     static void GetTestBeamHierarchyPfoToReconstructable2DHitsMap(const pandora::PfoList &pfoList, const MCContributionMap &selectedMCParticleToHitsMap,
-        PfoContributionMap &pfoToReconstructable2DHitsMap, const bool foldBackHierarchy);
+        PfoContributionMap &pfoToReconstructable2DHitsMap, const bool foldBackHierarchy, const bool foldToLeadingShower = false);
 
     /**
      *  @brief  Get mapping from Pfo to reconstructable 2D hits (=good hits belonging to a selected reconstructable MCParticle)
@@ -340,10 +422,11 @@ public:
      *  @param  pfoList the input list of Pfos
      *  @param  selectedMCParticleToHitsMaps the input vector of mappings from selected reconstructable MCParticles to their hits
      *  @param  pfoToReconstructable2DHitsMap the output mapping from Pfos to their reconstructable 2D hits
-     *  @param  foldToHierarchy whether to fold the particle hierarchy back to the primaries
+     *  @param  foldBackHierarchy whether to fold the particle hierarchy back to the primaries
+     *  @param  foldToLeadingShower whether to fold daughter particles of showers back to the leading shower particle
      */
     static void GetPfoToReconstructable2DHitsMap(const pandora::PfoList &pfoList, const MCContributionMapVector &selectedMCParticleToHitsMaps,
-        PfoContributionMap &pfoToReconstructable2DHitsMap, const bool foldBackHierarchy);
+        PfoContributionMap &pfoToReconstructable2DHitsMap, const bool foldBackHierarchy, const bool foldToLeadingShower = false);
 
     /**
      *  @brief  Get mapping from Pfo in reconstructed test beam hierarchy to reconstructable 2D hits (=good hits belonging to a selected
@@ -353,9 +436,10 @@ public:
      *  @param  selectedMCParticleToHitsMaps the input vector of mappings from selected reconstructable MCParticles to their hits
      *  @param  pfoToReconstructable2DHitsMap the output mapping from Pfos to their reconstructable 2D hits
      *  @param  foldBackHierarchy whether to fold the particle hierarchy back to the leading particles
+     *  @param  foldToLeadingShower whether to fold daughter particles of showers back to the leading shower particle
      */
     static void GetTestBeamHierarchyPfoToReconstructable2DHitsMap(const pandora::PfoList &pfoList, const MCContributionMapVector &selectedMCParticleToHitsMaps,
-        PfoContributionMap &pfoToReconstructable2DHitsMap, const bool foldBackHierarchy);
+        PfoContributionMap &pfoToReconstructable2DHitsMap, const bool foldBackHierarchy, const bool foldToLeadingShower = false);
 
     /**
      *  @brief  Get the mappings from Pfo -> pair (reconstructable MCparticles, number of reconstructable 2D hits shared with Pfo)
@@ -400,9 +484,10 @@ private:
      *  @param  selectedMCParticleToHitsMaps the input mappings from selected reconstructable MCParticles to hits
      *  @param  reconstructableCaloHitList2D the output list of reconstructable 2D calo hits in the input pfo
      *  @param  foldBackHierarchy whether to fold the particle hierarchy back to primaries
+     *  @param  foldToLeadingShower whether to fold daughter particles of showers back to the leading shower particle
      */
     static void CollectReconstructable2DHits(const pandora::ParticleFlowObject *const pPfo, const MCContributionMapVector &selectedMCParticleToHitsMaps,
-        pandora::CaloHitList &reconstructableCaloHitList2D, const bool foldBackHierarchy);
+        pandora::CaloHitList &reconstructableCaloHitList2D, const bool foldBackHierarchy, const bool foldToLeadingShower = false);
 
     /**
      *  @brief  For a given Pfo, collect the hits which are reconstructable (=good hits belonging to a selected reconstructable MCParticle)
@@ -412,9 +497,10 @@ private:
      *  @param  selectedMCParticleToHitsMaps the input mappings from selected reconstructable MCParticles to hits
      *  @param  reconstructableCaloHitList2D the output list of reconstructable 2D calo hits in the input pfo
      *  @param  foldBackHierarchy whether to fold the particle hierarchy back to leading particles
+     *  @param  foldToLeadingShower whether to fold daughter particles of showers back to the leading shower particle
      */
     static void CollectReconstructableTestBeamHierarchy2DHits(const pandora::ParticleFlowObject *const pPfo, const MCContributionMapVector &selectedMCParticleToHitsMaps,
-        pandora::CaloHitList &reconstructableCaloHitList2D, const bool foldBackHierarchy);
+        pandora::CaloHitList &reconstructableCaloHitList2D, const bool foldBackHierarchy, const bool foldToLeadingShower = false);
 
     /**
      *  @brief  For a given Pfo list, collect the hits which are reconstructable (=good hits belonging to a selected reconstructable MCParticle)
@@ -485,6 +571,14 @@ private:
      *  @return The hits that are found in both hitListA and hitListB
      */
     static pandora::CaloHitList GetSharedHits(const pandora::CaloHitList &hitListA, const pandora::CaloHitList &hitListB);
+
+    /**
+     *  @brief  Collect all MC particles upto and including leading shower particles.
+     *
+     *  @param  pMCParticle the MC particle to consider adding to the lhe list
+     *  @param  mcVector the output list of particles
+     */
+    static void GetMCParticlesUptoLeadingShower(const pandora::MCParticle *pMCParticle, pandora::MCParticleVector &mcVector);
 };
 
 } // namespace lar_content

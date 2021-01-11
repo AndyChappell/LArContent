@@ -35,7 +35,8 @@ LArMCParticleHelper::PrimaryParameters::PrimaryParameters() :
     m_selectInputHits(true),
     m_maxPhotonPropagation(2.5f),
     m_minHitSharingFraction(0.9f),
-    m_foldBackHierarchy(true)
+    m_foldBackHierarchy(true),
+    m_foldToLeadingShower(false)
 {
 }
 
@@ -161,6 +162,26 @@ bool LArMCParticleHelper::IsLeading(const pandora::MCParticle *const pMCParticle
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
+bool LArMCParticleHelper::IsLeadingShower(const pandora::MCParticle *const pMCParticle)
+{
+    const MCParticle *pParentMCParticle{pMCParticle};
+    const MCParticle *pLeadingShower{LArMCParticleHelper::IsEGamma(pParentMCParticle) ? pParentMCParticle : nullptr};
+
+    while (!pParentMCParticle->GetParentList().empty())
+    {
+        if (1 != pParentMCParticle->GetParentList().size())
+            throw StatusCodeException(STATUS_CODE_INVALID_PARAMETER);
+
+        pParentMCParticle = *(pParentMCParticle->GetParentList().begin());
+        if (LArMCParticleHelper::IsEGamma(pParentMCParticle))
+            pLeadingShower = pParentMCParticle;
+    }
+
+    return pLeadingShower != nullptr;
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
 int LArMCParticleHelper::GetHierarchyTier(const pandora::MCParticle *const pMCParticle)
 {
     const MCParticle *pParentMCParticle = pMCParticle;
@@ -189,6 +210,18 @@ bool LArMCParticleHelper::IsVisible(const MCParticle *const pMCParticle)
         (SIGMA_MINUS == absoluteParticleId) || (SIGMA_PLUS == absoluteParticleId) || (HYPERON_MINUS == absoluteParticleId) ||
         (PROTON == absoluteParticleId) || (PHOTON == absoluteParticleId) ||
         (NEUTRON == absoluteParticleId))
+        return true;
+
+    return false;
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+bool LArMCParticleHelper::IsEGamma(const MCParticle *const pMCParticle)
+{
+    const int absoluteParticleId(std::abs(pMCParticle->GetParticleId()));
+
+    if ((E_MINUS == absoluteParticleId) || (PHOTON == absoluteParticleId))
         return true;
 
     return false;
@@ -288,6 +321,19 @@ void LArMCParticleHelper::GetPrimaryMCParticleList(const MCParticleList *const p
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
+void LArMCParticleHelper::GetLeadingShowerMCParticleList(const MCParticleList *const pMCParticleList, MCParticleVector &mcVector)
+{
+    for (const MCParticle *const pMCParticle : *pMCParticleList)
+    {
+        if (LArMCParticleHelper::IsLeadingShower(pMCParticle))
+            mcVector.push_back(pMCParticle);
+    }
+
+    std::sort(mcVector.begin(), mcVector.end(), LArMCParticleHelper::SortByMomentum);
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
 void LArMCParticleHelper::GetLeadingMCParticleList(const MCParticleList *const pMCParticleList, MCParticleVector &mcLeadingVector)
 {
     for (const MCParticle *const pMCParticle : *pMCParticleList)
@@ -301,6 +347,31 @@ void LArMCParticleHelper::GetLeadingMCParticleList(const MCParticleList *const p
     }
 
     std::sort(mcLeadingVector.begin(), mcLeadingVector.end(), LArMCParticleHelper::SortByMomentum);
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+void LArMCParticleHelper::GetPrimaryOrLeadingShowerMCParticleList(const MCParticleList *const pMCParticleList, MCParticleVector &mcVector)
+{
+    for (const MCParticle *const pMCParticle : *pMCParticleList)
+    {
+        if (LArMCParticleHelper::IsPrimary(pMCParticle) || LArMCParticleHelper::IsLeadingShower(pMCParticle))
+            mcVector.push_back(pMCParticle);
+    }
+
+    std::sort(mcVector.begin(), mcVector.end(), LArMCParticleHelper::SortByMomentum);
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+void LArMCParticleHelper::GetMCParticleListWithLeadingShowers(const MCParticleList *const pMCParticleList, MCParticleVector &mcVector)
+{
+    // Find the root node from the first MC particle in the input list
+    const MCParticle* pRootParticle{LArMCParticleHelper::GetParentMCParticle(*pMCParticleList->begin())};
+    // Now navigate through the hierarchy and retain all particles upto and including a leading shower particle
+    LArMCParticleHelper::GetMCParticlesUptoLeadingShower(pRootParticle, mcVector);
+
+    std::sort(mcVector.begin(), mcVector.end(), LArMCParticleHelper::SortByMomentum);
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
@@ -321,6 +392,44 @@ const MCParticle *LArMCParticleHelper::GetPrimaryMCParticle(const MCParticle *co
         pParentMCParticle = *(pParentMCParticle->GetParentList().begin());
         mcVector.push_back(pParentMCParticle);
     }
+
+    // Navigate downward through MC parent/daughter links - return the first long-lived charged particle
+    for (MCParticleVector::const_reverse_iterator iter = mcVector.rbegin(), iterEnd = mcVector.rend(); iter != iterEnd; ++iter)
+    {
+        const MCParticle *const pNextParticle = *iter;
+
+        if (LArMCParticleHelper::IsVisible(pNextParticle))
+            return pNextParticle;
+    }
+
+    throw StatusCodeException(STATUS_CODE_NOT_FOUND);
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+const MCParticle *LArMCParticleHelper::GetPrimaryOrLeadingShowerMCParticle(const MCParticle *const pMCParticle)
+{
+    // Navigate upward through MC daughter/parent links - collect this particle and all its parents
+    MCParticleVector mcVector;
+
+    const MCParticle *pParentMCParticle = pMCParticle;
+    mcVector.push_back(pParentMCParticle);
+    const MCParticle *pLeadingShowerMCParticle{LArMCParticleHelper::IsEGamma(pParentMCParticle) ? pParentMCParticle : nullptr};
+
+    while (!pParentMCParticle->GetParentList().empty())
+    {
+        if (1 != pParentMCParticle->GetParentList().size())
+            throw StatusCodeException(STATUS_CODE_INVALID_PARAMETER);
+
+        pParentMCParticle = *(pParentMCParticle->GetParentList().begin());
+        mcVector.push_back(pParentMCParticle);
+        if (LArMCParticleHelper::IsEGamma(pParentMCParticle))
+            pLeadingShowerMCParticle = pParentMCParticle;
+    }
+
+    // Return the leading shower particle, if it exists
+    if (pLeadingShowerMCParticle)
+        return pLeadingShowerMCParticle;
 
     // Navigate downward through MC parent/daughter links - return the first long-lived charged particle
     for (MCParticleVector::const_reverse_iterator iter = mcVector.rbegin(), iterEnd = mcVector.rend(); iter != iterEnd; ++iter)
@@ -385,14 +494,102 @@ const MCParticle *LArMCParticleHelper::GetLeadingMCParticle(const MCParticle *co
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-void LArMCParticleHelper::GetMCPrimaryMap(const MCParticleList *const pMCParticleList, MCRelationMap &mcPrimaryMap)
+const MCParticle *LArMCParticleHelper::GetLeadingOrLeadingShowerMCParticle(const MCParticle *const pMCParticle)
+{
+    // Navigate upward through MC daughter/parent links - collect this particle and all its parents
+    MCParticleVector mcVector;
+
+    const MCParticle *pParentMCParticle = pMCParticle;
+    mcVector.push_back(pParentMCParticle);
+    const MCParticle *pLeadingShowerMCParticle{LArMCParticleHelper::IsEGamma(pParentMCParticle) ? pParentMCParticle : nullptr};
+
+    while (!pParentMCParticle->GetParentList().empty())
+    {
+        if (1 != pParentMCParticle->GetParentList().size())
+            throw StatusCodeException(STATUS_CODE_INVALID_PARAMETER);
+
+        pParentMCParticle = *(pParentMCParticle->GetParentList().begin());
+        mcVector.push_back(pParentMCParticle);
+
+        if (LArMCParticleHelper::IsEGamma(pParentMCParticle))
+            pLeadingShowerMCParticle = pParentMCParticle;
+    }
+
+    if (pLeadingShowerMCParticle)
+    {   // Return the leading shower particle, if it exists
+        return pLeadingShowerMCParticle;
+    }
+    else
+    {   // No leading shower, remove the triggered beam particle
+        MCParticleVector::iterator iter(std::find_if(mcVector.begin(), mcVector.end(),
+            [] (const MCParticle *pMC) -> bool
+            {
+                return LArMCParticleHelper::IsTriggeredBeamParticle(pMC);
+            }));
+        mcVector.erase(iter);
+    }
+
+    // Navigate downward through MC parent/daughter links - return the first long-lived charged particle
+    for (MCParticleVector::const_reverse_iterator iter = mcVector.rbegin(), iterEnd = mcVector.rend(); iter != iterEnd; ++iter)
+    {
+        const MCParticle *const pNextParticle = *iter;
+
+        // ATTN: Squash any invisible particles (e.g. pizero)
+        if (!LArMCParticleHelper::IsVisible(pNextParticle))
+            continue;
+        return pNextParticle;
+    }
+
+    throw StatusCodeException(STATUS_CODE_NOT_FOUND);
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+const MCParticle *LArMCParticleHelper::GetLeadingShowerMCParticle(const MCParticle *const pMCParticle)
+{
+    // Navigate upward through MC daughter/parent links - collect this particle and all its parents
+    MCParticleVector mcVector;
+
+    const MCParticle *pParentMCParticle = pMCParticle;
+    mcVector.push_back(pParentMCParticle);
+    const MCParticle *pLeadingShowerMCParticle{LArMCParticleHelper::IsEGamma(pParentMCParticle) ? pParentMCParticle : nullptr};
+
+    while (!pParentMCParticle->GetParentList().empty())
+    {
+        if (1 != pParentMCParticle->GetParentList().size())
+            throw StatusCodeException(STATUS_CODE_INVALID_PARAMETER);
+
+        pParentMCParticle = *(pParentMCParticle->GetParentList().begin());
+        mcVector.push_back(pParentMCParticle);
+        if (LArMCParticleHelper::IsEGamma(pParentMCParticle))
+            pLeadingShowerMCParticle = pParentMCParticle;
+    }
+
+    // Return the leading shower particle, if it exists
+    if (pLeadingShowerMCParticle)
+        return pLeadingShowerMCParticle;
+
+    throw StatusCodeException(STATUS_CODE_NOT_FOUND);
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+void LArMCParticleHelper::GetMCPrimaryMap(const MCParticleList *const pMCParticleList, MCRelationMap &mcPrimaryMap, const bool keepLeadingShower)
 {
     for (const MCParticle *const pMCParticle : *pMCParticleList)
     {
         try
         {
-            const MCParticle *const pPrimaryMCParticle = LArMCParticleHelper::GetPrimaryMCParticle(pMCParticle);
-            mcPrimaryMap[pMCParticle] = pPrimaryMCParticle;
+            if (!keepLeadingShower)
+            {
+                const MCParticle *const pPrimaryMCParticle = LArMCParticleHelper::GetPrimaryMCParticle(pMCParticle);
+                mcPrimaryMap[pMCParticle] = pPrimaryMCParticle;
+            }
+            else
+            {
+                const MCParticle *const pTargetMCParticle = LArMCParticleHelper::GetPrimaryOrLeadingShowerMCParticle(pMCParticle);
+                mcPrimaryMap[pMCParticle] = pTargetMCParticle;
+            }
         }
         catch (const StatusCodeException &) {}
     }
@@ -400,14 +597,22 @@ void LArMCParticleHelper::GetMCPrimaryMap(const MCParticleList *const pMCParticl
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-void LArMCParticleHelper::GetMCLeadingMap(const MCParticleList *const pMCParticleList, MCRelationMap &mcLeadingMap)
+void LArMCParticleHelper::GetMCLeadingMap(const MCParticleList *const pMCParticleList, MCRelationMap &mcLeadingMap, const bool keepLeadingShower)
 {
     for (const MCParticle *const pMCParticle : *pMCParticleList)
     {
         try
         {
-            const MCParticle *const pLeadingMCParticle = LArMCParticleHelper::GetLeadingMCParticle(pMCParticle);
-            mcLeadingMap[pMCParticle] = pLeadingMCParticle;
+            if (!keepLeadingShower)
+            {
+                const MCParticle *const pLeadingMCParticle = LArMCParticleHelper::GetLeadingMCParticle(pMCParticle);
+                mcLeadingMap[pMCParticle] = pLeadingMCParticle;
+            }
+            else
+            {
+                const MCParticle *const pTargetMCParticle = LArMCParticleHelper::GetLeadingOrLeadingShowerMCParticle(pMCParticle);
+                mcLeadingMap[pMCParticle] = pTargetMCParticle;
+            }
         }
         catch (const StatusCodeException &) {}
     }
@@ -415,11 +620,26 @@ void LArMCParticleHelper::GetMCLeadingMap(const MCParticleList *const pMCParticl
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-void LArMCParticleHelper::GetMCToSelfMap(const MCParticleList *const pMCParticleList, MCRelationMap &mcToSelfMap)
+void LArMCParticleHelper::GetMCToSelfMap(const MCParticleList *const pMCParticleList, MCRelationMap &mcToSelfMap, const bool foldToLeadingShower)
 {
     for (const MCParticle *const pMCParticle : *pMCParticleList)
     {
-        mcToSelfMap[pMCParticle] = pMCParticle;
+        if (!foldToLeadingShower)
+        {
+            mcToSelfMap[pMCParticle] = pMCParticle;
+        }
+        else
+        {
+            try
+            {   // ATTN - GetLeadingShowerMCParticle throws an exception if there is no leading shower
+                const MCParticle *const pTargetMCParticle{LArMCParticleHelper::GetLeadingShowerMCParticle(pMCParticle)};
+                mcToSelfMap[pMCParticle] = pTargetMCParticle;
+            }
+            catch(const StatusCodeException &)
+            {
+                mcToSelfMap[pMCParticle] = pMCParticle;
+            }
+        }
     }
 }
 
@@ -499,7 +719,20 @@ void LArMCParticleHelper::SelectReconstructableMCParticles(const MCParticleList 
 {
     // Obtain map: [mc particle -> target mc particle]
     LArMCParticleHelper::MCRelationMap mcToTargetMCMap;
-    parameters.m_foldBackHierarchy ? LArMCParticleHelper::GetMCPrimaryMap(pMCParticleList, mcToTargetMCMap) : LArMCParticleHelper::GetMCToSelfMap(pMCParticleList, mcToTargetMCMap);
+    if (parameters.m_foldBackHierarchy)
+    {
+        if (!parameters.m_foldToLeadingShower)
+            LArMCParticleHelper::GetMCPrimaryMap(pMCParticleList, mcToTargetMCMap);
+        else
+            LArMCParticleHelper::GetMCPrimaryMap(pMCParticleList, mcToTargetMCMap, true);
+    }
+    else
+    {
+        if (!parameters.m_foldToLeadingShower)
+            LArMCParticleHelper::GetMCToSelfMap(pMCParticleList, mcToTargetMCMap);
+        else
+            LArMCParticleHelper::GetMCToSelfMap(pMCParticleList, mcToTargetMCMap, true);
+    }
 
     // Remove non-reconstructable hits, e.g. those downstream of a neutron
     // Unless selectInputHits == false
@@ -515,11 +748,17 @@ void LArMCParticleHelper::SelectReconstructableMCParticles(const MCParticleList 
     MCParticleVector targetMCVector;
     if (parameters.m_foldBackHierarchy)
     {
-        LArMCParticleHelper::GetPrimaryMCParticleList(pMCParticleList, targetMCVector);
+        if (!parameters.m_foldToLeadingShower)
+            LArMCParticleHelper::GetPrimaryMCParticleList(pMCParticleList, targetMCVector);
+        else
+            LArMCParticleHelper::GetPrimaryOrLeadingShowerMCParticleList(pMCParticleList, targetMCVector);
     }
     else
     {
-        std::copy(pMCParticleList->begin(), pMCParticleList->end(), std::back_inserter(targetMCVector));
+        if (!parameters.m_foldToLeadingShower)
+            std::copy(pMCParticleList->begin(), pMCParticleList->end(), std::back_inserter(targetMCVector));
+        else
+            LArMCParticleHelper::GetMCParticleListWithLeadingShowers(pMCParticleList, targetMCVector);
     }
 
     // Select MCParticles matching criteria
@@ -585,28 +824,30 @@ void LArMCParticleHelper::SelectReconstructableTestBeamHierarchyMCParticles(cons
 //------------------------------------------------------------------------------------------------------------------------------------------
 
 void LArMCParticleHelper::GetPfoToReconstructable2DHitsMap(const PfoList &pfoList, const MCContributionMap &selectedMCParticleToHitsMap,
-    PfoContributionMap &pfoToReconstructable2DHitsMap, const bool foldBackHierarchy)
+    PfoContributionMap &pfoToReconstructable2DHitsMap, const bool foldBackHierarchy, const bool foldToLeadingShower)
 {
-    LArMCParticleHelper::GetPfoToReconstructable2DHitsMap(pfoList, MCContributionMapVector({selectedMCParticleToHitsMap}), pfoToReconstructable2DHitsMap, foldBackHierarchy);
+    LArMCParticleHelper::GetPfoToReconstructable2DHitsMap(pfoList, MCContributionMapVector({selectedMCParticleToHitsMap}),
+        pfoToReconstructable2DHitsMap, foldBackHierarchy, foldToLeadingShower);
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
 void LArMCParticleHelper::GetTestBeamHierarchyPfoToReconstructable2DHitsMap(const PfoList &pfoList, const MCContributionMap &selectedMCParticleToHitsMap,
-    PfoContributionMap &pfoToReconstructable2DHitsMap, const bool foldBackHierarchy)
+    PfoContributionMap &pfoToReconstructable2DHitsMap, const bool foldBackHierarchy, const bool foldToLeadingShower)
 {
-    LArMCParticleHelper::GetTestBeamHierarchyPfoToReconstructable2DHitsMap(pfoList, MCContributionMapVector({selectedMCParticleToHitsMap}), pfoToReconstructable2DHitsMap, foldBackHierarchy);
+    LArMCParticleHelper::GetTestBeamHierarchyPfoToReconstructable2DHitsMap(pfoList, MCContributionMapVector({selectedMCParticleToHitsMap}),
+        pfoToReconstructable2DHitsMap, foldBackHierarchy, foldToLeadingShower);
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
 void LArMCParticleHelper::GetPfoToReconstructable2DHitsMap(const PfoList &pfoList, const MCContributionMapVector &selectedMCParticleToHitsMaps,
-    PfoContributionMap &pfoToReconstructable2DHitsMap, const bool foldBackHierarchy)
+    PfoContributionMap &pfoToReconstructable2DHitsMap, const bool foldBackHierarchy, const bool foldToLeadingShower)
 {
     for (const ParticleFlowObject *const pPfo : pfoList)
     {
         CaloHitList pfoHitList;
-        LArMCParticleHelper::CollectReconstructable2DHits(pPfo, selectedMCParticleToHitsMaps, pfoHitList, foldBackHierarchy);
+        LArMCParticleHelper::CollectReconstructable2DHits(pPfo, selectedMCParticleToHitsMaps, pfoHitList, foldBackHierarchy, foldToLeadingShower);
 
         if (!pfoToReconstructable2DHitsMap.insert(PfoContributionMap::value_type(pPfo, pfoHitList)).second)
             throw StatusCodeException(STATUS_CODE_ALREADY_PRESENT);
@@ -616,12 +857,13 @@ void LArMCParticleHelper::GetPfoToReconstructable2DHitsMap(const PfoList &pfoLis
 //------------------------------------------------------------------------------------------------------------------------------------------
 
 void LArMCParticleHelper::GetTestBeamHierarchyPfoToReconstructable2DHitsMap(const PfoList &pfoList, const MCContributionMapVector &selectedMCParticleToHitsMaps,
-    PfoContributionMap &pfoToReconstructable2DHitsMap, const bool foldBackHierarchy)
+    PfoContributionMap &pfoToReconstructable2DHitsMap, const bool foldBackHierarchy, const bool foldToLeadingShower)
 {
     for (const ParticleFlowObject *const pPfo : pfoList)
     {
         CaloHitList pfoHitList;
-        LArMCParticleHelper::CollectReconstructableTestBeamHierarchy2DHits(pPfo, selectedMCParticleToHitsMaps, pfoHitList, foldBackHierarchy);
+        LArMCParticleHelper::CollectReconstructableTestBeamHierarchy2DHits(pPfo, selectedMCParticleToHitsMaps, pfoHitList, foldBackHierarchy,
+            foldToLeadingShower);
 
         if (!pfoToReconstructable2DHitsMap.insert(PfoContributionMap::value_type(pPfo, pfoHitList)).second)
             throw StatusCodeException(STATUS_CODE_ALREADY_PRESENT);
@@ -689,20 +931,48 @@ void LArMCParticleHelper::GetPfoMCParticleHitSharingMaps(const PfoContributionMa
 //------------------------------------------------------------------------------------------------------------------------------------------
 
 void LArMCParticleHelper::CollectReconstructable2DHits(const ParticleFlowObject *const pPfo, const MCContributionMapVector &selectedMCParticleToHitsMaps,
-    pandora::CaloHitList &reconstructableCaloHitList2D, const bool foldBackHierarchy)
+    pandora::CaloHitList &reconstructableCaloHitList2D, const bool foldBackHierarchy, const bool foldToLeadingShower)
 {
-
     PfoList pfoList;
 
-    // If foldBackHierarchy collect all 2D calo hits in pfo hierarchy
-    // else collect hits directly belonging to pfo
+    // If foldBackHierarchy collect all 2D calo hits in pfo hierarchy else collect hits directly belonging to pfo.
+    // If foldToLeadingShower collect all 2D calo hits in pfo hierarchy and don't fold these back to the primary
     if (foldBackHierarchy)
     {
-        LArPfoHelper::GetAllDownstreamPfos(pPfo, pfoList);
+        if (!foldToLeadingShower)
+        {
+            LArPfoHelper::GetAllDownstreamPfos(pPfo, pfoList);
+        }
+        else
+        {
+            if (LArPfoHelper::IsTrack(pPfo))
+            {   // This is a track PFO, only collect daughter PFOs until we reach a shower daughter
+                LArPfoHelper::GetAllDownstreamPfos(pPfo, pfoList, true);
+            }
+            else
+            {   // This is a shower PFO, collect all of its daugther PFOs
+                LArPfoHelper::GetAllDownstreamPfos(pPfo, pfoList, false);
+            }
+        }
     }
     else
     {
-        pfoList.push_back(pPfo);
+        if (!foldToLeadingShower)
+        {
+            pfoList.push_back(pPfo);
+        }
+        else
+        {
+            if (LArPfoHelper::IsTrack(pPfo))
+            {   // This is a track PFO, don't collect daughter PFOs
+                pfoList.push_back(pPfo);
+            }
+            else
+            {   // This is a shower PFO, collect daughter PFOs
+                LArPfoHelper::GetAllDownstreamPfos(pPfo, pfoList, false);
+                pfoList.push_back(pPfo);
+            }
+        }
     }
 
     LArMCParticleHelper::CollectReconstructable2DHits(pfoList, selectedMCParticleToHitsMaps, reconstructableCaloHitList2D);
@@ -711,12 +981,13 @@ void LArMCParticleHelper::CollectReconstructable2DHits(const ParticleFlowObject 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
 void LArMCParticleHelper::CollectReconstructableTestBeamHierarchy2DHits(const ParticleFlowObject *const pPfo, const MCContributionMapVector &selectedMCParticleToHitsMaps,
-    pandora::CaloHitList &reconstructableCaloHitList2D, const bool foldBackHierarchy)
+    pandora::CaloHitList &reconstructableCaloHitList2D, const bool foldBackHierarchy, const bool foldToLeadingShower)
 {
 
     PfoList pfoList;
-    // If foldBackHierarchy collect all 2D calo hits in pfo hierarchy
-    // else collect hits directly belonging to pfo
+    // If foldBackHierarchy collect all 2D calo hits in pfo hierarchy else collect hits directly belonging to pfo.
+    // If foldToLeadingShower collect all 2D calo hits in pfo hierarchy and don't fold these back to the primary
+    // TODO - Decide if delta rays should be folded back to cosmic parents even when folding to leading shower
     if (foldBackHierarchy)
     {
         // ATTN: Only collect downstream pfos for daughter test beam particles & cosmics
@@ -726,12 +997,46 @@ void LArMCParticleHelper::CollectReconstructableTestBeamHierarchy2DHits(const Pa
         }
         else
         {
-            LArPfoHelper::GetAllDownstreamPfos(pPfo, pfoList);
+            if (!foldToLeadingShower)
+            {
+                LArPfoHelper::GetAllDownstreamPfos(pPfo, pfoList);
+            }
+            else
+            {
+                if (LArPfoHelper::IsTrack(pPfo))
+                {   // This is a track PFO, only collect daughter PFOs until we reach a shower daughter
+                    LArPfoHelper::GetAllDownstreamPfos(pPfo, pfoList, true);
+                }
+                else
+                {   // This is a shower PFO, collect all of its daugther PFOs
+                    LArPfoHelper::GetAllDownstreamPfos(pPfo, pfoList, false);
+                }
+            }
         }
     }
     else
     {
-        pfoList.push_back(pPfo);
+        if (!foldToLeadingShower)
+        {
+            pfoList.push_back(pPfo);
+        }
+        else
+        {
+            // ATTN: Only collect downstream pfos for daughter test beam particles & cosmics
+            if (pPfo->GetParentPfoList().empty() && LArPfoHelper::IsTestBeam(pPfo))
+            {
+                pfoList.push_back(pPfo);
+            }
+            else if (LArPfoHelper::IsTrack(pPfo))
+            {   // This is a track PFO, don't collect daughter PFOs
+                pfoList.push_back(pPfo);
+            }
+            else
+            {   // This is a shower PFO, collect daughter PFOs
+                LArPfoHelper::GetAllDownstreamPfos(pPfo, pfoList, false);
+                pfoList.push_back(pPfo);
+            }
+        }
     }
 
     LArMCParticleHelper::CollectReconstructable2DHits(pfoList, selectedMCParticleToHitsMaps, reconstructableCaloHitList2D);
@@ -890,8 +1195,24 @@ void LArMCParticleHelper::SelectParticlesMatchingCriteria(const MCParticleVector
     {
         if (parameters.m_foldBackHierarchy)
         {
-            if (!fCriteria(pMCParticle))
-                continue;
+            if (!parameters.m_foldToLeadingShower)
+            {
+                if (!fCriteria(pMCParticle))
+                    continue;
+            }
+            else
+            {
+                if (isTestBeam)
+                {
+                    if (!LArMCParticleHelper::DoesLeadingMeetCriteria(pMCParticle, fCriteria))
+                        continue;
+                }
+                else
+                {
+                    if (!LArMCParticleHelper::DoesPrimaryMeetCriteria(pMCParticle, fCriteria))
+                        continue;
+                }               
+            }
         }
         else
         {
@@ -988,6 +1309,20 @@ CaloHitList LArMCParticleHelper::GetSharedHits(const CaloHitList &hitListA, cons
     }
 
     return sharedHits;
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+void LArMCParticleHelper::GetMCParticlesUptoLeadingShower(const pandora::MCParticle *pMCParticle, pandora::MCParticleVector &mcVector)
+{
+    if (LArMCParticleHelper::IsVisible(pMCParticle))
+        mcVector.emplace_back(pMCParticle);
+    if (!LArMCParticleHelper::IsLeadingShower(pMCParticle))
+    {
+        const MCParticleList &daughters{pMCParticle->GetDaughterList()};
+        for (const MCParticle *pDaughter : daughters)
+            LArMCParticleHelper::GetMCParticlesUptoLeadingShower(pDaughter, mcVector);
+    }
 }
 
 

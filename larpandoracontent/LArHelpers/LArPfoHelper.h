@@ -132,16 +132,18 @@ public:
      *
      *  @param  inputPfoList the input pfo list
      *  @param  outputPfoList to receive the output pfo list
+     *  @param  stopAtShower whether to stop collecting PFOs once a leading shower PFO is reached
      */
-    static void GetAllDownstreamPfos(const pandora::PfoList &inputPfoList, pandora::PfoList &outputPfoList);
+    static void GetAllDownstreamPfos(const pandora::PfoList &inputPfoList, pandora::PfoList &outputPfoList, const bool stopAtShower = false);
 
     /**
-     *  @brief  Get a flat list of all pfos, recursively, of all daughters and parents associated with an input pfo
+     *  @brief  Get a flat list of all pfos, recursively, of all daughters associated with an input pfo
      *
      *  @param  pPfo the input Pfo
      *  @param  outputPfoList to receive the output pfo list
+     *  @param  stopAtShower whether to stop collecting PFOs once a leading shower PFO is reached
      */
-    static void GetAllDownstreamPfos(const pandora::ParticleFlowObject *const pPfo, pandora::PfoList &outputPfoList);
+    static void GetAllDownstreamPfos(const pandora::ParticleFlowObject *const pPfo, pandora::PfoList &outputPfoList, const bool stopAtShower = false);
 
     /**
      *  @brief  Determine the position in the hierarchy for the MCParticle

@@ -154,21 +154,23 @@ void LArPfoHelper::GetAllConnectedPfos(const ParticleFlowObject *const pPfo, Pfo
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-void LArPfoHelper::GetAllDownstreamPfos(const PfoList &inputPfoList, PfoList &outputPfoList)
+void LArPfoHelper::GetAllDownstreamPfos(const PfoList &inputPfoList, PfoList &outputPfoList, const bool stopAtShower)
 {
     for (const ParticleFlowObject *const pPfo : inputPfoList)
-        LArPfoHelper::GetAllDownstreamPfos(pPfo, outputPfoList);
+        LArPfoHelper::GetAllDownstreamPfos(pPfo, outputPfoList, stopAtShower);
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-void LArPfoHelper::GetAllDownstreamPfos(const ParticleFlowObject *const pPfo, PfoList &outputPfoList)
+void LArPfoHelper::GetAllDownstreamPfos(const ParticleFlowObject *const pPfo, PfoList &outputPfoList, const bool stopAtShower)
 {
     if (outputPfoList.end() != std::find(outputPfoList.begin(), outputPfoList.end(), pPfo))
         return;
+    if (stopAtShower && LArPfoHelper::IsShower(pPfo))
+        return;
 
     outputPfoList.push_back(pPfo);
-    LArPfoHelper::GetAllDownstreamPfos(pPfo->GetDaughterPfoList(), outputPfoList);
+    LArPfoHelper::GetAllDownstreamPfos(pPfo->GetDaughterPfoList(), outputPfoList, stopAtShower);
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------

@@ -35,7 +35,6 @@ MCVisualMonitoringAlgorithm::~MCVisualMonitoringAlgorithm()
 StatusCode MCVisualMonitoringAlgorithm::Run()
 {
     const CaloHitList *pCaloHitList(nullptr);
-    std::cout << "Hit list: " << m_caloHitListName << std::endl;
     PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetList(*this, m_caloHitListName, pCaloHitList));
     const MCParticleList *pMCParticleList(nullptr);
     PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetCurrentList(*this, pMCParticleList));
