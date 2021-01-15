@@ -36,17 +36,15 @@ private:
      *  @brief  Visualise the MC particles according to their PDG codes
      *
      *  @param  mcMap The map from MC particles to calo hits
-     *  @param  calotHitList The input calo hit list
      **/
-    void VisualiseByPdgCode(const LArMCParticleHelper::MCContributionMap &mcMap, const pandora::CaloHitList &caloHitList);
+    void VisualiseByPdgCode(const LArMCParticleHelper::MCContributionMap &mcMap);
 
     /**
      *  @brief  Visualise the MC particles according to their creation process
      *
      *  @param  mcMap The map from MC particles to calo hits
-     *  @param  calotHitList The input calo hit list
      **/
-    void VisualiseByProcess(const LArMCParticleHelper::MCContributionMap &mcMap, const pandora::CaloHitList &caloHitList);
+    void VisualiseByProcess(const LArMCParticleHelper::MCContributionMap &mcMap);
 
     /**
      *  @brief  Selects the MC particles to consider based on reconstructability criteria
