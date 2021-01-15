@@ -21,13 +21,46 @@
 namespace lar_content
 {
 
+// ATTN - Enumeration replicates the numbering in the CellTree module and thus has a dummy UNUSED enumeration at 15 to account for an used
+// duplication in the CellTree process map
+// We also add an INCIDENT_NU to assign a process for neutrino MC given that we don't have a distinct class for neutrino MC
+enum MCProcess
+{
+    MC_PROC_INCIDENT_NU = -1,
+    MC_PROC_UNKNOWN,
+    MC_PROC_PRIMARY,
+    MC_PROC_COMPT,
+    MC_PROC_PHOT,
+    MC_PROC_ANNIHIL,
+    MC_PROC_E_IONI,
+    MC_PROC_E_BREM,
+    MC_PROC_CONV,
+    MC_PROC_MU_IONI,
+    MC_PROC_MU_MINUS_CAPTURE_AT_REST,
+    MC_PROC_NEUTRON_INELASTIC,
+    MC_PROC_N_CAPTURE,
+    MC_PROC_HAD_ELASTIC,
+    MC_PROC_DECAY,
+    MC_PROC_COULOMB_SCAT,
+    MC_PROC_UNUSED,
+    MC_PROC_MU_BREM,
+    MC_PROC_MU_PAIR_PROD,
+    MC_PROC_PHOTON_INELASTIC,
+    MC_PROC_HAD_IONI,
+    MC_PROC_PROTON_INELASTIC,
+    MC_PROC_PI_PLUS_INELASTIC,
+    MC_PROC_CHIPS_NUCLEAR_CAPTURE_AT_REST,
+    MC_PROC_PI_MINUS_INELASTIC
+};
+
 /**
  *  @brief  LAr mc particle parameters
  */
 class LArMCParticleParameters : public object_creation::MCParticle::Parameters
 {
 public:
-    pandora::InputInt   m_nuanceCode;               ///< The nuance code
+    pandora::InputInt       m_nuanceCode;               ///< The nuance code
+    pandora::InputInt       m_process;                  ///< The process creating the particle
 };
 
 //------------------------------------------------------------------------------------------------------------------------------------------
@@ -52,8 +85,16 @@ public:
      */
     int GetNuanceCode() const;
 
+    /**
+     *  @brief  Get the process
+     *
+     *  @return the process
+     */
+    int GetProcess() const;
+
 private:
-    int                 m_nuanceCode;               ///< The nuance code
+    int     m_nuanceCode;               ///< The nuance code
+    int     m_process;                  ///< The process that created the particle
 };
 
 //------------------------------------------------------------------------------------------------------------------------------------------
@@ -101,7 +142,8 @@ public:
 
 inline LArMCParticle::LArMCParticle(const LArMCParticleParameters &parameters) :
     object_creation::MCParticle::Object(parameters),
-    m_nuanceCode(parameters.m_nuanceCode.Get())
+    m_nuanceCode(parameters.m_nuanceCode.Get()),
+    m_process(parameters.m_process.Get())
 {
 }
 
@@ -110,6 +152,13 @@ inline LArMCParticle::LArMCParticle(const LArMCParticleParameters &parameters) :
 inline int LArMCParticle::GetNuanceCode() const
 {
     return m_nuanceCode;
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+inline int LArMCParticle::GetProcess() const
+{
+    return m_process;
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
