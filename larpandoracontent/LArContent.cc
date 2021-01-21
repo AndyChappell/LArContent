@@ -56,6 +56,7 @@
 #include "larpandoracontent/LArMonitoring/TestBeamHierarchyEventValidationAlgorithm.h"
 #include "larpandoracontent/LArMonitoring/TransverseMatrixVisualizationTool.h"
 #include "larpandoracontent/LArMonitoring/TransverseTensorVisualizationTool.h"
+#include "larpandoracontent/LArMonitoring/VertexAssessmentAlgorithm.h"
 
 #include "larpandoracontent/LArPersistency/EventReadingAlgorithm.h"
 #include "larpandoracontent/LArPersistency/EventWritingAlgorithm.h"
@@ -197,6 +198,7 @@
     d("LArPfoValidation",                       PfoValidationAlgorithm)                                                         \
     d("LArMCParticleMonitoring",                MCParticleMonitoringAlgorithm)                                                  \
     d("LArVisualMonitoring",                    VisualMonitoringAlgorithm)                                                      \
+    d("LArVertexAssessment",                    VertexAssessmentAlgorithm)                                                      \
     d("LArEventReading",                        EventReadingAlgorithm)                                                          \
     d("LArEventWriting",                        EventWritingAlgorithm)                                                          \
     d("LArCheatingClusterCharacterisation",     CheatingClusterCharacterisationAlgorithm)                                       \
