@@ -16,6 +16,8 @@
 #include "larpandoracontent/LArCheating/CheatingBeamParticleSliceSelectionTool.h"
 #include "larpandoracontent/LArCheating/CheatingClusterCharacterisationAlgorithm.h"
 #include "larpandoracontent/LArCheating/CheatingClusterCreationAlgorithm.h"
+#include "larpandoracontent/LArCheating/CheatingClusterMergingAlgorithm.h"
+#include "larpandoracontent/LArCheating/CheatingClusterStreamingAlgorithm.h"
 #include "larpandoracontent/LArCheating/CheatingCosmicRayIdentificationAlg.h"
 #include "larpandoracontent/LArCheating/CheatingCosmicRayShowerMatchingAlg.h"
 #include "larpandoracontent/LArCheating/CheatingCosmicRayTaggingTool.h"
@@ -54,6 +56,7 @@
 #include "larpandoracontent/LArMonitoring/VisualParticleMonitoringAlgorithm.h"
 #include "larpandoracontent/LArMonitoring/PfoValidationAlgorithm.h"
 #include "larpandoracontent/LArMonitoring/ShowerTensorVisualizationTool.h"
+#include "larpandoracontent/LArMonitoring/SimpleClusterValidationAlgorithm.h"
 #include "larpandoracontent/LArMonitoring/TestBeamEventValidationAlgorithm.h"
 #include "larpandoracontent/LArMonitoring/TestBeamHierarchyEventValidationAlgorithm.h"
 #include "larpandoracontent/LArMonitoring/TransverseMatrixVisualizationTool.h"
@@ -195,6 +198,7 @@
 #define LAR_ALGORITHM_LIST(d)                                                                                                   \
     d("LArClusterValidation",                   ClusterValidationAlgorithm)                                                     \
     d("LArNeutrinoEventValidation",             NeutrinoEventValidationAlgorithm)                                               \
+    d("LArSimpleClusterValidation",             SimpleClusterValidationAlgorithm)                                               \
     d("LArTestBeamEventValidation",             TestBeamEventValidationAlgorithm)                                               \
     d("LArTestBeamHierarchyEventValidation",    TestBeamHierarchyEventValidationAlgorithm)                                      \
     d("LArPfoValidation",                       PfoValidationAlgorithm)                                                         \
@@ -205,6 +209,8 @@
     d("LArEventWriting",                        EventWritingAlgorithm)                                                          \
     d("LArCheatingClusterCharacterisation",     CheatingClusterCharacterisationAlgorithm)                                       \
     d("LArCheatingClusterCreation",             CheatingClusterCreationAlgorithm)                                               \
+    d("LArCheatingClusterMerging",              CheatingClusterMergingAlgorithm)                                                \
+    d("LArCheatingClusterStreaming",            CheatingClusterStreamingAlgorithm)                                              \
     d("LArCheatingCosmicRayIdentification",     CheatingCosmicRayIdentificationAlg)                                             \
     d("LArCheatingCosmicRayShowerMatching",     CheatingCosmicRayShowerMatchingAlg)                                             \
     d("LArCheatingNeutrinoCreation",            CheatingNeutrinoCreationAlgorithm)                                              \
