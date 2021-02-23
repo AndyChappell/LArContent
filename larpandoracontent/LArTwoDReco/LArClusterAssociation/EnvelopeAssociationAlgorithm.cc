@@ -43,7 +43,7 @@ void EnvelopeAssociationAlgorithm::GetListOfCleanClusters(const ClusterList *con
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-void EnvelopeAssociationAlgorithm::PopulateClusterAssociationMap(const ClusterVector &clusterVector, ClusterAssociationMap &clusterAssociationMap) const
+void EnvelopeAssociationAlgorithm::PopulateClusterMergeMap(const ClusterVector &clusterVector, ClusterMergeMap &clusterMergeMap) const
 {
     ClusterList seedClusters, targetClusters;
     for (ClusterVector::const_iterator iter = clusterVector.begin(); iter != clusterVector.end(); ++iter)
@@ -57,37 +57,21 @@ void EnvelopeAssociationAlgorithm::PopulateClusterAssociationMap(const ClusterVe
     }
     for (const Cluster *pSeed : seedClusters)
     {
-        std::cout << "NHits " << pSeed << " " << pSeed->GetNCaloHits() << std::endl;
         CartesianPointVector boundingVertices;
         this->GetBoundingShapes(pSeed, boundingVertices);
 
         // Find the clusters with a significant fraction of hits (50%) contained by the cone and associate
         for (const Cluster * pTarget : targetClusters)
         {
+            if (clusterMergeMap.find(pTarget) != clusterMergeMap.end())
+                continue;
             if (!this->IsClusterContained(boundingVertices, pTarget))
                 continue;
 
-            clusterAssociationMap[pSeed].m_forwardAssociations.insert(pTarget);
-            clusterAssociationMap[pTarget].m_backwardAssociations.insert(pSeed);
+            clusterMergeMap[pSeed].emplace_back(pTarget);
+            clusterMergeMap[pTarget].emplace_back(pSeed);
         }
     }
-
-}
-
-//------------------------------------------------------------------------------------------------------------------------------------------
-
-bool EnvelopeAssociationAlgorithm::IsExtremalCluster(const bool isForward, const Cluster *const pCurrentCluster,  const Cluster *const pTestCluster) const
-{
-    const unsigned int currentLayer(isForward ? pCurrentCluster->GetOuterPseudoLayer() : pCurrentCluster->GetInnerPseudoLayer());
-    const unsigned int testLayer(isForward ? pTestCluster->GetOuterPseudoLayer() : pTestCluster->GetInnerPseudoLayer());
-
-    if (isForward && ((testLayer > currentLayer) || ((testLayer == currentLayer) && LArClusterHelper::SortByNHits(pTestCluster, pCurrentCluster))))
-        return true;
-
-    if (!isForward && ((testLayer < currentLayer) || ((testLayer == currentLayer) && LArClusterHelper::SortByNHits(pTestCluster, pCurrentCluster))))
-        return true;
-
-    return false;
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
@@ -98,13 +82,55 @@ bool EnvelopeAssociationAlgorithm::IsClusterContained(const CartesianPointVector
     const CartesianVector &a(boundingVertices[0]);
     const CartesianVector &b(boundingVertices[3]);
     const CartesianVector &c(boundingVertices[4]);
+    CartesianVector ab(b); ab -= a;
+    CartesianVector ac(c); ac -= a;
 
-    (void)a;
-    (void)b;
-    (void)c;
-    (void)pCluster;
+/*    PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &a, &b, "AB", BLACK, 3, 1));
+    PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &a, &c, "AC", BLACK, 3, 1));
+    PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &b, &c, "BC", BLACK, 3, 1));*/
 
-    return false;
+    const OrderedCaloHitList &orderedCaloHitList(pCluster->GetOrderedCaloHitList());
+    CaloHitList caloHits;
+    orderedCaloHitList.FillCaloHitList(caloHits);
+    CaloHitList containedHits, uncontainedHits;
+    for (const CaloHit *pCaloHit : caloHits)
+    {
+        CartesianVector ap(pCaloHit->GetPositionVector()); ap -= a;
+        if (this->IsPointContained(ab, ac, ap))
+            containedHits.emplace_back(pCaloHit);
+        else
+            uncontainedHits.emplace_back(pCaloHit);
+    }
+/*    if (!containedHits.empty())
+    {
+        PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &containedHits, "Contained", BLUE));
+    }
+    if (!uncontainedHits.empty())
+    {
+        PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &uncontainedHits, "Uncontained", RED));
+    }*/
+
+    return !containedHits.empty() && containedHits.size() >= uncontainedHits.size();
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+bool EnvelopeAssociationAlgorithm::IsPointContained(const CartesianVector &ab, const CartesianVector &ac, const CartesianVector &ap) const
+{
+    const float dotABAB{ab.GetDotProduct(ab)};
+    const float dotABAP{ab.GetDotProduct(ap)};
+    const float dotACAC{ac.GetDotProduct(ac)};
+    const float dotACAB{ac.GetDotProduct(ab)};
+    const float dotACAP{ac.GetDotProduct(ap)};
+
+    const float denom{dotACAC * dotABAB - dotACAB * dotACAB};
+    if (std::fabs(denom) < std::numeric_limits<float>::epsilon())
+        return false;
+    const float invDenom{1.f / denom};
+    const float u{(dotABAB * dotACAP - dotACAB * dotABAP) * invDenom};
+    const float v{(dotACAC * dotABAP - dotACAB * dotACAP) * invDenom};
+
+    return (u >= 0) && (v >= 0) && ((u + v) <= 1);
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
@@ -159,7 +185,7 @@ void EnvelopeAssociationAlgorithm::GetBoundingShapes(const Cluster *const pClust
     p3r *= length * eigenRatio;
     p3l -= p3r;
     p3r += p2; p3l += p2; 
-
+/*
     PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &p0, &p1r, "A", BLUE, 3, 1));
     PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &p1r, &p1l, "B", BLUE, 3, 1));
     PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &p1l, &p0, "C", BLUE, 3, 1));
@@ -168,7 +194,7 @@ void EnvelopeAssociationAlgorithm::GetBoundingShapes(const Cluster *const pClust
     PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &p1r, &p3r, "F", GREEN, 3, 1));
     PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &p1l, &p3l, "G", GREEN, 3, 1));
     PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &p2r, &p2l, "H", RED, 3, 1));
-    PANDORA_MONITORING_API(Pause(this->GetPandora()));
+    PANDORA_MONITORING_API(Pause(this->GetPandora()));*/
 
     boundingVertices.emplace_back(p0);     // Origin of cone
     boundingVertices.emplace_back(p1l);    // 'Left' vertex of primary
@@ -191,7 +217,7 @@ StatusCode EnvelopeAssociationAlgorithm::ReadSettings(const TiXmlHandle xmlHandl
         "MaxGapDistance", maxGapDistance));
     m_maxGapDistanceSquared = maxGapDistance * maxGapDistance;
 
-    return ClusterAssociationAlgorithm::ReadSettings(xmlHandle);
+    return ClusterMergingAlgorithm::ReadSettings(xmlHandle);
 }
 
 } // namespace lar_content

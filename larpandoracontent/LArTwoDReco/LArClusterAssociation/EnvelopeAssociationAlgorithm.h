@@ -10,7 +10,7 @@
 
 #include "Pandora/Algorithm.h"
 
-#include "larpandoracontent/LArTwoDReco/LArClusterAssociation/ClusterAssociationAlgorithm.h"
+#include "larpandoracontent/LArTwoDReco/LArClusterAssociation/ClusterMergingAlgorithm.h"
 
 namespace lar_content
 {
@@ -18,7 +18,7 @@ namespace lar_content
 /**
  *  @brief  EnvelopeAssociationAlgorithm class
  */
-class EnvelopeAssociationAlgorithm : public ClusterAssociationAlgorithm
+class EnvelopeAssociationAlgorithm : public ClusterMergingAlgorithm
 {
 public:
     /**
@@ -29,8 +29,7 @@ public:
 private:
     pandora::StatusCode ReadSettings(const pandora::TiXmlHandle xmlHandle);
     void GetListOfCleanClusters(const pandora::ClusterList *const pClusterList, pandora::ClusterVector &clusterVector) const;
-    void PopulateClusterAssociationMap(const pandora::ClusterVector &clusterVector, ClusterAssociationMap &clusterAssociationMap) const;
-    bool IsExtremalCluster(const bool isForward, const pandora::Cluster *const pCurrentCluster, const pandora::Cluster *const pTestCluster) const;
+    void PopulateClusterMergeMap(const pandora::ClusterVector &clusterVector, ClusterMergeMap &clusterMergeMap) const;
 
     /**
      *  @brief  Determine whether a target cluster is contained by a bounding region
@@ -41,6 +40,18 @@ private:
      *  @return whether the cluster is contained within the bounding region
      */
     bool IsClusterContained(const pandora::CartesianPointVector &boundingVertices, const pandora::Cluster *const pCluster) const;
+
+    /**
+     *  @brief  Determines if a point is contained within a triangle using the Barycentric technique, as described in
+     *          Real-Time Collision Detection, C. Ericson (Morgan Kaufmann, 2005).
+     *
+     *  @param  ab the vector describing the triangle edge ab
+     *  @param  ac the vector describing the traingle edge ac
+     *  @param  ap the vector describing the displacement of the point p from the point a
+     *
+     *  @return true if the point is contained within the triangle, false otherwise
+     */
+    bool IsPointContained(const pandora::CartesianVector &ab, const pandora::CartesianVector &ac, const pandora::CartesianVector &ap) const;
 
     /**
      *  @brief  Retrieve the vertices for the bounding envelopes to be used during cluster association
