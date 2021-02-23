@@ -278,6 +278,28 @@ public:
     static pandora::StatusCode GetAverageZ(const pandora::Cluster *const pCluster, const float xmin, const float xmax, float &averageZ);
 
     /**
+     *  @brief  Get the centroid of the cluster. The standard GetCentroid function in the Cluster class returns a pseudolayer-specific
+     *          centroid, whereas this function returns the global centroid of the cluster (excluding isolated hits)
+     *
+     *  @param  pCluster address of the cluster
+     *  @param  centroid the output centroid vector
+     *
+     *  @return status code
+     */
+    static pandora::StatusCode GetCentroid(const pandora::Cluster *const pCluster, pandora::CartesianVector &centroid);
+
+    /**
+     *  @brief  Get the centroid of the cluster. The standard GetCentroid function in the Cluster class returns a pseudolayer-specific
+     *          centroid, whereas this function returns the global centroid of the cluster including isolated hits
+     *
+     *  @param  pCluster address of the cluster
+     *  @param  centroid the output centroid vector
+     *
+     *  @return status code
+     */
+    static pandora::StatusCode GetCentroidAllHits(const pandora::Cluster *const pCluster, pandora::CartesianVector &centroid);
+
+    /**
      *  @brief  Sort clusters by number of occupied layers, and by inner layer, then energy in event of a tie
      *
      *  @param  pLhs address of first cluster

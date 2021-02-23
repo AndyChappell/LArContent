@@ -148,6 +148,7 @@
 
 #include "larpandoracontent/LArTwoDReco/LArClusterAssociation/CrossGapsAssociationAlgorithm.h"
 #include "larpandoracontent/LArTwoDReco/LArClusterAssociation/CrossGapsExtensionAlgorithm.h"
+#include "larpandoracontent/LArTwoDReco/LArClusterAssociation/EnvelopeAssociationAlgorithm.h"
 #include "larpandoracontent/LArTwoDReco/LArClusterAssociation/HitWidthClusterMergingAlgorithm.h"
 #include "larpandoracontent/LArTwoDReco/LArClusterAssociation/LongitudinalAssociationAlgorithm.h"
 #include "larpandoracontent/LArTwoDReco/LArClusterAssociation/LongitudinalExtensionAlgorithm.h"
@@ -258,6 +259,7 @@
     d("LArSvmPfoCharacterisation",              SvmPfoCharacterisationAlgorithm)                                                \
     d("LArCrossGapsAssociation",                CrossGapsAssociationAlgorithm)                                                  \
     d("LArCrossGapsExtension",                  CrossGapsExtensionAlgorithm)                                                    \
+    d("LArEnvelopeAssociation",                 EnvelopeAssociationAlgorithm)                                                   \
     d("LArHitWidthClusterMerging",              HitWidthClusterMergingAlgorithm)                                                \
     d("LArLongitudinalAssociation",             LongitudinalAssociationAlgorithm)                                               \
     d("LArLongitudinalExtension",               LongitudinalExtensionAlgorithm)                                                 \

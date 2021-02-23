@@ -382,6 +382,70 @@ StatusCode LArClusterHelper::GetAverageZ(const Cluster *const pCluster, const fl
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
+StatusCode LArClusterHelper::GetCentroid(const Cluster *const pCluster, CartesianVector &centroid)
+{
+    const OrderedCaloHitList &orderedCaloHitList(pCluster->GetOrderedCaloHitList());
+
+    float xsum{0.f}, zsum{0.f};
+    int count{0};
+    for (OrderedCaloHitList::const_iterator ochIter = orderedCaloHitList.begin(), ochIterEnd = orderedCaloHitList.end(); ochIter != ochIterEnd; ++ochIter)
+    {
+        for (CaloHitList::const_iterator hIter = ochIter->second->begin(), hIterEnd = ochIter->second->end(); hIter != hIterEnd; ++hIter)
+        {
+            const CaloHit *const pCaloHit = *hIter;
+            const CartesianVector &hit(pCaloHit->GetPositionVector());
+
+            xsum += hit.GetX();
+            zsum += hit.GetZ();
+            ++count;
+        }
+    }
+
+    if (count == 0)
+        return STATUS_CODE_NOT_FOUND;
+
+    centroid.SetValues(xsum / count, 0.f, zsum / count);
+    return STATUS_CODE_SUCCESS;
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+StatusCode LArClusterHelper::GetCentroidAllHits(const Cluster *const pCluster, CartesianVector &centroid)
+{
+    const OrderedCaloHitList &orderedCaloHitList(pCluster->GetOrderedCaloHitList());
+
+    float xsum{0.f}, zsum{0.f};
+    int count{0};
+    for (OrderedCaloHitList::const_iterator ochIter = orderedCaloHitList.begin(), ochIterEnd = orderedCaloHitList.end(); ochIter != ochIterEnd; ++ochIter)
+    {
+        for (CaloHitList::const_iterator hIter = ochIter->second->begin(), hIterEnd = ochIter->second->end(); hIter != hIterEnd; ++hIter)
+        {
+            const CaloHit *const pCaloHit = *hIter;
+            const CartesianVector &hit(pCaloHit->GetPositionVector());
+            xsum += hit.GetX();
+            zsum += hit.GetZ();
+            ++count;
+        }
+    }
+
+    const CaloHitList &isolatedHitList(pCluster->GetIsolatedCaloHitList());
+    for (const CaloHit *pCaloHit : isolatedHitList)
+    {
+        const CartesianVector &hit(pCaloHit->GetPositionVector());
+        xsum += hit.GetX();
+        zsum += hit.GetZ();
+        ++count;
+    }
+
+    if (count == 0)
+        return STATUS_CODE_NOT_FOUND;
+
+    centroid.SetValues(xsum / count, 0.f, zsum / count);
+    return STATUS_CODE_SUCCESS;
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
 void LArClusterHelper::GetExtremalCoordinates(const ClusterList &clusterList, CartesianVector &innerCoordinate, CartesianVector &outerCoordinate)
 {
     OrderedCaloHitList orderedCaloHitList;
