@@ -45,73 +45,33 @@ void EnvelopeAssociationAlgorithm::GetListOfCleanClusters(const ClusterList *con
 
 void EnvelopeAssociationAlgorithm::PopulateClusterAssociationMap(const ClusterVector &clusterVector, ClusterAssociationMap &clusterAssociationMap) const
 {
-    for (ClusterVector::const_iterator iter1 = clusterVector.begin(); iter1 != clusterVector.end(); ++iter1)
+    ClusterList seedClusters, targetClusters;
+    for (ClusterVector::const_iterator iter = clusterVector.begin(); iter != clusterVector.end(); ++iter)
     {
-        const Cluster *const pCluster1{*iter1};
+        const Cluster *const pCluster{*iter};
         // Remove hard-coding
-        if (pCluster1->GetNCaloHits() > 30)
-        {
-            // Get the eigen vectors for this cluster
-            const OrderedCaloHitList &orderedCaloHitList(pCluster1->GetOrderedCaloHitList());
-            CaloHitList caloHits;
-            orderedCaloHitList.FillCaloHitList(caloHits);
-            CartesianVector centroid(0.f, 0.f, 0.f);
-            LArPcaHelper::EigenValues eigenValues(0.f, 0.f, 0.f);
-            LArPcaHelper::EigenVectors eigenVectors;
-            LArPcaHelper::RunPca(caloHits, centroid, eigenValues, eigenVectors);
-
-            // Construct a cone around the hits based on the eigen vectors
-            CartesianVector p0(0.f, 0.f, 0.f), p1(0.f, 0.f, 0.f);
-            LArClusterHelper::GetExtremalCoordinates(pCluster1, p0, p1);
-            p0 -= centroid;
-            p1 -= centroid;
-            const float p0Dote0Norm{p0.GetDotProduct(eigenVectors[0]) / eigenVectors[0].GetMagnitudeSquared()};
-            const float p1Dote0Norm{p1.GetDotProduct(eigenVectors[0]) / eigenVectors[0].GetMagnitudeSquared()};
-            p0.SetValues(p0Dote0Norm * eigenVectors[0].GetX(), p0Dote0Norm * eigenVectors[0].GetY(), p0Dote0Norm * eigenVectors[0].GetZ());
-            p0 += centroid;
-            p1.SetValues(p1Dote0Norm * eigenVectors[0].GetX(), p1Dote0Norm * eigenVectors[0].GetY(), p1Dote0Norm * eigenVectors[0].GetZ());
-            p1 += centroid;
-            CartesianVector dl(p1);
-            dl -= p0;
-            const float length{dl.GetMagnitude()};
-            CartesianVector b(eigenVectors[1]), c(0.f, 0.f, 0.f);
-            b *= length * std::sqrt(eigenValues.GetY() / eigenValues.GetX());
-            c -= b;
-            b += p1; c+= p1;
-            CartesianVector p2(p1);
-            p2 += dl;
-            CartesianVector d(eigenVectors[1]), e(0.f, 0.f, 0.f);
-            d *= 2 * length * std::sqrt(eigenValues.GetY() / eigenValues.GetX());
-            e -= d;
-            d += p2; e += p2;
-            CartesianVector f(eigenVectors[1]), g(0.f, 0.f, 0.f);
-            f *= length * std::sqrt(eigenValues.GetY() / eigenValues.GetX());
-            g -= f;
-            f += p2; g += p2; 
-
-            PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &p0, &b, "A", BLUE, 3, 1));
-            PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &b, &c, "B", BLUE, 3, 1));
-            PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &c, &p0, "C", BLUE, 3, 1));
-            PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &b, &d, "D", BLUE, 3, 1));
-            PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &c, &e, "E", BLUE, 3, 1));
-            PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &b, &f, "F", BLUE, 3, 1));
-            PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &c, &g, "G", BLUE, 3, 1));
-            PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &d, &e, "H", BLUE, 3, 1));
-            PANDORA_MONITORING_API(Pause(this->GetPandora()));
-        }
+        if (pCluster->GetNCaloHits() > 30)
+            seedClusters.emplace_back(pCluster);
+        else
+            targetClusters.emplace_back(pCluster);
+    }
+    for (const Cluster *pSeed : seedClusters)
+    {
+        std::cout << "NHits " << pSeed << " " << pSeed->GetNCaloHits() << std::endl;
+        CartesianPointVector boundingVertices;
+        this->GetBoundingShapes(pSeed, boundingVertices);
 
         // Find the clusters with a significant fraction of hits (50%) contained by the cone and associate
-        for (ClusterVector::const_iterator iter2 = std::next(iter1); iter2 != clusterVector.end(); ++iter2)
+        for (const Cluster * pTarget : targetClusters)
         {
-            const Cluster *const pCluster2{*iter2};
-
-            if (!this->AreClustersAssociated(pCluster1, pCluster2))
+            if (!this->IsClusterContained(boundingVertices, pTarget))
                 continue;
 
-            clusterAssociationMap[pCluster1].m_forwardAssociations.insert(pCluster2);
-            clusterAssociationMap[pCluster2].m_backwardAssociations.insert(pCluster1);
+            clusterAssociationMap[pSeed].m_forwardAssociations.insert(pTarget);
+            clusterAssociationMap[pTarget].m_backwardAssociations.insert(pSeed);
         }
     }
+
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
@@ -132,17 +92,91 @@ bool EnvelopeAssociationAlgorithm::IsExtremalCluster(const bool isForward, const
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-bool EnvelopeAssociationAlgorithm::AreClustersAssociated(const Cluster *const pCluster1, const Cluster *const pCluster2) const
+bool EnvelopeAssociationAlgorithm::IsClusterContained(const CartesianPointVector &boundingVertices, const Cluster *const pCluster) const
 {
-    // This is inefficient, considering computing all centroids first and looking them up
-    CartesianVector centroid1(0.f, 0.f, 0.f);
-    if (LArClusterHelper::GetCentroid(pCluster1, centroid1) != STATUS_CODE_SUCCESS)
-        return false;
-    CartesianVector centroid2(0.f, 0.f, 0.f);
-    if (LArClusterHelper::GetCentroid(pCluster2, centroid2) != STATUS_CODE_SUCCESS)
-        return false;
+    // Vertices of the extended cone
+    const CartesianVector &a(boundingVertices[0]);
+    const CartesianVector &b(boundingVertices[3]);
+    const CartesianVector &c(boundingVertices[4]);
 
-    return centroid1.GetDistanceSquared(centroid2) <= m_maxGapDistanceSquared;
+    (void)a;
+    (void)b;
+    (void)c;
+    (void)pCluster;
+
+    return false;
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+void EnvelopeAssociationAlgorithm::GetBoundingShapes(const Cluster *const pCluster, CartesianPointVector &boundingVertices) const
+{
+    // Retrieve the hits for PCA
+    const OrderedCaloHitList &orderedCaloHitList(pCluster->GetOrderedCaloHitList());
+    CaloHitList caloHits;
+    orderedCaloHitList.FillCaloHitList(caloHits);
+
+    // Get the eigen vectors for this cluster
+    CartesianVector centroid(0.f, 0.f, 0.f);
+    LArPcaHelper::EigenValues eigenValues(0.f, 0.f, 0.f);
+    LArPcaHelper::EigenVectors eigenVectors;
+    LArPcaHelper::RunPca(caloHits, centroid, eigenValues, eigenVectors);
+
+    // Project the extremal hits of the cluster onto the principal axis
+    CartesianVector p0(0.f, 0.f, 0.f), p1(0.f, 0.f, 0.f);
+    LArClusterHelper::GetExtremalCoordinates(pCluster, p0, p1);
+    p0 -= centroid;
+    p1 -= centroid;
+    const CartesianVector &principalAxis(eigenVectors[0]);
+    const float vMagSquared{principalAxis.GetMagnitudeSquared()};
+    const float normDot0p{p0.GetDotProduct(principalAxis) / vMagSquared};
+    const float normDot1p{p1.GetDotProduct(principalAxis) / vMagSquared};
+    p0.SetValues(normDot0p * principalAxis.GetX() + centroid.GetX(), normDot0p * principalAxis.GetY() + centroid.GetY(),
+        normDot0p * principalAxis.GetZ() + centroid.GetZ());
+    p1.SetValues(normDot1p * principalAxis.GetX() + centroid.GetX(), normDot1p * principalAxis.GetY() + centroid.GetY(),
+        normDot1p * principalAxis.GetZ() + centroid.GetZ());
+
+    // Get the length of the cluster along the principal axis
+    CartesianVector dl(p1); dl -= p0;
+    const float length{dl.GetMagnitude()};
+
+    const float eigenRatio{std::sqrt(eigenValues.GetY() / eigenValues.GetX())};
+    // Define a cone that (approximately) envelopes the cluster
+    CartesianVector p1r(eigenVectors[1]), p1l(0.f, 0.f, 0.f);
+    p1r *= length * eigenRatio;
+    p1l -= p1r;
+    p1r += p1; p1l += p1;
+
+    // Define an extended cone beyond the end of the cluster
+    CartesianVector p2(p1); p2 += dl;
+    CartesianVector p2r(eigenVectors[1]), p2l(0.f, 0.f, 0.f);
+    p2r *= 2 * length * eigenRatio;
+    p2l -= p2r;
+    p2r += p2; p2l += p2;
+
+    // Define an interior box within the extended cone
+    CartesianVector p3r(eigenVectors[1]), p3l(0.f, 0.f, 0.f);
+    p3r *= length * eigenRatio;
+    p3l -= p3r;
+    p3r += p2; p3l += p2; 
+
+    PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &p0, &p1r, "A", BLUE, 3, 1));
+    PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &p1r, &p1l, "B", BLUE, 3, 1));
+    PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &p1l, &p0, "C", BLUE, 3, 1));
+    PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &p1r, &p2r, "D", RED, 3, 1));
+    PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &p1l, &p2l, "E", RED, 3, 1));
+    PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &p1r, &p3r, "F", GREEN, 3, 1));
+    PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &p1l, &p3l, "G", GREEN, 3, 1));
+    PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &p2r, &p2l, "H", RED, 3, 1));
+    PANDORA_MONITORING_API(Pause(this->GetPandora()));
+
+    boundingVertices.emplace_back(p0);     // Origin of cone
+    boundingVertices.emplace_back(p1l);    // 'Left' vertex of primary
+    boundingVertices.emplace_back(p1r);    // 'Right' vertex of primary
+    boundingVertices.emplace_back(p2l);    // 'Left' vertex of extended cone
+    boundingVertices.emplace_back(p2r);    // 'Right' vertex of extended cone
+    boundingVertices.emplace_back(p3l);    // 'Left' downstream vertex of extended box
+    boundingVertices.emplace_back(p3r);    // 'Right' downstream vertex of extended box
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
