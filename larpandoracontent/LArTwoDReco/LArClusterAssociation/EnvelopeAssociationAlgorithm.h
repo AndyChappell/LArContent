@@ -61,8 +61,9 @@ private:
      */
     void GetBoundingShapes(const pandora::Cluster *const pCluster, pandora::CartesianPointVector &boundingVertices) const;
 
-    unsigned int m_minClusterLayers;            ///< minimum allowed number of layers for a clean cluster
-    float        m_maxGapDistanceSquared;       ///< maximum allowed distance (squared) between associated clusters
+    unsigned int m_minClusterLayers;    ///< minimum allowed number of layers for a clean cluster
+    unsigned int m_minSeedCaloHits;     ///< minimum number of calo hits to form a seed for PCA
+    mutable bool m_hasRunOnce;          ///< whether or not the algorithm has already run
 };
 
 } // namespace lar_content

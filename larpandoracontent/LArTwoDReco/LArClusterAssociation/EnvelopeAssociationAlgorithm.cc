@@ -19,8 +19,9 @@ namespace lar_content
 {
 
 EnvelopeAssociationAlgorithm::EnvelopeAssociationAlgorithm() :
-    m_minClusterLayers(1),
-    m_maxGapDistanceSquared(10.f)
+    m_minClusterLayers{1},
+    m_minSeedCaloHits{30},
+    m_hasRunOnce{false}
 {
 }
 
@@ -45,12 +46,15 @@ void EnvelopeAssociationAlgorithm::GetListOfCleanClusters(const ClusterList *con
 
 void EnvelopeAssociationAlgorithm::PopulateClusterMergeMap(const ClusterVector &clusterVector, ClusterMergeMap &clusterMergeMap) const
 {
+    if (m_hasRunOnce)
+        return;
+    m_hasRunOnce = true;
     ClusterList seedClusters, targetClusters;
     for (ClusterVector::const_iterator iter = clusterVector.begin(); iter != clusterVector.end(); ++iter)
     {
         const Cluster *const pCluster{*iter};
         // Remove hard-coding
-        if (pCluster->GetNCaloHits() > 30)
+        if (pCluster->GetNCaloHits() > m_minSeedCaloHits)
             seedClusters.emplace_back(pCluster);
         else
             targetClusters.emplace_back(pCluster);
@@ -84,10 +88,6 @@ bool EnvelopeAssociationAlgorithm::IsClusterContained(const CartesianPointVector
     const CartesianVector &c(boundingVertices[4]);
     CartesianVector ab(b); ab -= a;
     CartesianVector ac(c); ac -= a;
-
-/*    PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &a, &b, "AB", BLACK, 3, 1));
-    PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &a, &c, "AC", BLACK, 3, 1));
-    PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &b, &c, "BC", BLACK, 3, 1));*/
 
     const OrderedCaloHitList &orderedCaloHitList(pCluster->GetOrderedCaloHitList());
     CaloHitList caloHits;
@@ -185,8 +185,8 @@ void EnvelopeAssociationAlgorithm::GetBoundingShapes(const Cluster *const pClust
     p3r *= length * eigenRatio;
     p3l -= p3r;
     p3r += p2; p3l += p2; 
-/*
-    PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &p0, &p1r, "A", BLUE, 3, 1));
+
+/*    PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &p0, &p1r, "A", BLUE, 3, 1));
     PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &p1r, &p1l, "B", BLUE, 3, 1));
     PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &p1l, &p0, "C", BLUE, 3, 1));
     PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &p1r, &p2r, "D", RED, 3, 1));
@@ -195,6 +195,15 @@ void EnvelopeAssociationAlgorithm::GetBoundingShapes(const Cluster *const pClust
     PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &p1l, &p3l, "G", GREEN, 3, 1));
     PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &p2r, &p2l, "H", RED, 3, 1));
     PANDORA_MONITORING_API(Pause(this->GetPandora()));*/
+
+/*    if (LArClusterHelper::GetClusterHitType(pCluster) == HitType::TPC_VIEW_W)
+    {
+        PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1.f, 1.f, 1.f));
+        PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &p0, &p3l, "AB", BLACK, 3, 1));
+        PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &p0, &p3r, "AC", BLACK, 3, 1));
+        PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &p3l, &p3r, "BC", BLACK, 3, 1));
+        PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
+    }*/
 
     boundingVertices.emplace_back(p0);     // Origin of cone
     boundingVertices.emplace_back(p1l);    // 'Left' vertex of primary
@@ -209,13 +218,10 @@ void EnvelopeAssociationAlgorithm::GetBoundingShapes(const Cluster *const pClust
 
 StatusCode EnvelopeAssociationAlgorithm::ReadSettings(const TiXmlHandle xmlHandle)
 {
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "MinClusterLayers", m_minClusterLayers));
-
-    float maxGapDistance{std::sqrt(m_maxGapDistanceSquared)};
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "MaxGapDistance", maxGapDistance));
-    m_maxGapDistanceSquared = maxGapDistance * maxGapDistance;
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "MinClusterLayers",
+        m_minClusterLayers));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "MinSeedCaloHits",
+        m_minSeedCaloHits));
 
     return ClusterMergingAlgorithm::ReadSettings(xmlHandle);
 }
