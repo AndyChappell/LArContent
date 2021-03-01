@@ -21,7 +21,8 @@ namespace lar_content
 EnvelopeAssociationAlgorithm::EnvelopeAssociationAlgorithm() :
     m_minClusterLayers{1},
     m_minSeedCaloHits{30},
-    m_hasRunOnce{false}
+    m_runCount{0},
+    m_visualize{false}
 {
 }
 
@@ -46,15 +47,25 @@ void EnvelopeAssociationAlgorithm::GetListOfCleanClusters(const ClusterList *con
 
 void EnvelopeAssociationAlgorithm::PopulateClusterMergeMap(const ClusterVector &clusterVector, ClusterMergeMap &clusterMergeMap) const
 {
-    if (m_hasRunOnce)
+    if (m_runCount > 1)
         return;
-    m_hasRunOnce = true;
+    if (m_runCount == 0)
+        this->AssociateClusters(clusterVector, clusterMergeMap, m_minSeedCaloHits);
+    else
+        this->AssociateClusters(clusterVector, clusterMergeMap, 3 * m_minSeedCaloHits);
+    ++m_runCount;
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+void EnvelopeAssociationAlgorithm::AssociateClusters(const pandora::ClusterVector &clusterVector, ClusterMergeMap &clusterMergeMap,
+    const unsigned int minSeedCaloHits) const
+{
     ClusterList seedClusters, targetClusters;
     for (ClusterVector::const_iterator iter = clusterVector.begin(); iter != clusterVector.end(); ++iter)
     {
         const Cluster *const pCluster{*iter};
-        // Remove hard-coding
-        if (pCluster->GetNCaloHits() > m_minSeedCaloHits)
+        if (pCluster->GetNCaloHits() > minSeedCaloHits)
             seedClusters.emplace_back(pCluster);
         else
             targetClusters.emplace_back(pCluster);
@@ -101,14 +112,6 @@ bool EnvelopeAssociationAlgorithm::IsClusterContained(const CartesianPointVector
         else
             uncontainedHits.emplace_back(pCaloHit);
     }
-/*    if (!containedHits.empty())
-    {
-        PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &containedHits, "Contained", BLUE));
-    }
-    if (!uncontainedHits.empty())
-    {
-        PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &uncontainedHits, "Uncontained", RED));
-    }*/
 
     return !containedHits.empty() && containedHits.size() >= uncontainedHits.size();
 }
@@ -173,37 +176,51 @@ void EnvelopeAssociationAlgorithm::GetBoundingShapes(const Cluster *const pClust
     p1l -= p1r;
     p1r += p1; p1l += p1;
 
-    // Define an extended cone beyond the end of the cluster
-    CartesianVector p2(p1); p2 += dl;
+    CartesianVector p2(p1);
     CartesianVector p2r(eigenVectors[1]), p2l(0.f, 0.f, 0.f);
-    p2r *= 2 * length * eigenRatio;
-    p2l -= p2r;
-    p2r += p2; p2l += p2;
-
-    // Define an interior box within the extended cone
     CartesianVector p3r(eigenVectors[1]), p3l(0.f, 0.f, 0.f);
-    p3r *= length * eigenRatio;
-    p3l -= p3r;
-    p3r += p2; p3l += p2; 
-
-/*    PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &p0, &p1r, "A", BLUE, 3, 1));
-    PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &p1r, &p1l, "B", BLUE, 3, 1));
-    PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &p1l, &p0, "C", BLUE, 3, 1));
-    PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &p1r, &p2r, "D", RED, 3, 1));
-    PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &p1l, &p2l, "E", RED, 3, 1));
-    PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &p1r, &p3r, "F", GREEN, 3, 1));
-    PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &p1l, &p3l, "G", GREEN, 3, 1));
-    PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &p2r, &p2l, "H", RED, 3, 1));
-    PANDORA_MONITORING_API(Pause(this->GetPandora()));*/
-
-/*    if (LArClusterHelper::GetClusterHitType(pCluster) == HitType::TPC_VIEW_W)
+    if (m_runCount > 0)
+    {   // Broader cone surrounding the seed cluster
+        p2r *= 3.5f * length * eigenRatio;
+        p2l -= p2r;
+        p2r += p2; p2l += p2;
+        p3r = p2r; p3l = p2l;
+    }
+    else
     {
-        PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1.f, 1.f, 1.f));
-        PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &p0, &p3l, "AB", BLACK, 3, 1));
-        PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &p0, &p3r, "AC", BLACK, 3, 1));
-        PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &p3l, &p3r, "BC", BLACK, 3, 1));
-        PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
-    }*/
+        // Define an extended cone beyond the end of the seed cluster
+        p2 += dl;
+        p2r *= 2 * length * eigenRatio;
+        p2l -= p2r;
+        p2r += p2; p2l += p2;
+
+        // Define an interior box within the extended cone
+        p3r *= length * eigenRatio;
+        p3l -= p3r;
+        p3r += p2; p3l += p2;
+    }
+
+    if (m_visualize && LArClusterHelper::GetClusterHitType(pCluster) == HitType::TPC_VIEW_W)
+    {
+        PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &p0, &p1r, "A", BLUE, 3, 1));
+        PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &p1r, &p1l, "B", BLUE, 3, 1));
+        PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &p1l, &p0, "C", BLUE, 3, 1));
+        PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &p1r, &p2r, "D", RED, 3, 1));
+        PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &p1l, &p2l, "E", RED, 3, 1));
+        PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &p1r, &p3r, "F", GREEN, 3, 1));
+        PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &p1l, &p3l, "G", GREEN, 3, 1));
+        PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &p2r, &p2l, "H", RED, 3, 1));
+        PANDORA_MONITORING_API(Pause(this->GetPandora()));
+    }
+
+    if (m_visualize && LArClusterHelper::GetClusterHitType(pCluster) == HitType::TPC_VIEW_W)
+    {
+        PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &caloHits, "Seed", BLUE));
+        PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &p0, &p2l, "AB", BLACK, 3, 1));
+        PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &p0, &p2r, "AC", BLACK, 3, 1));
+        PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &p2l, &p2r, "BC", BLACK, 3, 1));
+        PANDORA_MONITORING_API(Pause(this->GetPandora()));
+    }
 
     boundingVertices.emplace_back(p0);     // Origin of cone
     boundingVertices.emplace_back(p1l);    // 'Left' vertex of primary
@@ -222,6 +239,8 @@ StatusCode EnvelopeAssociationAlgorithm::ReadSettings(const TiXmlHandle xmlHandl
         m_minClusterLayers));
     PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "MinSeedCaloHits",
         m_minSeedCaloHits));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "Visualize",
+        m_visualize));
 
     return ClusterMergingAlgorithm::ReadSettings(xmlHandle);
 }

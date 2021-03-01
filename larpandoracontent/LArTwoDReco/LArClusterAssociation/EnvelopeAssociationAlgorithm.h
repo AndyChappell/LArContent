@@ -32,6 +32,15 @@ private:
     void PopulateClusterMergeMap(const pandora::ClusterVector &clusterVector, ClusterMergeMap &clusterMergeMap) const;
 
     /**
+     *  @brief  Identifies good seed clusters and then attempts to grow them based on PCA-derived bounding regions
+     *
+     *  @param  clusterVector the vector of clusters to consider for association
+     *  @param  clusterMergeMap the map from seed clusters to candidate clusters for growth
+     *  @param  minSeedCaloHits the minimum number of calo hits for a cluster to be considered a seed
+     */
+    void AssociateClusters(const pandora::ClusterVector &clusterVector, ClusterMergeMap &clusterMergeMap, const unsigned int minSeedCaloHits) const;
+
+    /**
      *  @brief  Determine whether a target cluster is contained by a bounding region
      *
      *  @param  boundVertices the bounding vertices
@@ -63,7 +72,8 @@ private:
 
     unsigned int m_minClusterLayers;    ///< minimum allowed number of layers for a clean cluster
     unsigned int m_minSeedCaloHits;     ///< minimum number of calo hits to form a seed for PCA
-    mutable bool m_hasRunOnce;          ///< whether or not the algorithm has already run
+    mutable int m_runCount;             ///< the number of times the algorithm has been run
+    bool m_visualize;                   ///< whether or not to visualize the algorithm
 };
 
 } // namespace lar_content

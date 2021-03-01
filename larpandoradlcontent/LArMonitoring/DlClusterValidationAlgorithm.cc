@@ -33,7 +33,6 @@ DlClusterValidationAlgorithm::~DlClusterValidationAlgorithm()
 {
     try
     {
-        std::cout << "Writing to " << m_outputFileName << std::endl;
         PANDORA_MONITORING_API(SaveTree(this->GetPandora(), m_outputTreeName, m_outputFileName, "UPDATE"));
     }
     catch(const StatusCodeException&)
@@ -77,6 +76,8 @@ StatusCode DlClusterValidationAlgorithm::Run()
             for (const CaloHit *pCaloHit : caloHits)
             {
                 const MCParticle *const pMCParticle(MCParticleHelper::GetMainMCParticle(pCaloHit));
+                if (!pMCParticle)
+                    continue;
                 if (mcHits.find(pMCParticle) != mcHits.end())
                     ++mcHits[pMCParticle];
                 else
