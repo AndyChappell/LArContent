@@ -1,5 +1,5 @@
 /**
- *  @file   larpandoradlcontent/LArTwoDReco/DlClusterStreamingAlgorithm.cc
+ *  @file   larpandoradlcontent/LArTwoDReco/StreamSelectionAlgorithm.cc
  *
  *  @brief  Implementation of the deep learning track shower cluster streaming algorithm.
  *
@@ -8,7 +8,7 @@
 
 #include "Pandora/AlgorithmHeaders.h"
 
-#include "larpandoradlcontent/LArTwoDReco/DlClusterStreamingAlgorithm.h"
+#include "larpandoracontent/LArTwoDReco/StreamSelectionAlgorithm.h"
 
 #include "larpandoracontent/LArHelpers/LArMCParticleHelper.h"
 #include "larpandoracontent/LArHelpers/LArMonitoringHelper.h"
@@ -18,25 +18,24 @@
 #include <numeric>
 
 using namespace pandora;
-using namespace lar_content;
 
-namespace lar_dl_content
+namespace lar_content
 {
 
-DlClusterStreamingAlgorithm::DlClusterStreamingAlgorithm() :
+StreamSelectionAlgorithm::StreamSelectionAlgorithm() :
     m_useTracksAsOutputList{true}
 {
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-DlClusterStreamingAlgorithm::~DlClusterStreamingAlgorithm()
+StreamSelectionAlgorithm::~StreamSelectionAlgorithm()
 {
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-StatusCode DlClusterStreamingAlgorithm::Run()
+StatusCode StreamSelectionAlgorithm::Run()
 {
     const ClusterList *pClusterList{nullptr};
     PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetCurrentList(*this, pClusterList));
@@ -96,7 +95,7 @@ StatusCode DlClusterStreamingAlgorithm::Run()
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-StatusCode DlClusterStreamingAlgorithm::ReadSettings(const TiXmlHandle xmlHandle)
+StatusCode StreamSelectionAlgorithm::ReadSettings(const TiXmlHandle xmlHandle)
 {
     PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadValue(xmlHandle, "TrackClusterListName", m_trackClusterListName));
     PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadValue(xmlHandle, "ShowerClusterListName", m_showerClusterListName));
@@ -106,4 +105,4 @@ StatusCode DlClusterStreamingAlgorithm::ReadSettings(const TiXmlHandle xmlHandle
     return STATUS_CODE_SUCCESS;
 }
 
-} // namespace lar_dl_content
+} // namespace lar_content

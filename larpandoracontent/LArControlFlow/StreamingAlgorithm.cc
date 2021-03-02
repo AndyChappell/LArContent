@@ -1,5 +1,5 @@
 /**
- *  @file   larpandoradlcontent/LArTwoDReco/DlBranchingAlgorithm.cc
+ *  @file   larpandoradlcontent/LArTwoDReco/StreamingAlgorithm.cc
  *
  *  @brief  Implementation of the deep learning track shower cluster streaming algorithm.
  *
@@ -8,7 +8,7 @@
 
 #include "Pandora/AlgorithmHeaders.h"
 
-#include "larpandoradlcontent/LArTwoDReco/DlBranchingAlgorithm.h"
+#include "larpandoracontent/LArControlFlow/StreamingAlgorithm.h"
 
 #include "larpandoracontent/LArHelpers/LArMCParticleHelper.h"
 #include "larpandoracontent/LArHelpers/LArMonitoringHelper.h"
@@ -18,24 +18,23 @@
 #include <numeric>
 
 using namespace pandora;
-using namespace lar_content;
 
-namespace lar_dl_content
+namespace lar_content
 {
 
-DlBranchingAlgorithm::DlBranchingAlgorithm()
-{
-}
-
-//------------------------------------------------------------------------------------------------------------------------------------------
-
-DlBranchingAlgorithm::~DlBranchingAlgorithm()
+StreamingAlgorithm::StreamingAlgorithm()
 {
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-StatusCode DlBranchingAlgorithm::Run()
+StreamingAlgorithm::~StreamingAlgorithm()
+{
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+StatusCode StreamingAlgorithm::Run()
 {
     const ClusterList *pTrackClusterList{nullptr};
     // Set the input track cluster list as current
@@ -89,7 +88,7 @@ StatusCode DlBranchingAlgorithm::Run()
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-StatusCode DlBranchingAlgorithm::ReadSettings(const TiXmlHandle xmlHandle)
+StatusCode StreamingAlgorithm::ReadSettings(const TiXmlHandle xmlHandle)
 {
     PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadValue(xmlHandle, "TrackClusterListName", m_trackClusterListName));
     PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadValue(xmlHandle, "ShowerClusterListName", m_showerClusterListName));
@@ -100,4 +99,4 @@ StatusCode DlBranchingAlgorithm::ReadSettings(const TiXmlHandle xmlHandle)
     return STATUS_CODE_SUCCESS;
 }
 
-} // namespace lar_dl_content
+} // namespace lar_content

@@ -42,6 +42,7 @@
 #include "larpandoracontent/LArControlFlow/PreProcessingAlgorithm.h"
 #include "larpandoracontent/LArControlFlow/SlicingAlgorithm.h"
 #include "larpandoracontent/LArControlFlow/StitchingCosmicRayMergingTool.h"
+#include "larpandoracontent/LArControlFlow/StreamingAlgorithm.h"
 
 #include "larpandoracontent/LArCustomParticles/PcaShowerParticleBuildingAlgorithm.h"
 #include "larpandoracontent/LArCustomParticles/TrackParticleBuildingAlgorithm.h"
@@ -182,6 +183,7 @@
 #include "larpandoracontent/LArTwoDReco/LArClusterSplitting/TrackConsolidationAlgorithm.h"
 #include "larpandoracontent/LArTwoDReco/LArClusterSplitting/VertexSplittingAlgorithm.h"
 
+#include "larpandoracontent/LArTwoDReco/StreamSelectionAlgorithm.h"
 #include "larpandoracontent/LArTwoDReco/TwoDParticleCreationAlgorithm.h"
 
 #include "larpandoracontent/LArUtility/ListChangingAlgorithm.h"
@@ -226,6 +228,7 @@
     d("LArPostProcessing",                      PostProcessingAlgorithm)                                                        \
     d("LArPreProcessing",                       PreProcessingAlgorithm)                                                         \
     d("LArSlicing",                             SlicingAlgorithm)                                                               \
+    d("LArStreaming",                           StreamingAlgorithm)                                                             \
     d("LArTrackParticleBuilding",               TrackParticleBuildingAlgorithm)                                                 \
     d("LArNeutrinoCreation",                    NeutrinoCreationAlgorithm)                                                      \
     d("LArNeutrinoDaughterVertices",            NeutrinoDaughterVerticesAlgorithm)                                              \
@@ -288,6 +291,7 @@
     d("LArOvershootSplitting",                  OvershootSplittingAlgorithm)                                                    \
     d("LArTrackConsolidation",                  TrackConsolidationAlgorithm)                                                    \
     d("LArVertexSplitting",                     VertexSplittingAlgorithm)                                                       \
+    d("LArStreamSelection",                     StreamSelectionAlgorithm)                                                       \
     d("LArTwoDParticleCreation",                TwoDParticleCreationAlgorithm)                                                  \
     d("LArListChanging",                        ListChangingAlgorithm)                                                          \
     d("LArListDeletion",                        ListDeletionAlgorithm)                                                          \

@@ -1,30 +1,30 @@
 /**
- *  @file   larpandoradlcontent/LArTwoDReco/DlBranchingAlgorithm.h
+ *  @file   larpandoradlcontent/LArTwoDReco/StreamingAlgorithm.h
  *
  *  @brief  Header file for the deep learning track shower cluster streaming algorithm.
  *
  *  $Log: $
  */
-#ifndef LAR_DL_BRANCHING_ALGORITHM_H
-#define LAR_DL_BRANCHING_ALGORITHM_H 1
+#ifndef LAR_STREAMING_ALGORITHM_H
+#define LAR_STREAMING_ALGORITHM_H 1
 
 #include "Pandora/Algorithm.h"
 
-namespace lar_dl_content
+namespace lar_content
 {
 
 /**
- *  @brief  DlBranchingAlgorithm class
+ *  @brief  StreamingAlgorithm class
  */
-class DlBranchingAlgorithm: public pandora::Algorithm
+class StreamingAlgorithm: public pandora::Algorithm
 {
 public:
     /**
      *  @brief  Default constructor
      */
-    DlBranchingAlgorithm();
+    StreamingAlgorithm();
 
-    virtual ~DlBranchingAlgorithm();
+    virtual ~StreamingAlgorithm();
 
 private:
     pandora::StatusCode Run();
@@ -37,6 +37,6 @@ private:
     std::string m_outputClusterListName;        ///< The name of the output cluster list
 };
 
-} // namespace lar_dl_content
+} // namespace lar_content
 
-#endif // LAR_DL_BRANCHING_ALGORITHM_H
+#endif // LAR_STREAMING_ALGORITHM_H

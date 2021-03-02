@@ -1,30 +1,30 @@
 /**
- *  @file   larpandoradlcontent/LArTwoDReco/DlClusterStreamingAlgorithm.h
+ *  @file   larpandoradlcontent/LArTwoDReco/StreamSelectionAlgorithm.h
  *
  *  @brief  Header file for the deep learning track shower cluster streaming algorithm.
  *
  *  $Log: $
  */
-#ifndef LAR_DL_CLUSTER_STREAMING_ALGORITHM_H
-#define LAR_DL_CLUSTER_STREAMING_ALGORITHM_H 1
+#ifndef LAR_STREAM_SELECTION_ALGORITHM_H
+#define LAR_STREAM_SELECTION_ALGORITHM_H 1
 
 #include "Pandora/Algorithm.h"
 
-namespace lar_dl_content
+namespace lar_content
 {
 
 /**
- *  @brief  DlClusterStreamingAlgorithm class
+ *  @brief  StreamSelectionAlgorithm class
  */
-class DlClusterStreamingAlgorithm: public pandora::Algorithm
+class StreamSelectionAlgorithm: public pandora::Algorithm
 {
 public:
     /**
      *  @brief  Default constructor
      */
-    DlClusterStreamingAlgorithm();
+    StreamSelectionAlgorithm();
 
-    virtual ~DlClusterStreamingAlgorithm();
+    virtual ~StreamSelectionAlgorithm();
 
 private:
     pandora::StatusCode Run();
@@ -35,6 +35,6 @@ private:
     bool        m_useTracksAsOutputList;    ///< Whether or not to use tracks for the output cluster list
 };
 
-} // namespace lar_dl_content
+} // namespace lar_content
 
-#endif // LAR_DL_CLUSTER_STREAMING_ALGORITHM_H
+#endif // LAR_STREAM_SELECTION_ALGORITHM_H
