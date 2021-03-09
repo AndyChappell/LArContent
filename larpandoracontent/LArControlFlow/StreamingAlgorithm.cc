@@ -15,6 +15,7 @@
 
 #include "larpandoracontent/LArObjects/LArCaloHit.h"
 
+#include <algorithm>
 #include <numeric>
 
 using namespace pandora;
@@ -22,7 +23,8 @@ using namespace pandora;
 namespace lar_content
 {
 
-StreamingAlgorithm::StreamingAlgorithm()
+StreamingAlgorithm::StreamingAlgorithm() :
+    m_listType{"cluster"}
 {
 }
 
@@ -36,52 +38,34 @@ StreamingAlgorithm::~StreamingAlgorithm()
 
 StatusCode StreamingAlgorithm::Run()
 {
-    const ClusterList *pTrackClusterList{nullptr};
-    // Set the input track cluster list as current
-    PandoraContentApi::ReplaceCurrentList<Cluster>(*this, m_trackClusterListName);
-    StatusCode code{PandoraContentApi::GetCurrentList(*this, pTrackClusterList)};
-    if (code == STATUS_CODE_SUCCESS)
+    for (std::string listName : m_inputListNames)
     {
-        for (const auto &alg : m_trackAlgorithms)
-        {   // ATTN - The clustering algorithms replace the current cluster list as they go
-            PandoraContentApi::GetCurrentList(*this, pTrackClusterList);
-            if (!pTrackClusterList->empty())
-            {
-                PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::RunDaughterAlgorithm(*this, alg));
-            }
-        }
-        // Save the current cluster list to the target output list
-        PandoraContentApi::SaveList<Cluster>(*this, m_outputClusterListName);
-    }
-    else if (code != STATUS_CODE_NOT_INITIALIZED)
-    {
-        return code;
-    }
-
-    const ClusterList *pShowerClusterList{nullptr};
-    // Set the input shower cluster list as current
-    PandoraContentApi::ReplaceCurrentList<Cluster>(*this, m_showerClusterListName);
-    code = PandoraContentApi::GetCurrentList(*this, pShowerClusterList);
-    if (code == STATUS_CODE_SUCCESS)
-    {
-        for (const auto &alg : m_showerAlgorithms)
+        std::string algStreamName{"Algorithms" + listName};
+        const ClusterList *pClusterList{nullptr};
+        // Set the input list as current
+        PandoraContentApi::ReplaceCurrentList<Cluster>(*this, listName);
+        StatusCode code{PandoraContentApi::GetCurrentList(*this, pClusterList)};
+        if (code == STATUS_CODE_SUCCESS)
         {
-            PandoraContentApi::GetCurrentList(*this, pShowerClusterList);
-            if (!pShowerClusterList->empty())
-            {
-                PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::RunDaughterAlgorithm(*this, alg));
+            for (const auto &alg : m_streamAlgorithmMap.at(algStreamName))
+            {   // ATTN - The algorithms replace the current list as they go
+                PandoraContentApi::GetCurrentList(*this, pClusterList);
+                if (!pClusterList->empty())
+                {
+                    PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::RunDaughterAlgorithm(*this, alg));
+                }
             }
+            // Save the current list to the target output list
+            PandoraContentApi::SaveList<Cluster>(*this, m_outputListName);
         }
-        // Append the current cluster list to the target output list
-        PandoraContentApi::SaveList<Cluster>(*this, m_outputClusterListName);
-    }
-    else if (code != STATUS_CODE_NOT_INITIALIZED)
-    {
-        return code;
+        else if (code != STATUS_CODE_NOT_INITIALIZED)
+        {
+            return code;
+        }
     }
 
     // Set the current list to the final output list
-    PandoraContentApi::ReplaceCurrentList<Cluster>(*this, m_outputClusterListName);
+    PandoraContentApi::ReplaceCurrentList<Cluster>(*this, m_outputListName);
 
     return STATUS_CODE_SUCCESS;
 }
@@ -90,11 +74,39 @@ StatusCode StreamingAlgorithm::Run()
 
 StatusCode StreamingAlgorithm::ReadSettings(const TiXmlHandle xmlHandle)
 {
-    PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadValue(xmlHandle, "TrackClusterListName", m_trackClusterListName));
-    PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadValue(xmlHandle, "ShowerClusterListName", m_showerClusterListName));
-    PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadValue(xmlHandle, "OutputClusterListName", m_outputClusterListName));
-    PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ProcessAlgorithmList(*this, xmlHandle, "TrackAlgorithms", m_trackAlgorithms));
-    PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ProcessAlgorithmList(*this, xmlHandle, "ShowerAlgorithms", m_showerAlgorithms));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "ListType", m_listType));
+    std::transform(m_listType.begin(), m_listType.end(), m_listType.begin(), ::tolower);
+    if (m_listType != "cluster")
+    {
+        std::cout << "StreamingAlgorithm::ReadSettings - Error: Only Cluster list type is supported at this time" << std::endl;
+        return STATUS_CODE_INVALID_PARAMETER;
+    }
+
+    PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadVectorOfValues(xmlHandle, "InputListNames", m_inputListNames));
+    if (m_inputListNames.empty())
+    {
+        std::cout << "StreamingAlgorithm::ReadSettings - Error: No input lists found" << std::endl;
+        return STATUS_CODE_NOT_FOUND;
+    }
+
+    PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadValue(xmlHandle, "OutputListName", m_outputListName));
+
+    for (std::string listName : m_inputListNames)
+    {
+        std::string algStreamName{"Algorithms" + listName};
+        if (m_streamAlgorithmMap.find(algStreamName) != m_streamAlgorithmMap.end())
+        {
+            std::cout << "StreamingAlgorithm::ReadSettings - Error: Duplicate stream name found" << std::endl;
+            return STATUS_CODE_INVALID_PARAMETER;
+        }
+        PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ProcessAlgorithmList(*this, xmlHandle, algStreamName,
+            m_streamAlgorithmMap[algStreamName]));
+        if (m_streamAlgorithmMap.at(algStreamName).empty())
+        {
+            std::cout << "StreamingAlgorithm::ReadSettings - Error: Found no algorithms for \'" << algStreamName << "\'" << std::endl;
+            return STATUS_CODE_NOT_FOUND;
+        }
+    }
 
     return STATUS_CODE_SUCCESS;
 }

@@ -27,14 +27,14 @@ public:
     virtual ~StreamingAlgorithm();
 
 private:
+    typedef std::map<std::string, pandora::StringVector> StreamAlgorithmMap;
     pandora::StatusCode Run();
     pandora::StatusCode ReadSettings(const pandora::TiXmlHandle xmlHandle);
 
-    pandora::StringVector   m_trackAlgorithms;  ///< The names of the algorithms to run in the track branch
-    pandora::StringVector   m_showerAlgorithms; ///< The names of the algortihms to run in the shower branch
-    std::string m_trackClusterListName;         ///< The name of the cluster list for track-like clusters
-    std::string m_showerClusterListName;        ///< The name of the cluster list for shower-like clusters
-    std::string m_outputClusterListName;        ///< The name of the output cluster list
+    std::string m_outputListName;               ///< The name of the output list
+    std::string m_listType;                     ///< The type of the input lists (currently only Cluster is supported)
+    pandora::StringVector m_inputListNames;     ///< The names of the input lists
+    StreamAlgorithmMap m_streamAlgorithmMap;    ///< A map from individual streams to the algorithms that stream should run
 };
 
 } // namespace lar_content
