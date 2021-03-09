@@ -183,7 +183,6 @@
 #include "larpandoracontent/LArTwoDReco/LArClusterSplitting/TrackConsolidationAlgorithm.h"
 #include "larpandoracontent/LArTwoDReco/LArClusterSplitting/VertexSplittingAlgorithm.h"
 
-#include "larpandoracontent/LArTwoDReco/StreamSelectionAlgorithm.h"
 #include "larpandoracontent/LArTwoDReco/TwoDParticleCreationAlgorithm.h"
 
 #include "larpandoracontent/LArUtility/ListChangingAlgorithm.h"
@@ -291,7 +290,6 @@
     d("LArOvershootSplitting",                  OvershootSplittingAlgorithm)                                                    \
     d("LArTrackConsolidation",                  TrackConsolidationAlgorithm)                                                    \
     d("LArVertexSplitting",                     VertexSplittingAlgorithm)                                                       \
-    d("LArStreamSelection",                     StreamSelectionAlgorithm)                                                       \
     d("LArTwoDParticleCreation",                TwoDParticleCreationAlgorithm)                                                  \
     d("LArListChanging",                        ListChangingAlgorithm)                                                          \
     d("LArListDeletion",                        ListDeletionAlgorithm)                                                          \
