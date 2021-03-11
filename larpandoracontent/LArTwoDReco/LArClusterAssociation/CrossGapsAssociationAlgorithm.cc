@@ -59,18 +59,24 @@ void CrossGapsAssociationAlgorithm::GetListOfCleanClusters(const ClusterList *co
 void CrossGapsAssociationAlgorithm::PopulateClusterAssociationMap(const ClusterVector &clusterVector, ClusterAssociationMap &clusterAssociationMap) const
 {
     TwoDSlidingFitResultMap slidingFitResultMap;
-    const float slidingFitPitch(LArGeometryHelper::GetWireZPitch(this->GetPandora()));
+    const float             slidingFitPitch(LArGeometryHelper::GetWireZPitch(this->GetPandora()));
 
     for (const Cluster *const pCluster : clusterVector)
     {
-        try {(void) slidingFitResultMap.insert(TwoDSlidingFitResultMap::value_type(pCluster, TwoDSlidingFitResult(pCluster, m_slidingFitWindow, slidingFitPitch)));}
-        catch (StatusCodeException &) {}
+        try
+        {
+            (void)slidingFitResultMap.insert(
+                TwoDSlidingFitResultMap::value_type(pCluster, TwoDSlidingFitResult(pCluster, m_slidingFitWindow, slidingFitPitch)));
+        }
+        catch (StatusCodeException &)
+        {
+        }
     }
 
     // ATTN This method assumes that clusters have been sorted by layer
     for (ClusterVector::const_iterator iterI = clusterVector.begin(), iterIEnd = clusterVector.end(); iterI != iterIEnd; ++iterI)
     {
-        const Cluster *const pInnerCluster = *iterI;
+        const Cluster *const                    pInnerCluster = *iterI;
         TwoDSlidingFitResultMap::const_iterator fitIterI = slidingFitResultMap.find(pInnerCluster);
 
         if (slidingFitResultMap.end() == fitIterI)
@@ -99,7 +105,7 @@ void CrossGapsAssociationAlgorithm::PopulateClusterAssociationMap(const ClusterV
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-bool CrossGapsAssociationAlgorithm::IsExtremalCluster(const bool isForward, const Cluster *const pCurrentCluster,  const Cluster *const pTestCluster) const
+bool CrossGapsAssociationAlgorithm::IsExtremalCluster(const bool isForward, const Cluster *const pCurrentCluster, const Cluster *const pTestCluster) const
 {
     const unsigned int currentLayer(isForward ? pCurrentCluster->GetOuterPseudoLayer() : pCurrentCluster->GetInnerPseudoLayer());
     const unsigned int testLayer(isForward ? pTestCluster->GetOuterPseudoLayer() : pTestCluster->GetInnerPseudoLayer());
@@ -124,16 +130,16 @@ bool CrossGapsAssociationAlgorithm::AreClustersAssociated(const TwoDSlidingFitRe
         return false;
 
     return (this->IsAssociated(innerFitResult.GetGlobalMaxLayerPosition(), innerFitResult.GetGlobalMaxLayerDirection(), outerFitResult) &&
-        this->IsAssociated(outerFitResult.GetGlobalMinLayerPosition(), outerFitResult.GetGlobalMinLayerDirection() * -1.f, innerFitResult));
+            this->IsAssociated(outerFitResult.GetGlobalMinLayerPosition(), outerFitResult.GetGlobalMinLayerDirection() * -1.f, innerFitResult));
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-bool CrossGapsAssociationAlgorithm::IsAssociated(const CartesianVector &startPosition, const CartesianVector &startDirection,
-    const TwoDSlidingFitResult &targetFitResult) const
+bool CrossGapsAssociationAlgorithm::IsAssociated(
+    const CartesianVector &startPosition, const CartesianVector &startDirection, const TwoDSlidingFitResult &targetFitResult) const
 {
     const HitType hitType(LArClusterHelper::GetClusterHitType(targetFitResult.GetCluster()));
-    unsigned int nSamplingPoints(0), nGapSamplingPoints(0), nMatchedSamplingPoints(0), nUnmatchedSampleRun(0);
+    unsigned int  nSamplingPoints(0), nGapSamplingPoints(0), nMatchedSamplingPoints(0), nUnmatchedSampleRun(0);
 
     for (unsigned int iSample = 0; iSample < m_maxSamplingPoints; ++iSample)
     {
@@ -197,20 +203,18 @@ bool CrossGapsAssociationAlgorithm::IsNearCluster(const CartesianVector &samplin
 
 StatusCode CrossGapsAssociationAlgorithm::ReadSettings(const TiXmlHandle xmlHandle)
 {
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "MinClusterHits", m_minClusterHits));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "MinClusterHits", m_minClusterHits));
 
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "MinClusterLayers", m_minClusterLayers));
+    PANDORA_RETURN_RESULT_IF_AND_IF(
+        STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "MinClusterLayers", m_minClusterLayers));
 
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "SlidingFitWindow", m_slidingFitWindow));
+    PANDORA_RETURN_RESULT_IF_AND_IF(
+        STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "SlidingFitWindow", m_slidingFitWindow));
 
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "MaxSamplingPoints", m_maxSamplingPoints));
+    PANDORA_RETURN_RESULT_IF_AND_IF(
+        STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "MaxSamplingPoints", m_maxSamplingPoints));
 
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "SampleStepSize", m_sampleStepSize));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "SampleStepSize", m_sampleStepSize));
 
     if (m_sampleStepSize < std::numeric_limits<float>::epsilon())
     {
@@ -218,20 +222,19 @@ StatusCode CrossGapsAssociationAlgorithm::ReadSettings(const TiXmlHandle xmlHand
         throw StatusCodeException(STATUS_CODE_INVALID_PARAMETER);
     }
 
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "MaxUnmatchedSampleRun", m_maxUnmatchedSampleRun));
+    PANDORA_RETURN_RESULT_IF_AND_IF(
+        STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "MaxUnmatchedSampleRun", m_maxUnmatchedSampleRun));
 
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "MaxOnClusterDistance", m_maxOnClusterDistance));
+    PANDORA_RETURN_RESULT_IF_AND_IF(
+        STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "MaxOnClusterDistance", m_maxOnClusterDistance));
 
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "MinMatchedSamplingPoints", m_minMatchedSamplingPoints));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=,
+        XmlHelper::ReadValue(xmlHandle, "MinMatchedSamplingPoints", m_minMatchedSamplingPoints));
 
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "MinMatchedSamplingFraction", m_minMatchedSamplingFraction));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=,
+        XmlHelper::ReadValue(xmlHandle, "MinMatchedSamplingFraction", m_minMatchedSamplingFraction));
 
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "GapTolerance", m_gapTolerance));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "GapTolerance", m_gapTolerance));
 
     return ClusterAssociationAlgorithm::ReadSettings(xmlHandle);
 }

@@ -38,10 +38,14 @@ void LArClusterHelper::GetClustersUVW(const ClusterList &inputClusters, ClusterL
     {
         const HitType hitType(LArClusterHelper::GetClusterHitType(*iter));
 
-        if (TPC_VIEW_U == hitType) clusterListU.push_back(*iter);
-        else if (TPC_VIEW_V == hitType) clusterListV.push_back(*iter);
-        else if (TPC_VIEW_W == hitType) clusterListW.push_back(*iter);
-        else throw StatusCodeException(STATUS_CODE_NOT_FOUND);
+        if (TPC_VIEW_U == hitType)
+            clusterListU.push_back(*iter);
+        else if (TPC_VIEW_V == hitType)
+            clusterListV.push_back(*iter);
+        else if (TPC_VIEW_W == hitType)
+            clusterListW.push_back(*iter);
+        else
+            throw StatusCodeException(STATUS_CODE_NOT_FOUND);
     }
 }
 
@@ -129,7 +133,7 @@ float LArClusterHelper::GetLayerOccupancy(const Cluster *const pCluster1, const 
 {
     const unsigned int nOccupiedLayers(pCluster1->GetOrderedCaloHitList().size() + pCluster2->GetOrderedCaloHitList().size());
     const unsigned int nLayers(1 + std::max(pCluster1->GetOuterPseudoLayer(), pCluster2->GetOuterPseudoLayer()) -
-        std::min(pCluster1->GetInnerPseudoLayer(), pCluster2->GetInnerPseudoLayer()));
+                               std::min(pCluster1->GetInnerPseudoLayer(), pCluster2->GetInnerPseudoLayer()));
 
     if (nLayers > 0)
         return (static_cast<float>(nOccupiedLayers) / static_cast<float>(nLayers));
@@ -149,7 +153,7 @@ float LArClusterHelper::GetClosestDistance(const ClusterList &clusterList1, cons
     for (ClusterList::const_iterator iter1 = clusterList1.begin(), iterEnd1 = clusterList1.end(); iter1 != iterEnd1; ++iter1)
     {
         const Cluster *const pCluster1 = *iter1;
-        const float thisDistance(LArClusterHelper::GetClosestDistance(pCluster1, clusterList2));
+        const float          thisDistance(LArClusterHelper::GetClosestDistance(pCluster1, clusterList2));
 
         if (thisDistance < closestDistance)
             closestDistance = thisDistance;
@@ -170,7 +174,7 @@ float LArClusterHelper::GetClosestDistance(const Cluster *const pCluster, const 
     for (ClusterList::const_iterator iter = clusterList.begin(), iterEnd = clusterList.end(); iter != iterEnd; ++iter)
     {
         const Cluster *const pTestCluster = *iter;
-        const float thisDistance(LArClusterHelper::GetClosestDistance(pCluster, pTestCluster));
+        const float          thisDistance(LArClusterHelper::GetClosestDistance(pCluster, pTestCluster));
 
         if (thisDistance < closestDistance)
             closestDistance = thisDistance;
@@ -209,15 +213,15 @@ float LArClusterHelper::GetClosestDistance(const CartesianVector &position, cons
 
 CartesianVector LArClusterHelper::GetClosestPosition(const CartesianVector &position, const ClusterList &clusterList)
 {
-    bool distanceFound(false);
-    float closestDistanceSquared(std::numeric_limits<float>::max());
+    bool            distanceFound(false);
+    float           closestDistanceSquared(std::numeric_limits<float>::max());
     CartesianVector closestPosition(0.f, 0.f, 0.f);
 
     for (ClusterList::const_iterator iter = clusterList.begin(), iterEnd = clusterList.end(); iter != iterEnd; ++iter)
     {
-        const Cluster *const pTestCluster = *iter;
+        const Cluster *const  pTestCluster = *iter;
         const CartesianVector thisPosition(LArClusterHelper::GetClosestPosition(position, pTestCluster));
-        const float thisDistanceSquared((position - thisPosition).GetMagnitudeSquared());
+        const float           thisDistanceSquared((position - thisPosition).GetMagnitudeSquared());
 
         if (thisDistanceSquared < closestDistanceSquared)
         {
@@ -240,14 +244,14 @@ CartesianVector LArClusterHelper::GetClosestPosition(const CartesianVector &posi
     const OrderedCaloHitList &orderedCaloHitList(pCluster->GetOrderedCaloHitList());
 
     const CaloHit *pClosestCaloHit(NULL);
-    float closestDistanceSquared(std::numeric_limits<float>::max());
+    float          closestDistanceSquared(std::numeric_limits<float>::max());
 
     for (OrderedCaloHitList::const_iterator iter = orderedCaloHitList.begin(), iterEnd = orderedCaloHitList.end(); iter != iterEnd; ++iter)
     {
         for (CaloHitList::const_iterator hitIter = iter->second->begin(), hitIterEnd = iter->second->end(); hitIter != hitIterEnd; ++hitIter)
         {
             const CaloHit *const pCaloHit = *hitIter;
-            const float distanceSquared((pCaloHit->GetPositionVector() - position).GetMagnitudeSquared());
+            const float          distanceSquared((pCaloHit->GetPositionVector() - position).GetMagnitudeSquared());
 
             if (distanceSquared < closestDistanceSquared)
             {
@@ -265,10 +269,10 @@ CartesianVector LArClusterHelper::GetClosestPosition(const CartesianVector &posi
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-void LArClusterHelper::GetClosestPositions(const Cluster *const pCluster1, const Cluster *const pCluster2, CartesianVector &outputPosition1,
-    CartesianVector &outputPosition2)
+void LArClusterHelper::GetClosestPositions(
+    const Cluster *const pCluster1, const Cluster *const pCluster2, CartesianVector &outputPosition1, CartesianVector &outputPosition2)
 {
-    bool distanceFound(false);
+    bool  distanceFound(false);
     float minDistanceSquared(std::numeric_limits<float>::max());
 
     CartesianVector closestPosition1(0.f, 0.f, 0.f);
@@ -329,7 +333,7 @@ void LArClusterHelper::GetClusterBoundingBox(const Cluster *const pCluster, Cart
     {
         for (CaloHitList::const_iterator hIter = ochIter->second->begin(), hIterEnd = ochIter->second->end(); hIter != hIterEnd; ++hIter)
         {
-            const CaloHit *const pCaloHit = *hIter;
+            const CaloHit *const   pCaloHit = *hIter;
             const CartesianVector &hit(pCaloHit->GetPositionVector());
             xmin = std::min(hit.GetX(), xmin);
             xmax = std::max(hit.GetX(), xmax);
@@ -356,13 +360,13 @@ StatusCode LArClusterHelper::GetAverageZ(const Cluster *const pCluster, const fl
     const OrderedCaloHitList &orderedCaloHitList(pCluster->GetOrderedCaloHitList());
 
     float zsum(0.f);
-    int count(0);
+    int   count(0);
 
     for (OrderedCaloHitList::const_iterator ochIter = orderedCaloHitList.begin(), ochIterEnd = orderedCaloHitList.end(); ochIter != ochIterEnd; ++ochIter)
     {
         for (CaloHitList::const_iterator hIter = ochIter->second->begin(), hIterEnd = ochIter->second->end(); hIter != hIterEnd; ++hIter)
         {
-            const CaloHit *const pCaloHit = *hIter;
+            const CaloHit *const   pCaloHit = *hIter;
             const CartesianVector &hit(pCaloHit->GetPositionVector());
 
             if (hit.GetX() < xmin || hit.GetX() > xmax)
@@ -399,13 +403,12 @@ void LArClusterHelper::GetExtremalCoordinates(const ClusterList &clusterList, Ca
 
 void LArClusterHelper::GetExtremalCoordinates(const Cluster *const pCluster, CartesianVector &innerCoordinate, CartesianVector &outerCoordinate)
 {
-  return LArClusterHelper::GetExtremalCoordinates(pCluster->GetOrderedCaloHitList(), innerCoordinate, outerCoordinate);
+    return LArClusterHelper::GetExtremalCoordinates(pCluster->GetOrderedCaloHitList(), innerCoordinate, outerCoordinate);
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-void LArClusterHelper::GetExtremalCoordinates(const OrderedCaloHitList &orderedCaloHitList, CartesianVector &innerCoordinate,
-    CartesianVector &outerCoordinate)
+void LArClusterHelper::GetExtremalCoordinates(const OrderedCaloHitList &orderedCaloHitList, CartesianVector &innerCoordinate, CartesianVector &outerCoordinate)
 {
     if (orderedCaloHitList.empty())
         throw StatusCodeException(STATUS_CODE_NOT_FOUND);
@@ -427,8 +430,7 @@ void LArClusterHelper::GetExtremalCoordinates(const OrderedCaloHitList &orderedC
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-void LArClusterHelper::GetExtremalCoordinates(const CartesianPointVector &coordinateVector, CartesianVector &innerCoordinate,
-    CartesianVector &outerCoordinate)
+void LArClusterHelper::GetExtremalCoordinates(const CartesianPointVector &coordinateVector, CartesianVector &innerCoordinate, CartesianVector &outerCoordinate)
 {
     if (coordinateVector.empty())
         throw StatusCodeException(STATUS_CODE_NOT_FOUND);
@@ -494,7 +496,7 @@ void LArClusterHelper::GetExtremalCoordinates(const CartesianPointVector &coordi
     // Finally, find the pair of hits that are separated by the greatest distance
     CartesianVector firstCoordinate(xAve, yAve, zAve);
     CartesianVector secondCoordinate(xAve, yAve, zAve);
-    float maxDistanceSquared(+std::numeric_limits<float>::epsilon());
+    float           maxDistanceSquared(+std::numeric_limits<float>::epsilon());
 
     for (CartesianPointVector::const_iterator iterI = candidateVector.begin(), iterEndI = candidateVector.end(); iterI != iterEndI; ++iterI)
     {
@@ -547,7 +549,7 @@ void LArClusterHelper::GetCoordinateVector(const Cluster *const pCluster, Cartes
 //------------------------------------------------------------------------------------------------------------------------------------------
 
 void LArClusterHelper::GetCaloHitListInBoundingBox(const pandora::Cluster *const pCluster, const pandora::CartesianVector &lowerBound,
-        const pandora::CartesianVector &upperBound, pandora::CaloHitList &caloHitList)
+    const pandora::CartesianVector &upperBound, pandora::CaloHitList &caloHitList)
 {
     const bool useX(std::fabs(upperBound.GetX() - lowerBound.GetX()) > std::numeric_limits<float>::epsilon());
     const bool useY(std::fabs(upperBound.GetY() - lowerBound.GetY()) > std::numeric_limits<float>::epsilon());
@@ -567,18 +569,15 @@ void LArClusterHelper::GetCaloHitListInBoundingBox(const pandora::Cluster *const
         for (const CaloHit *const pCaloHit : *layerEntry.second)
         {
             const CartesianVector &hitPosition = pCaloHit->GetPositionVector();
-            if (useX &&
-                (hitPosition.GetX() < minX - std::numeric_limits<float>::epsilon() ||
-                 hitPosition.GetX() > maxX + std::numeric_limits<float>::epsilon()))
-                    continue;
-            else if (useY &&
-                (hitPosition.GetY() < minY - std::numeric_limits<float>::epsilon() ||
-                 hitPosition.GetY() > maxY + std::numeric_limits<float>::epsilon()))
-                    continue;
-            else if (useZ &&
-                (hitPosition.GetZ() < minZ - std::numeric_limits<float>::epsilon() ||
-                 hitPosition.GetZ() > maxZ + std::numeric_limits<float>::epsilon()))
-                    continue;
+            if (useX && (hitPosition.GetX() < minX - std::numeric_limits<float>::epsilon() ||
+                            hitPosition.GetX() > maxX + std::numeric_limits<float>::epsilon()))
+                continue;
+            else if (useY && (hitPosition.GetY() < minY - std::numeric_limits<float>::epsilon() ||
+                                 hitPosition.GetY() > maxY + std::numeric_limits<float>::epsilon()))
+                continue;
+            else if (useZ && (hitPosition.GetZ() < minZ - std::numeric_limits<float>::epsilon() ||
+                                 hitPosition.GetZ() > maxZ + std::numeric_limits<float>::epsilon()))
+                continue;
 
             caloHitList.push_back(pCaloHit);
         }
@@ -596,10 +595,10 @@ void LArClusterHelper::GetDaughterVolumeIDs(const Cluster *const pCluster, UIntS
     {
         for (CaloHitList::const_iterator hIter = ochIter->second->begin(), hIterEnd = ochIter->second->end(); hIter != hIterEnd; ++hIter)
         {
-            const CaloHit *const pCaloHit(*hIter);
-            const LArCaloHit *const pLArCaloHit(dynamic_cast<const LArCaloHit*>(pCaloHit));
+            const CaloHit *const    pCaloHit(*hIter);
+            const LArCaloHit *const pLArCaloHit(dynamic_cast<const LArCaloHit *>(pCaloHit));
 
-            if (pLArCaloHit) 
+            if (pLArCaloHit)
                 daughterVolumeIds.insert(pLArCaloHit->GetDaughterVolumeId());
         }
     }
@@ -651,7 +650,7 @@ bool LArClusterHelper::SortByInnerLayer(const Cluster *const pLhs, const Cluster
     const unsigned int innerLayerRhs(pRhs->GetInnerPseudoLayer());
 
     if (innerLayerLhs != innerLayerRhs)
-      return (innerLayerLhs < innerLayerRhs);
+        return (innerLayerLhs < innerLayerRhs);
 
     return SortByPosition(pLhs, pRhs);
 }

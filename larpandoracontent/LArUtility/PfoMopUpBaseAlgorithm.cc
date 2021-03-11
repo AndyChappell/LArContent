@@ -22,9 +22,9 @@ void PfoMopUpBaseAlgorithm::MergeAndDeletePfos(const ParticleFlowObject *const p
     if (pPfoToEnlarge == pPfoToDelete)
         throw StatusCodeException(STATUS_CODE_NOT_ALLOWED);
 
-    const PfoList daughterPfos(pPfoToDelete->GetDaughterPfoList());
+    const PfoList       daughterPfos(pPfoToDelete->GetDaughterPfoList());
     const ClusterVector daughterClusters(pPfoToDelete->GetClusterList().begin(), pPfoToDelete->GetClusterList().end());
-    const VertexVector daughterVertices(pPfoToDelete->GetVertexList().begin(), pPfoToDelete->GetVertexList().end());
+    const VertexVector  daughterVertices(pPfoToDelete->GetVertexList().begin(), pPfoToDelete->GetVertexList().end());
 
     PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::Delete(*this, pPfoToDelete, this->GetListName(pPfoToDelete)));
 
@@ -33,20 +33,21 @@ void PfoMopUpBaseAlgorithm::MergeAndDeletePfos(const ParticleFlowObject *const p
         PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::SetPfoParentDaughterRelationship(*this, pPfoToEnlarge, pDaughterPfo));
     }
 
-    for (const  Vertex *const pDaughterVertex : daughterVertices)
+    for (const Vertex *const pDaughterVertex : daughterVertices)
     {
         PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::Delete(*this, pDaughterVertex, this->GetListName(pDaughterVertex)));
     }
 
     for (const Cluster *const pDaughterCluster : daughterClusters)
     {
-        const HitType daughterHitType(LArClusterHelper::GetClusterHitType(pDaughterCluster));
+        const HitType  daughterHitType(LArClusterHelper::GetClusterHitType(pDaughterCluster));
         const Cluster *pParentCluster(PfoMopUpBaseAlgorithm::GetParentCluster(pPfoToEnlarge->GetClusterList(), daughterHitType));
 
         if (pParentCluster)
         {
-            PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::MergeAndDeleteClusters(*this, pParentCluster, pDaughterCluster,
-                this->GetListName(pParentCluster), this->GetListName(pDaughterCluster)));
+            PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=,
+                PandoraContentApi::MergeAndDeleteClusters(
+                    *this, pParentCluster, pDaughterCluster, this->GetListName(pParentCluster), this->GetListName(pDaughterCluster)));
         }
         else
         {
@@ -59,7 +60,7 @@ void PfoMopUpBaseAlgorithm::MergeAndDeletePfos(const ParticleFlowObject *const p
 
 const Cluster *PfoMopUpBaseAlgorithm::GetParentCluster(const ClusterList &clusterList, const HitType hitType)
 {
-    unsigned int mostHits(0);
+    unsigned int   mostHits(0);
     const Cluster *pBestParentCluster(nullptr);
 
     for (const Cluster *const pParentCluster : clusterList)

@@ -20,7 +20,7 @@ namespace lar_content
 /**
  *  @brief  TwoViewMatchingControl class
  */
-template<typename T>
+template <typename T>
 class TwoViewMatchingControl : public NViewMatchingControl
 {
 public:
@@ -46,30 +46,30 @@ public:
     MatrixType &GetOverlapMatrix();
 
 private:
-    void UpdateForNewCluster(const pandora::Cluster *const pNewCluster);
-    void UpdateUponDeletion(const pandora::Cluster *const pDeletedCluster);
-    const std::string &GetClusterListName(const pandora::HitType hitType) const;
+    void                        UpdateForNewCluster(const pandora::Cluster *const pNewCluster);
+    void                        UpdateUponDeletion(const pandora::Cluster *const pDeletedCluster);
+    const std::string &         GetClusterListName(const pandora::HitType hitType) const;
     const pandora::ClusterList &GetInputClusterList(const pandora::HitType hitType) const;
     const pandora::ClusterList &GetSelectedClusterList(const pandora::HitType hitType) const;
-    void SelectAllInputClusters();
-    void PrepareAllInputClusters();
-    void PerformMainLoop();
-    void TidyUp();
-    pandora::StatusCode ReadSettings(const pandora::TiXmlHandle xmlHandle);
+    void                        SelectAllInputClusters();
+    void                        PrepareAllInputClusters();
+    void                        PerformMainLoop();
+    void                        TidyUp();
+    pandora::StatusCode         ReadSettings(const pandora::TiXmlHandle xmlHandle);
 
-    const pandora::ClusterList *m_pInputClusterList1;           ///< Address of the input cluster list 1
-    const pandora::ClusterList *m_pInputClusterList2;           ///< Address of the input cluster list 2
+    const pandora::ClusterList *m_pInputClusterList1; ///< Address of the input cluster list 1
+    const pandora::ClusterList *m_pInputClusterList2; ///< Address of the input cluster list 2
 
-    pandora::ClusterList        m_clusterList1;                 ///< The selected modified cluster list 1
-    pandora::ClusterList        m_clusterList2;                 ///< The selected modified cluster list 2
+    pandora::ClusterList m_clusterList1; ///< The selected modified cluster list 1
+    pandora::ClusterList m_clusterList2; ///< The selected modified cluster list 2
 
-    MatrixType                  m_overlapMatrix;                ///< The overlap matrix
+    MatrixType m_overlapMatrix; ///< The overlap matrix
 
-    typedef std::unordered_map<pandora::HitType, unsigned int, std::hash<int> > HitTypeToIndexMap;
-    HitTypeToIndexMap           m_hitTypeToIndexMap;            ///< The hit type to index map
+    typedef std::unordered_map<pandora::HitType, unsigned int, std::hash<int>> HitTypeToIndexMap;
+    HitTypeToIndexMap                                                          m_hitTypeToIndexMap; ///< The hit type to index map
 
-    std::string                 m_inputClusterListName1;        ///< The name of the view 1 cluster list
-    std::string                 m_inputClusterListName2;        ///< The name of the view 2 cluster list
+    std::string m_inputClusterListName1; ///< The name of the view 1 cluster list
+    std::string m_inputClusterListName2; ///< The name of the view 2 cluster list
 
     template <typename U>
     friend class NViewMatchingAlgorithm;

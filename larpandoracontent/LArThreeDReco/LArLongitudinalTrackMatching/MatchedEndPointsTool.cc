@@ -15,9 +15,7 @@ using namespace pandora;
 namespace lar_content
 {
 
-MatchedEndPointsTool::MatchedEndPointsTool() :
-    m_minMatchedFraction(0.8f),
-    m_maxEndPointChi2(3.f)
+MatchedEndPointsTool::MatchedEndPointsTool() : m_minMatchedFraction(0.8f), m_maxEndPointChi2(3.f)
 {
 }
 
@@ -26,7 +24,7 @@ MatchedEndPointsTool::MatchedEndPointsTool() :
 bool MatchedEndPointsTool::Run(ThreeViewLongitudinalTracksAlgorithm *const pAlgorithm, TensorType &overlapTensor)
 {
     if (PandoraContentApi::GetSettings(*pAlgorithm)->ShouldDisplayAlgorithmInfo())
-       std::cout << "----> Running Algorithm Tool: " << this->GetInstanceName() << ", " << this->GetType() << std::endl;
+        std::cout << "----> Running Algorithm Tool: " << this->GetInstanceName() << ", " << this->GetType() << std::endl;
 
     ProtoParticleVector protoParticleVector;
     this->FindMatchedTracks(overlapTensor, protoParticleVector);
@@ -39,7 +37,7 @@ bool MatchedEndPointsTool::Run(ThreeViewLongitudinalTracksAlgorithm *const pAlgo
 
 void MatchedEndPointsTool::FindMatchedTracks(const TensorType &overlapTensor, ProtoParticleVector &protoParticleVector) const
 {
-    ClusterSet usedClusters;
+    ClusterSet    usedClusters;
     ClusterVector sortedKeyClusters;
     overlapTensor.GetSortedKeyClusters(sortedKeyClusters);
 
@@ -48,7 +46,7 @@ void MatchedEndPointsTool::FindMatchedTracks(const TensorType &overlapTensor, Pr
         if (!pKeyCluster->IsAvailable())
             continue;
 
-        unsigned int nU(0), nV(0), nW(0);
+        unsigned int            nU(0), nV(0), nW(0);
         TensorType::ElementList elementList;
         overlapTensor.GetConnectedElements(pKeyCluster, true, elementList, nU, nV, nW);
 
@@ -65,7 +63,7 @@ void MatchedEndPointsTool::FindMatchedTracks(const TensorType &overlapTensor, Pr
             if (iter->GetOverlapResult().GetMatchedFraction() < m_minMatchedFraction)
                 continue;
 
-            if (std::max(iter->GetOverlapResult().GetInnerChi2(),iter->GetOverlapResult().GetOuterChi2()) > m_maxEndPointChi2)
+            if (std::max(iter->GetOverlapResult().GetInnerChi2(), iter->GetOverlapResult().GetOuterChi2()) > m_maxEndPointChi2)
                 continue;
 
             ProtoParticle protoParticle;
@@ -86,18 +84,17 @@ void MatchedEndPointsTool::FindMatchedTracks(const TensorType &overlapTensor, Pr
 bool MatchedEndPointsTool::SortByChiSquared(const TensorType::Element &lhs, const TensorType::Element &rhs)
 {
     return (lhs.GetOverlapResult().GetInnerChi2() + lhs.GetOverlapResult().GetOuterChi2() <
-        rhs.GetOverlapResult().GetInnerChi2() + rhs.GetOverlapResult().GetOuterChi2());
+            rhs.GetOverlapResult().GetInnerChi2() + rhs.GetOverlapResult().GetOuterChi2());
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
 StatusCode MatchedEndPointsTool::ReadSettings(const TiXmlHandle xmlHandle)
 {
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "MinMatchedFraction", m_minMatchedFraction));
+    PANDORA_RETURN_RESULT_IF_AND_IF(
+        STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "MinMatchedFraction", m_minMatchedFraction));
 
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "MaxEndPointChi2", m_maxEndPointChi2));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "MaxEndPointChi2", m_maxEndPointChi2));
 
     return STATUS_CODE_SUCCESS;
 }

@@ -44,7 +44,7 @@ void BranchGrowingAlgorithm::FindAssociatedClusters(const Cluster *const pPartic
                     continue;
 
                 // Check we store best association between this seed and candidate
-                Association association(associationOrder, associationType);
+                Association        association(associationOrder, associationType);
                 const Association &existingAssociation = forwardUsageMap[pParticleSeed][pCandidateCluster];
 
                 if (association.GetType() > existingAssociation.GetType())
@@ -70,11 +70,12 @@ void BranchGrowingAlgorithm::FindAssociatedClusters(const Cluster *const pPartic
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-void BranchGrowingAlgorithm::IdentifyClusterMerges(const ClusterVector &particleSeedVector, const ClusterUsageMap &backwardUsageMap,
-    SeedAssociationList &seedAssociationList) const
+void BranchGrowingAlgorithm::IdentifyClusterMerges(
+    const ClusterVector &particleSeedVector, const ClusterUsageMap &backwardUsageMap, SeedAssociationList &seedAssociationList) const
 {
     ClusterVector sortedCandidates;
-    for (const auto &mapEntry : backwardUsageMap) sortedCandidates.push_back(mapEntry.first);
+    for (const auto &mapEntry : backwardUsageMap)
+        sortedCandidates.push_back(mapEntry.first);
     std::sort(sortedCandidates.begin(), sortedCandidates.end(), LArClusterHelper::SortByNHits);
 
     for (const Cluster *const pCluster : sortedCandidates)
@@ -85,12 +86,13 @@ void BranchGrowingAlgorithm::IdentifyClusterMerges(const ClusterVector &particle
             throw StatusCodeException(STATUS_CODE_FAILURE);
 
         ClusterVector sortedSeeds;
-        for (const auto &mapEntry : particleSeedUsageMap) sortedSeeds.push_back(mapEntry.first);
+        for (const auto &mapEntry : particleSeedUsageMap)
+            sortedSeeds.push_back(mapEntry.first);
         std::sort(sortedSeeds.begin(), sortedSeeds.end(), LArClusterHelper::SortByNHits);
 
-        const Cluster *pBestParticleSeed = NULL;
+        const Cluster * pBestParticleSeed = NULL;
         AssociationType bestType(NONE);
-        unsigned int bestOrder(std::numeric_limits<unsigned int>::max());
+        unsigned int    bestOrder(std::numeric_limits<unsigned int>::max());
 
         for (const Cluster *const pParticleSeed : sortedSeeds)
         {

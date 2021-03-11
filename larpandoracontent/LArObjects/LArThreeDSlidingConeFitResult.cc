@@ -24,13 +24,13 @@ float SimpleCone::GetMeanRT(const Cluster *const pCluster) const
     CartesianPointVector hitPositionVector;
     LArClusterHelper::GetCoordinateVector(pCluster, hitPositionVector);
 
-    float rTSum(0.f);
+    float              rTSum(0.f);
     const unsigned int nClusterHits(pCluster->GetNCaloHits());
 
     for (const CartesianVector &hitPosition : hitPositionVector)
     {
         const CartesianVector displacement(hitPosition - this->GetConeApex());
-        const float rT(displacement.GetCrossProduct(this->GetConeDirection()).GetMagnitude());
+        const float           rT(displacement.GetCrossProduct(this->GetConeDirection()).GetMagnitude());
         rTSum += rT;
     }
 
@@ -44,13 +44,13 @@ float SimpleCone::GetBoundedHitFraction(const Cluster *const pCluster, const flo
     CartesianPointVector hitPositionVector;
     LArClusterHelper::GetCoordinateVector(pCluster, hitPositionVector);
 
-    unsigned int nMatchedHits(0);
+    unsigned int       nMatchedHits(0);
     const unsigned int nClusterHits(pCluster->GetNCaloHits());
 
     for (const CartesianVector &hitPosition : hitPositionVector)
     {
         const CartesianVector displacement(hitPosition - this->GetConeApex());
-        const float rL(displacement.GetDotProduct(this->GetConeDirection()));
+        const float           rL(displacement.GetDotProduct(this->GetConeDirection()));
 
         if ((rL < 0.f) || (rL > coneLength))
             continue;
@@ -68,8 +68,7 @@ float SimpleCone::GetBoundedHitFraction(const Cluster *const pCluster, const flo
 //------------------------------------------------------------------------------------------------------------------------------------------
 
 template <typename T>
-ThreeDSlidingConeFitResult::ThreeDSlidingConeFitResult(const T *const pT, const unsigned int slidingFitWindow,
-        const float slidingFitLayerPitch) :
+ThreeDSlidingConeFitResult::ThreeDSlidingConeFitResult(const T *const pT, const unsigned int slidingFitWindow, const float slidingFitLayerPitch) :
     m_slidingFitResult(ThreeDSlidingFitResult(pT, slidingFitWindow, slidingFitLayerPitch))
 {
     const CartesianVector &minLayerPosition3D(m_slidingFitResult.GetGlobalMinLayerPosition());
@@ -87,7 +86,7 @@ ThreeDSlidingConeFitResult::ThreeDSlidingConeFitResult(const T *const pT, const 
     {
         try
         {
-            const float rL((static_cast<float>(iStep) + 0.5f) * slidingFitLayerPitch);
+            const float     rL((static_cast<float>(iStep) + 0.5f) * slidingFitLayerPitch);
             CartesianVector fitPosition3D(0.f, 0.f, 0.f), fitDirection3D(0.f, 0.f, 0.f);
 
             if ((STATUS_CODE_SUCCESS != m_slidingFitResult.GetGlobalFitPosition(rL, fitPosition3D)) ||
@@ -100,7 +99,7 @@ ThreeDSlidingConeFitResult::ThreeDSlidingConeFitResult(const T *const pT, const 
             if (!contributionMap1.count(fitResult1.GetLayer(rL)) && !contributionMap2.count(fitResult2.GetLayer(rL)))
                 continue;
 
-            (void) m_trackStateMap.insert(TrackStateMap::value_type(iStep, TrackState(fitPosition3D, fitDirection3D)));
+            (void)m_trackStateMap.insert(TrackStateMap::value_type(iStep, TrackState(fitPosition3D, fitDirection3D)));
         }
         catch (const StatusCodeException &)
         {
@@ -111,26 +110,26 @@ ThreeDSlidingConeFitResult::ThreeDSlidingConeFitResult(const T *const pT, const 
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-void ThreeDSlidingConeFitResult::GetSimpleConeList(const unsigned int nLayersForConeFit, const unsigned int nCones, const ConeSelection coneSelection,
-    SimpleConeList &simpleConeList) const
+void ThreeDSlidingConeFitResult::GetSimpleConeList(
+    const unsigned int nLayersForConeFit, const unsigned int nCones, const ConeSelection coneSelection, SimpleConeList &simpleConeList) const
 {
     const TrackStateMap &trackStateMap(this->GetTrackStateMap());
-    const unsigned int nLayers(trackStateMap.size());
+    const unsigned int   nLayers(trackStateMap.size());
 
     if (nLayers + 1 < nLayersForConeFit + nCones)
         throw StatusCodeException(STATUS_CODE_INVALID_PARAMETER);
 
     // Calculate intervals and offsets such that cones are evenly spaced along sliding fit and are equidistant from the extremal layers
-    const unsigned int coneInterval((nCones > 1) ? (nLayers - nLayersForConeFit) / (nCones - 1) : 1);
+    const unsigned int            coneInterval((nCones > 1) ? (nLayers - nLayersForConeFit) / (nCones - 1) : 1);
     const ThreeDSlidingFitResult &slidingFitResult(this->GetSlidingFitResult());
     const CartesianVector coneDisplacement(slidingFitResult.GetGlobalMaxLayerPosition() - slidingFitResult.GetGlobalMinLayerPosition());
-    const bool isForward(coneDisplacement.GetZ() > std::numeric_limits<float>::epsilon());
-    const unsigned int coneOffset1((nLayers - nLayersForConeFit - (nCones - 1) * coneInterval) / 2);
-    const unsigned int coneOffset2((1 == nLayers % 2) && isForward ? 1 : 0);
-    const unsigned int coneOffset(coneOffset1 + coneOffset2);
+    const bool            isForward(coneDisplacement.GetZ() > std::numeric_limits<float>::epsilon());
+    const unsigned int    coneOffset1((nLayers - nLayersForConeFit - (nCones - 1) * coneInterval) / 2);
+    const unsigned int    coneOffset2((1 == nLayers % 2) && isForward ? 1 : 0);
+    const unsigned int    coneOffset(coneOffset1 + coneOffset2);
 
     TrackStateLinkedList trackStateList;
-    CartesianVector directionSum(0.f, 0.f, 0.f);
+    CartesianVector      directionSum(0.f, 0.f, 0.f);
     const float clusterLength((trackStateMap.begin()->second.GetPosition() - trackStateMap.rbegin()->second.GetPosition()).GetMagnitude());
 
     unsigned int nConeSamplingSteps(0);

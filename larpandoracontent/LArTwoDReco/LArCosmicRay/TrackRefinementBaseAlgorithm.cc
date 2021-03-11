@@ -9,8 +9,8 @@
 
 #include "larpandoracontent/LArTwoDReco/LArCosmicRay/TrackRefinementBaseAlgorithm.h"
 
-#include "larpandoracontent/LArHelpers/LArGeometryHelper.h"
 #include "larpandoracontent/LArHelpers/LArClusterHelper.h"
+#include "larpandoracontent/LArHelpers/LArGeometryHelper.h"
 #include "larpandoracontent/LArHelpers/LArHitWidthHelper.h"
 
 using namespace pandora;
@@ -36,8 +36,9 @@ TrackRefinementBaseAlgorithm::TrackRefinementBaseAlgorithm() :
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-template<typename T>
-void TrackRefinementBaseAlgorithm::InitialiseContainers(const ClusterList *pClusterList, const T sortFunction, ClusterVector &clusterVector, SlidingFitResultMapPair &slidingFitResultMapPair) const
+template <typename T>
+void TrackRefinementBaseAlgorithm::InitialiseContainers(const ClusterList *pClusterList, const T sortFunction, ClusterVector &clusterVector,
+    SlidingFitResultMapPair &slidingFitResultMapPair) const
 {
     const float slidingFitPitch(LArGeometryHelper::GetWireZPitch(this->GetPandora()));
 
@@ -55,7 +56,9 @@ void TrackRefinementBaseAlgorithm::InitialiseContainers(const ClusterList *pClus
             slidingFitResultMapPair.second->insert(TwoDSlidingFitResultMap::value_type(pCluster, macroSlidingFitResult));
             clusterVector.push_back(pCluster);
         }
-        catch (const StatusCodeException &) {}
+        catch (const StatusCodeException &)
+        {
+        }
     }
 
     std::sort(clusterVector.begin(), clusterVector.end(), sortFunction);
@@ -63,21 +66,22 @@ void TrackRefinementBaseAlgorithm::InitialiseContainers(const ClusterList *pClus
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-bool TrackRefinementBaseAlgorithm::GetClusterMergingCoordinates(const TwoDSlidingFitResult &clusterMicroFitResult, const TwoDSlidingFitResult &clusterMacroFitResult,
-    const TwoDSlidingFitResult &associatedMacroFitResult, const bool isEndUpstream, CartesianVector &clusterMergePosition, CartesianVector &clusterMergeDirection) const
+bool TrackRefinementBaseAlgorithm::GetClusterMergingCoordinates(const TwoDSlidingFitResult &clusterMicroFitResult,
+    const TwoDSlidingFitResult &clusterMacroFitResult, const TwoDSlidingFitResult &associatedMacroFitResult, const bool isEndUpstream,
+    CartesianVector &clusterMergePosition, CartesianVector &clusterMergeDirection) const
 {
     CartesianVector clusterAverageDirection(0.f, 0.f, 0.f), associatedAverageDirection(0.f, 0.f, 0.f);
     clusterMacroFitResult.GetGlobalDirection(clusterMacroFitResult.GetLayerFitResultMap().begin()->second.GetGradient(), clusterAverageDirection);
     associatedMacroFitResult.GetGlobalDirection(associatedMacroFitResult.GetLayerFitResultMap().begin()->second.GetGradient(), associatedAverageDirection);
 
     const LayerFitResultMap &clusterMicroLayerFitResultMap(clusterMicroFitResult.GetLayerFitResultMap());
-    const int startLayer(isEndUpstream ? clusterMicroFitResult.GetMinLayer() : clusterMicroFitResult.GetMaxLayer());
-    const int endLayer(isEndUpstream ? clusterMicroFitResult.GetMaxLayer() : clusterMicroFitResult.GetMinLayer());
-    const int loopTerminationLayer(endLayer + (isEndUpstream ? 1 : -1));
-    const int step(isEndUpstream ? 1 : -1);
+    const int                startLayer(isEndUpstream ? clusterMicroFitResult.GetMinLayer() : clusterMicroFitResult.GetMaxLayer());
+    const int                endLayer(isEndUpstream ? clusterMicroFitResult.GetMaxLayer() : clusterMicroFitResult.GetMinLayer());
+    const int                loopTerminationLayer(endLayer + (isEndUpstream ? 1 : -1));
+    const int                step(isEndUpstream ? 1 : -1);
 
     // ATTN: Search for stable region for which the local layer gradient agrees well with associated cluster global gradient
-    unsigned int gradientStabilityWindow(std::ceil(clusterMicroLayerFitResultMap.size() *  m_stableRegionClusterFraction));
+    unsigned int gradientStabilityWindow(std::ceil(clusterMicroLayerFitResultMap.size() * m_stableRegionClusterFraction));
     unsigned int goodLayerCount(0);
 
     clusterMicroLayerFitResultMap.at(endLayer);
@@ -99,7 +103,8 @@ bool TrackRefinementBaseAlgorithm::GetClusterMergingCoordinates(const TwoDSlidin
             if (goodLayerCount == 0)
             {
                 clusterMergeDirection = clusterAverageDirection;
-                PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, clusterMicroFitResult.GetGlobalFitPosition(microIter->second.GetL(), clusterMergePosition));
+                PANDORA_THROW_RESULT_IF(
+                    STATUS_CODE_SUCCESS, !=, clusterMicroFitResult.GetGlobalFitPosition(microIter->second.GetL(), clusterMergePosition));
             }
 
             ++goodLayerCount;
@@ -122,8 +127,9 @@ bool TrackRefinementBaseAlgorithm::GetClusterMergingCoordinates(const TwoDSlidin
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-void TrackRefinementBaseAlgorithm::GetHitsInBoundingBox(const CartesianVector &firstCorner, const CartesianVector &secondCorner, const ClusterList *const pClusterList,
-    ClusterToCaloHitListMap &clusterToCaloHitListMap, const ClusterList &unavailableProtectedClusters, const float distanceToLine) const
+void TrackRefinementBaseAlgorithm::GetHitsInBoundingBox(const CartesianVector &firstCorner, const CartesianVector &secondCorner,
+    const ClusterList *const pClusterList, ClusterToCaloHitListMap &clusterToCaloHitListMap,
+    const ClusterList &unavailableProtectedClusters, const float distanceToLine) const
 {
     const float minX(std::min(firstCorner.GetX(), secondCorner.GetX())), maxX(std::max(firstCorner.GetX(), secondCorner.GetX()));
     const float minZ(std::min(firstCorner.GetZ(), secondCorner.GetZ())), maxZ(std::max(firstCorner.GetZ(), secondCorner.GetZ()));
@@ -141,9 +147,8 @@ void TrackRefinementBaseAlgorithm::GetHitsInBoundingBox(const CartesianVector &f
         {
             for (const CaloHit *const pCaloHit : *mapEntry.second)
             {
-                CartesianVector hitPosition(m_hitWidthMode ?
-                    LArHitWidthHelper::GetClosestPointToLine2D(firstCorner, connectingLineDirection, pCaloHit) :
-                    pCaloHit->GetPositionVector());
+                CartesianVector hitPosition(m_hitWidthMode ? LArHitWidthHelper::GetClosestPointToLine2D(firstCorner, connectingLineDirection, pCaloHit)
+                                                           : pCaloHit->GetPositionVector());
 
                 if (!this->IsInBoundingBox(minX, maxX, minZ, maxZ, hitPosition))
                     continue;
@@ -162,14 +167,16 @@ void TrackRefinementBaseAlgorithm::GetHitsInBoundingBox(const CartesianVector &f
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-bool TrackRefinementBaseAlgorithm::IsInBoundingBox(const float minX, const float maxX, const float minZ, const float maxZ, const CartesianVector &hitPosition) const
+bool TrackRefinementBaseAlgorithm::IsInBoundingBox(
+    const float minX, const float maxX, const float minZ, const float maxZ, const CartesianVector &hitPosition) const
 {
     return !((hitPosition.GetX() < minX) || (hitPosition.GetX() > maxX) || (hitPosition.GetZ() < minZ) || (hitPosition.GetZ() > maxZ));
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-bool TrackRefinementBaseAlgorithm::IsCloseToLine(const CartesianVector &hitPosition, const CartesianVector &lineStart, const CartesianVector &lineDirection, const float distanceToLine) const
+bool TrackRefinementBaseAlgorithm::IsCloseToLine(const CartesianVector &hitPosition, const CartesianVector &lineStart,
+    const CartesianVector &lineDirection, const float distanceToLine) const
 {
     const float transverseDistanceFromLine(lineDirection.GetCrossProduct(hitPosition - lineStart).GetMagnitude());
 
@@ -185,8 +192,8 @@ bool TrackRefinementBaseAlgorithm::AreExtrapolatedHitsGood(const ClusterToCaloHi
         extrapolatedHitVector.insert(extrapolatedHitVector.begin(), entry.second.begin(), entry.second.end());
 
     // ATTN: Extrapolated hit checks require extrapolatedHitVector to be ordered from upstream -> downstream merge point
-    std::sort(extrapolatedHitVector.begin(), extrapolatedHitVector.end(), SortByDistanceAlongLine(clusterAssociation.GetUpstreamMergePoint(),
-        clusterAssociation.GetConnectingLineDirection(), m_hitWidthMode));
+    std::sort(extrapolatedHitVector.begin(), extrapolatedHitVector.end(),
+        SortByDistanceAlongLine(clusterAssociation.GetUpstreamMergePoint(), clusterAssociation.GetConnectingLineDirection(), m_hitWidthMode));
 
     if (!this->AreExtrapolatedHitsNearBoundaries(extrapolatedHitVector, clusterAssociation))
         return false;
@@ -222,11 +229,11 @@ bool TrackRefinementBaseAlgorithm::IsTrackContinuous(const ClusterAssociation &c
         throw STATUS_CODE_NOT_ALLOWED;
     }
 
-    unsigned int segmentsWithoutHits(0);
+    unsigned int                  segmentsWithoutHits(0);
     CaloHitVector::const_iterator caloHitIter(extrapolatedCaloHitVector.begin());
-    CartesianVector hitPosition(m_hitWidthMode ?
-        LArHitWidthHelper::GetClosestPointToLine2D(clusterAssociation.GetUpstreamMergePoint(), clusterAssociation.GetConnectingLineDirection(), *caloHitIter) :
-        (*caloHitIter)->GetPositionVector());
+    CartesianVector hitPosition(m_hitWidthMode ? LArHitWidthHelper::GetClosestPointToLine2D(clusterAssociation.GetUpstreamMergePoint(),
+                                                     clusterAssociation.GetConnectingLineDirection(), *caloHitIter)
+                                               : (*caloHitIter)->GetPositionVector());
 
     for (unsigned int i = 0; i < (trackSegmentBoundaries.size() - 1); ++i)
     {
@@ -249,9 +256,9 @@ bool TrackRefinementBaseAlgorithm::IsTrackContinuous(const ClusterAssociation &c
             if (caloHitIter == extrapolatedCaloHitVector.end())
                 break;
 
-            hitPosition = m_hitWidthMode ?
-                LArHitWidthHelper::GetClosestPointToLine2D(clusterAssociation.GetUpstreamMergePoint(), clusterAssociation.GetConnectingLineDirection(), *caloHitIter) :
-                (*caloHitIter)->GetPositionVector();
+            hitPosition = m_hitWidthMode ? LArHitWidthHelper::GetClosestPointToLine2D(clusterAssociation.GetUpstreamMergePoint(),
+                                               clusterAssociation.GetConnectingLineDirection(), *caloHitIter)
+                                         : (*caloHitIter)->GetPositionVector();
         }
 
         segmentsWithoutHits = hitsInSegment ? 0 : segmentsWithoutHits + 1;
@@ -278,7 +285,8 @@ void TrackRefinementBaseAlgorithm::GetTrackSegmentBoundaries(const ClusterAssoci
 
     // ATTN: Consider the existence of gaps where no hits will be found
     DetectorGapList consideredGaps;
-    trackLength -= this->DistanceInGap(clusterAssociation.GetUpstreamMergePoint(), clusterAssociation.GetDownstreamMergePoint(), trackDirection, consideredGaps);
+    trackLength -= this->DistanceInGap(
+        clusterAssociation.GetUpstreamMergePoint(), clusterAssociation.GetDownstreamMergePoint(), trackDirection, consideredGaps);
     consideredGaps.clear();
 
     const int fullSegments(std::floor(trackLength / m_lineSegmentLength));
@@ -291,8 +299,8 @@ void TrackRefinementBaseAlgorithm::GetTrackSegmentBoundaries(const ClusterAssoci
 
     // ATTN: To handle final segment merge track remainder with preceding segment and if track remainder was more than half of the segment length split into two
     const float lengthOfTrackRemainder(trackLength - (fullSegments * m_lineSegmentLength));
-    const bool splitFinalSegment(lengthOfTrackRemainder > m_lineSegmentLength * 0.5f);
-    const int numberOfBoundaries(fullSegments + (splitFinalSegment ? 2 : 1));
+    const bool  splitFinalSegment(lengthOfTrackRemainder > m_lineSegmentLength * 0.5f);
+    const int   numberOfBoundaries(fullSegments + (splitFinalSegment ? 2 : 1));
 
     CartesianVector segmentUpstreamBoundary(clusterAssociation.GetUpstreamMergePoint()), segmentDownstreamBoundary(segmentUpstreamBoundary);
     this->RepositionIfInGap(trackDirection, segmentUpstreamBoundary);
@@ -335,7 +343,7 @@ void TrackRefinementBaseAlgorithm::RepositionIfInGap(const CartesianVector &merg
     const DetectorGapList detectorGapList(this->GetPandora().GetGeometry()->GetDetectorGapList());
     for (const DetectorGap *const pDetectorGap : detectorGapList)
     {
-        const LineGap *const pLineGap(dynamic_cast<const LineGap*>(pDetectorGap));
+        const LineGap *const pLineGap(dynamic_cast<const LineGap *>(pDetectorGap));
 
         if (pLineGap)
         {
@@ -350,7 +358,8 @@ void TrackRefinementBaseAlgorithm::RepositionIfInGap(const CartesianVector &merg
 
                     const float gradient(mergeDirection.GetZ() / mergeDirection.GetX());
 
-                    trackPoint = CartesianVector(pLineGap->GetLineEndX(), 0.f, trackPoint.GetZ() + (gradient * (pLineGap->GetLineEndX() - trackPoint.GetX())));
+                    trackPoint = CartesianVector(
+                        pLineGap->GetLineEndX(), 0.f, trackPoint.GetZ() + (gradient * (pLineGap->GetLineEndX() - trackPoint.GetX())));
                 }
             }
 
@@ -363,7 +372,8 @@ void TrackRefinementBaseAlgorithm::RepositionIfInGap(const CartesianVector &merg
 
                     const float gradient(mergeDirection.GetX() / mergeDirection.GetZ());
 
-                    trackPoint = CartesianVector(trackPoint.GetX() + (gradient * (pLineGap->GetLineEndZ() - trackPoint.GetZ())), 0.f, pLineGap->GetLineEndZ());
+                    trackPoint = CartesianVector(
+                        trackPoint.GetX() + (gradient * (pLineGap->GetLineEndZ() - trackPoint.GetZ())), 0.f, pLineGap->GetLineEndZ());
                 }
             }
         }
@@ -381,14 +391,14 @@ float TrackRefinementBaseAlgorithm::DistanceInGap(const CartesianVector &upstrea
     const float cosAngleToX(std::fabs(connectingLine.GetDotProduct(CartesianVector(1.f, 0.f, 0.f))));
     const float cosAngleToZ(std::fabs(connectingLine.GetDotProduct(CartesianVector(0.f, 0.f, 1.f))));
 
-    float distanceInGaps(0.f);
+    float                 distanceInGaps(0.f);
     const DetectorGapList detectorGapList(this->GetPandora().GetGeometry()->GetDetectorGapList());
     for (const DetectorGap *const pDetectorGap : detectorGapList)
     {
         if (std::find(consideredGaps.begin(), consideredGaps.end(), pDetectorGap) != consideredGaps.end())
             continue;
 
-        const LineGap *const pLineGap(dynamic_cast<const LineGap*>(pDetectorGap));
+        const LineGap *const pLineGap(dynamic_cast<const LineGap *>(pDetectorGap));
 
         if (pLineGap)
         {
@@ -459,8 +469,8 @@ float TrackRefinementBaseAlgorithm::DistanceInGap(const CartesianVector &upstrea
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-
-bool TrackRefinementBaseAlgorithm::IsInLineSegment(const CartesianVector &lowerBoundary, const CartesianVector &upperBoundary, const CartesianVector &point) const
+bool TrackRefinementBaseAlgorithm::IsInLineSegment(
+    const CartesianVector &lowerBoundary, const CartesianVector &upperBoundary, const CartesianVector &point) const
 {
     const float segmentBoundaryGradient = (-1.f) * (upperBoundary.GetX() - lowerBoundary.GetX()) / (upperBoundary.GetZ() - lowerBoundary.GetZ());
     const float xPointOnUpperLine((point.GetZ() - upperBoundary.GetZ()) / segmentBoundaryGradient + upperBoundary.GetX());
@@ -484,25 +494,26 @@ bool TrackRefinementBaseAlgorithm::IsInLineSegment(const CartesianVector &lowerB
 //------------------------------------------------------------------------------------------------------------------------------------------
 
 const Cluster *TrackRefinementBaseAlgorithm::RemoveOffAxisHitsFromTrack(const Cluster *const pCluster, const CartesianVector &splitPosition,
-    const bool isEndUpstream, const ClusterToCaloHitListMap &clusterToCaloHitListMap, ClusterList &remnantClusterList, TwoDSlidingFitResultMap &microSlidingFitResultMap,
-    TwoDSlidingFitResultMap &macroSlidingFitResultMap) const
+    const bool isEndUpstream, const ClusterToCaloHitListMap &clusterToCaloHitListMap, ClusterList &remnantClusterList,
+    TwoDSlidingFitResultMap &microSlidingFitResultMap, TwoDSlidingFitResultMap &macroSlidingFitResultMap) const
 {
-    float rL(0.f), rT(0.f);
+    float                       rL(0.f), rT(0.f);
     const TwoDSlidingFitResult &microFitResult(microSlidingFitResultMap.at(pCluster));
     microFitResult.GetLocalPosition(splitPosition, rL, rT);
 
     const TwoDSlidingFitResult &macroFitResult(macroSlidingFitResultMap.at(pCluster));
-    CartesianVector averageDirection(0.f, 0.f, 0.f);
+    CartesianVector             averageDirection(0.f, 0.f, 0.f);
     macroFitResult.GetGlobalDirection(macroFitResult.GetLayerFitResultMap().begin()->second.GetGradient(), averageDirection);
 
-    const bool isVertical(std::fabs(averageDirection.GetX()) < std::numeric_limits<float>::epsilon());
+    const bool  isVertical(std::fabs(averageDirection.GetX()) < std::numeric_limits<float>::epsilon());
     const float clusterGradient(isVertical ? 0.f : averageDirection.GetZ() / averageDirection.GetX());
     const float clusterIntercept(isVertical ? splitPosition.GetX() : splitPosition.GetZ() - (clusterGradient * splitPosition.GetX()));
 
     // Fragmentation initialisation
-    std::string originalListName, fragmentListName;
+    std::string       originalListName, fragmentListName;
     const ClusterList originalClusterList(1, pCluster);
-    PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::InitializeFragmentation(*this, originalClusterList, originalListName, fragmentListName));
+    PANDORA_THROW_RESULT_IF(
+        STATUS_CODE_SUCCESS, !=, PandoraContentApi::InitializeFragmentation(*this, originalClusterList, originalListName, fragmentListName));
 
     const Cluster *pMainTrackCluster(nullptr), *pAboveCluster(nullptr), *pBelowCluster(nullptr);
 
@@ -512,15 +523,16 @@ const Cluster *TrackRefinementBaseAlgorithm::RemoveOffAxisHitsFromTrack(const Cl
         for (const CaloHit *const pCaloHit : *mapEntry.second)
         {
             const CartesianVector &hitPosition(pCaloHit->GetPositionVector());
-            float thisL(0.f), thisT(0.f);
+            float                  thisL(0.f), thisT(0.f);
 
             microFitResult.GetLocalPosition(pCaloHit->GetPositionVector(), thisL, thisT);
 
-            bool isAnExtrapolatedHit(false);
+            bool       isAnExtrapolatedHit(false);
             const auto extrapolatedCaloHitIter(clusterToCaloHitListMap.find(pCluster));
 
             if (extrapolatedCaloHitIter != clusterToCaloHitListMap.end())
-                isAnExtrapolatedHit = std::find(extrapolatedCaloHitIter->second.begin(), extrapolatedCaloHitIter->second.end(), pCaloHit) != extrapolatedCaloHitIter->second.end();
+                isAnExtrapolatedHit = std::find(extrapolatedCaloHitIter->second.begin(), extrapolatedCaloHitIter->second.end(), pCaloHit) !=
+                                      extrapolatedCaloHitIter->second.end();
 
             const bool isAbove(((clusterGradient * hitPosition.GetX()) + clusterIntercept) < (isVertical ? hitPosition.GetX() : hitPosition.GetZ()));
             const bool isToRemove(!isAnExtrapolatedHit && (((thisL < rL) && isEndUpstream) || ((thisL > rL) && !isEndUpstream)));
@@ -556,11 +568,10 @@ const Cluster *TrackRefinementBaseAlgorithm::RemoveOffAxisHitsFromTrack(const Cl
     }
 }
 
-
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-void TrackRefinementBaseAlgorithm::AddHitsToMainTrack(const Cluster *const pMainTrackCluster, const Cluster *const pShowerCluster, const CaloHitList &caloHitsToMerge,
-    const ClusterAssociation &clusterAssociation, ClusterList &remnantClusterList) const
+void TrackRefinementBaseAlgorithm::AddHitsToMainTrack(const Cluster *const pMainTrackCluster, const Cluster *const pShowerCluster,
+    const CaloHitList &caloHitsToMerge, const ClusterAssociation &clusterAssociation, ClusterList &remnantClusterList) const
 {
     // To ignore crossing CR muon or test beam tracks
     if (((static_cast<float>(caloHitsToMerge.size()) / static_cast<float>(pShowerCluster->GetNCaloHits())) < m_minHitFractionForHitRemoval) &&
@@ -574,16 +585,19 @@ void TrackRefinementBaseAlgorithm::AddHitsToMainTrack(const Cluster *const pMain
     }
 
     // Fragmentation initialisation
-    std::string originalListName, fragmentListName;
+    std::string       originalListName, fragmentListName;
     const ClusterList originalClusterList(1, pShowerCluster);
-    PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::InitializeFragmentation(*this, originalClusterList, originalListName, fragmentListName));
+    PANDORA_THROW_RESULT_IF(
+        STATUS_CODE_SUCCESS, !=, PandoraContentApi::InitializeFragmentation(*this, originalClusterList, originalListName, fragmentListName));
 
     const Cluster *pAboveCluster(nullptr), *pBelowCluster(nullptr);
 
-    const bool isVertical(std::fabs(clusterAssociation.GetConnectingLineDirection().GetX()) < std::numeric_limits<float>::epsilon());
-    const float connectingLineGradient(isVertical ? 0.f : clusterAssociation.GetConnectingLineDirection().GetZ() / clusterAssociation.GetConnectingLineDirection().GetX());
-    const float connectingLineIntercept(isVertical ? clusterAssociation.GetUpstreamMergePoint().GetX() :
-        clusterAssociation.GetUpstreamMergePoint().GetZ() - (connectingLineGradient * clusterAssociation.GetUpstreamMergePoint().GetX()));
+    const bool  isVertical(std::fabs(clusterAssociation.GetConnectingLineDirection().GetX()) < std::numeric_limits<float>::epsilon());
+    const float connectingLineGradient(
+        isVertical ? 0.f : clusterAssociation.GetConnectingLineDirection().GetZ() / clusterAssociation.GetConnectingLineDirection().GetX());
+    const float connectingLineIntercept(isVertical ? clusterAssociation.GetUpstreamMergePoint().GetX()
+                                                   : clusterAssociation.GetUpstreamMergePoint().GetZ() -
+                                                         (connectingLineGradient * clusterAssociation.GetUpstreamMergePoint().GetX()));
 
     const OrderedCaloHitList orderedCaloHitList(pShowerCluster->GetOrderedCaloHitList());
     for (const OrderedCaloHitList::value_type &mapEntry : orderedCaloHitList)
@@ -599,8 +613,9 @@ void TrackRefinementBaseAlgorithm::AddHitsToMainTrack(const Cluster *const pMain
             else
             {
                 const CartesianVector &hitPosition(pCaloHit->GetPositionVector());
-                const bool isAbove(((connectingLineGradient * hitPosition.GetX()) + connectingLineIntercept) < (isVertical ? hitPosition.GetX() : hitPosition.GetZ()));
-                const Cluster *&pClusterToModify(isAbove ? pAboveCluster : pBelowCluster);
+                const bool             isAbove(((connectingLineGradient * hitPosition.GetX()) + connectingLineIntercept) <
+                                   (isVertical ? hitPosition.GetX() : hitPosition.GetZ()));
+                const Cluster *&       pClusterToModify(isAbove ? pAboveCluster : pBelowCluster);
 
                 if (pClusterToModify)
                 {
@@ -623,7 +638,8 @@ void TrackRefinementBaseAlgorithm::AddHitsToMainTrack(const Cluster *const pMain
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-void TrackRefinementBaseAlgorithm::ProcessRemnantClusters(const ClusterList &remnantClusterList, const Cluster *const pMainTrackCluster, const ClusterList *const pClusterList, ClusterList &createdClusters) const
+void TrackRefinementBaseAlgorithm::ProcessRemnantClusters(const ClusterList &remnantClusterList, const Cluster *const pMainTrackCluster,
+    const ClusterList *const pClusterList, ClusterList &createdClusters) const
 {
     ClusterList fragmentedClusters;
     for (const Cluster *const pRemnantCluster : remnantClusterList)
@@ -649,10 +665,11 @@ void TrackRefinementBaseAlgorithm::ProcessRemnantClusters(const ClusterList &rem
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-bool TrackRefinementBaseAlgorithm::AddToNearestCluster(const Cluster *const pClusterToMerge, const Cluster *const pMainTrackCluster, const ClusterList *const pClusterList) const
+bool TrackRefinementBaseAlgorithm::AddToNearestCluster(
+    const Cluster *const pClusterToMerge, const Cluster *const pMainTrackCluster, const ClusterList *const pClusterList) const
 {
     const Cluster *pClosestCluster(nullptr);
-    float closestDistance(std::numeric_limits<float>::max());
+    float          closestDistance(std::numeric_limits<float>::max());
 
     for (const Cluster *const pCluster : *pClusterList)
     {
@@ -688,7 +705,7 @@ bool TrackRefinementBaseAlgorithm::IsClusterRemnantDisconnected(const Cluster *c
         return false;
 
     const OrderedCaloHitList &orderedCaloHitList(pRemnantCluster->GetOrderedCaloHitList());
-    const CaloHit *pPreviousCaloHit(orderedCaloHitList.begin()->second->front());
+    const CaloHit *           pPreviousCaloHit(orderedCaloHitList.begin()->second->front());
 
     for (const OrderedCaloHitList::value_type &mapEntry : orderedCaloHitList)
     {
@@ -714,9 +731,10 @@ bool TrackRefinementBaseAlgorithm::IsClusterRemnantDisconnected(const Cluster *c
 void TrackRefinementBaseAlgorithm::FragmentRemnantCluster(const Cluster *const pRemnantCluster, ClusterList &fragmentedClusterList) const
 {
     // Fragmentation initialisation
-    std::string originalListName, fragmentListName;
+    std::string       originalListName, fragmentListName;
     const ClusterList originalClusterList(1, pRemnantCluster);
-    PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::InitializeFragmentation(*this, originalClusterList, originalListName, fragmentListName));
+    PANDORA_THROW_RESULT_IF(
+        STATUS_CODE_SUCCESS, !=, PandoraContentApi::InitializeFragmentation(*this, originalClusterList, originalListName, fragmentListName));
 
     ClusterList createdClusters;
 
@@ -771,8 +789,9 @@ void TrackRefinementBaseAlgorithm::FragmentRemnantCluster(const Cluster *const p
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-template<typename T>
-void TrackRefinementBaseAlgorithm::UpdateContainers(const ClusterList &clustersToAdd, const ClusterList &clustersToDelete, const T sortFunction, ClusterVector &clusterVector, SlidingFitResultMapPair &slidingFitResultMapPair) const
+template <typename T>
+void TrackRefinementBaseAlgorithm::UpdateContainers(const ClusterList &clustersToAdd, const ClusterList &clustersToDelete,
+    const T sortFunction, ClusterVector &clusterVector, SlidingFitResultMapPair &slidingFitResultMapPair) const
 {
     //ATTN: Very important to first delete pointers from containers
     for (const Cluster *const pClusterToDelete : clustersToDelete)
@@ -783,7 +802,8 @@ void TrackRefinementBaseAlgorithm::UpdateContainers(const ClusterList &clustersT
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-void TrackRefinementBaseAlgorithm::RemoveClusterFromContainers(const Cluster *const pClusterToRemove, ClusterVector &clusterVector, SlidingFitResultMapPair &slidingFitResultMapPair) const
+void TrackRefinementBaseAlgorithm::RemoveClusterFromContainers(
+    const Cluster *const pClusterToRemove, ClusterVector &clusterVector, SlidingFitResultMapPair &slidingFitResultMapPair) const
 {
     const TwoDSlidingFitResultMap::const_iterator microFitToDelete(slidingFitResultMapPair.first->find(pClusterToRemove));
     if (microFitToDelete != slidingFitResultMapPair.first->end())
@@ -802,38 +822,37 @@ void TrackRefinementBaseAlgorithm::RemoveClusterFromContainers(const Cluster *co
 
 StatusCode TrackRefinementBaseAlgorithm::ReadSettings(const TiXmlHandle xmlHandle)
 {
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "MinClusterLength", m_minClusterLength));
+    PANDORA_RETURN_RESULT_IF_AND_IF(
+        STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "MinClusterLength", m_minClusterLength));
 
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "MicroSlidingFitWindow", m_microSlidingFitWindow));
+    PANDORA_RETURN_RESULT_IF_AND_IF(
+        STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "MicroSlidingFitWindow", m_microSlidingFitWindow));
 
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "MacroSlidingFitWindow", m_macroSlidingFitWindow));
+    PANDORA_RETURN_RESULT_IF_AND_IF(
+        STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "MacroSlidingFitWindow", m_macroSlidingFitWindow));
 
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "StableRegionClusterFraction", m_stableRegionClusterFraction));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=,
+        XmlHelper::ReadValue(xmlHandle, "StableRegionClusterFraction", m_stableRegionClusterFraction));
 
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "MergePointMinCosAngleDeviation", m_mergePointMinCosAngleDeviation));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=,
+        XmlHelper::ReadValue(xmlHandle, "MergePointMinCosAngleDeviation", m_mergePointMinCosAngleDeviation));
 
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "MinHitFractionForHitRemoval", m_minHitFractionForHitRemoval));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=,
+        XmlHelper::ReadValue(xmlHandle, "MinHitFractionForHitRemoval", m_minHitFractionForHitRemoval));
 
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "MaxDistanceFromMainTrack", m_maxDistanceFromMainTrack));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=,
+        XmlHelper::ReadValue(xmlHandle, "MaxDistanceFromMainTrack", m_maxDistanceFromMainTrack));
 
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "MaxHitDistanceFromCluster", m_maxHitDistanceFromCluster));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=,
+        XmlHelper::ReadValue(xmlHandle, "MaxHitDistanceFromCluster", m_maxHitDistanceFromCluster));
 
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "MaxHitSeparationForConnectedCluster", m_maxHitSeparationForConnectedCluster));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=,
+        XmlHelper::ReadValue(xmlHandle, "MaxHitSeparationForConnectedCluster", m_maxHitSeparationForConnectedCluster));
 
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "MaxTrackGaps", m_maxTrackGaps));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "MaxTrackGaps", m_maxTrackGaps));
 
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "LineSegmentLength", m_lineSegmentLength));
+    PANDORA_RETURN_RESULT_IF_AND_IF(
+        STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "LineSegmentLength", m_lineSegmentLength));
 
     if (m_lineSegmentLength < std::numeric_limits<float>::epsilon())
     {
@@ -841,8 +860,7 @@ StatusCode TrackRefinementBaseAlgorithm::ReadSettings(const TiXmlHandle xmlHandl
         throw STATUS_CODE_INVALID_PARAMETER;
     }
 
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "HitWidthMode", m_hitWidthMode));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "HitWidthMode", m_hitWidthMode));
 
     return STATUS_CODE_SUCCESS;
 }
@@ -850,13 +868,13 @@ StatusCode TrackRefinementBaseAlgorithm::ReadSettings(const TiXmlHandle xmlHandl
 //------------------------------------------------------------------------------------------------------------------------------------------
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-bool TrackRefinementBaseAlgorithm::SortByDistanceAlongLine::operator() (const pandora::CaloHit *const pLhs, const pandora::CaloHit *const pRhs) const
+bool TrackRefinementBaseAlgorithm::SortByDistanceAlongLine::operator()(const pandora::CaloHit *const pLhs, const pandora::CaloHit *const pRhs) const
 {
-    const CartesianVector lhsHitPosition(m_hitWidthMode ? LArHitWidthHelper::GetClosestPointToLine2D(m_startPoint, m_lineDirection, pLhs) :
-        pLhs->GetPositionVector());
+    const CartesianVector lhsHitPosition(
+        m_hitWidthMode ? LArHitWidthHelper::GetClosestPointToLine2D(m_startPoint, m_lineDirection, pLhs) : pLhs->GetPositionVector());
 
-    const CartesianVector rhsHitPosition(m_hitWidthMode ? LArHitWidthHelper::GetClosestPointToLine2D(m_startPoint, m_lineDirection, pRhs) :
-        pRhs->GetPositionVector());
+    const CartesianVector rhsHitPosition(
+        m_hitWidthMode ? LArHitWidthHelper::GetClosestPointToLine2D(m_startPoint, m_lineDirection, pRhs) : pRhs->GetPositionVector());
 
     const float lhsLongitudinal = m_lineDirection.GetDotProduct(lhsHitPosition - m_startPoint);
     const float rhsLongitudinal = m_lineDirection.GetDotProduct(rhsHitPosition - m_startPoint);
@@ -873,10 +891,11 @@ bool TrackRefinementBaseAlgorithm::SortByDistanceAlongLine::operator() (const pa
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-typedef bool (*SortFunction)(const Cluster*, const Cluster*);
+typedef bool (*SortFunction)(const Cluster *, const Cluster *);
 
-template void TrackRefinementBaseAlgorithm::UpdateContainers<SortFunction>(const ClusterList&, const ClusterList&, const SortFunction, ClusterVector&, SlidingFitResultMapPair&) const;
-template void TrackRefinementBaseAlgorithm::InitialiseContainers<SortFunction>(const ClusterList*, const SortFunction, ClusterVector&, SlidingFitResultMapPair&) const;
+template void TrackRefinementBaseAlgorithm::UpdateContainers<SortFunction>(
+    const ClusterList &, const ClusterList &, const SortFunction, ClusterVector &, SlidingFitResultMapPair &) const;
+template void TrackRefinementBaseAlgorithm::InitialiseContainers<SortFunction>(
+    const ClusterList *, const SortFunction, ClusterVector &, SlidingFitResultMapPair &) const;
 
 } // namespace lar_content
-

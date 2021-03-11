@@ -21,7 +21,7 @@ using namespace pandora;
 namespace lar_content
 {
 
-typedef NeutrinoHierarchyAlgorithm::PfoInfo PfoInfo;
+typedef NeutrinoHierarchyAlgorithm::PfoInfo    PfoInfo;
 typedef NeutrinoHierarchyAlgorithm::PfoInfoMap PfoInfoMap;
 
 BranchAssociatedPfosTool::BranchAssociatedPfosTool() :
@@ -36,7 +36,7 @@ BranchAssociatedPfosTool::BranchAssociatedPfosTool() :
 void BranchAssociatedPfosTool::Run(const NeutrinoHierarchyAlgorithm *const pAlgorithm, const Vertex *const pNeutrinoVertex, PfoInfoMap &pfoInfoMap)
 {
     if (PandoraContentApi::GetSettings(*pAlgorithm)->ShouldDisplayAlgorithmInfo())
-       std::cout << "----> Running Algorithm Tool: " << this->GetInstanceName() << ", " << this->GetType() << std::endl;
+        std::cout << "----> Running Algorithm Tool: " << this->GetInstanceName() << ", " << this->GetType() << std::endl;
 
     bool associationsMade(true);
 
@@ -54,22 +54,22 @@ void BranchAssociatedPfosTool::Run(const NeutrinoHierarchyAlgorithm *const pAlgo
 
         for (const ParticleFlowObject *const pParentPfo : assignedPfos)
         {
-            PfoInfo *const pParentPfoInfo(pfoInfoMap.at(pParentPfo));
+            PfoInfo *const       pParentPfoInfo(pfoInfoMap.at(pParentPfo));
             const Cluster *const pParentCluster3D(pParentPfoInfo->GetCluster3D());
 
-            const bool parentIsTrack(LArPfoHelper::IsTrack(pParentPfo));
+            const bool                    parentIsTrack(LArPfoHelper::IsTrack(pParentPfo));
             const ThreeDSlidingFitResult &parentFitResult(*(pParentPfoInfo->GetSlidingFitResult3D()));
 
             const float parentLength3D((parentFitResult.GetGlobalMinLayerPosition() - parentFitResult.GetGlobalMaxLayerPosition()).GetMagnitude());
-            const CartesianVector &parentVertexPosition(pParentPfoInfo->IsInnerLayerAssociated() ? parentFitResult.GetGlobalMinLayerPosition() :
-                parentFitResult.GetGlobalMaxLayerPosition());
+            const CartesianVector &parentVertexPosition(pParentPfoInfo->IsInnerLayerAssociated() ? parentFitResult.GetGlobalMinLayerPosition()
+                                                                                                 : parentFitResult.GetGlobalMaxLayerPosition());
 
             for (const ParticleFlowObject *const pPfo : unassignedPfos)
             {
                 if (recentlyAssigned.count(pPfo))
                     continue;
 
-                PfoInfo *const pPfoInfo(pfoInfoMap.at(pPfo));
+                PfoInfo *const           pPfoInfo(pfoInfoMap.at(pPfo));
                 const LArPointingCluster pointingCluster(*(pPfoInfo->GetSlidingFitResult3D()));
 
                 const float dNeutrinoVertex(std::min((pointingCluster.GetInnerVertex().GetPosition() - pNeutrinoVertex->GetPosition()).GetMagnitude(),
@@ -104,14 +104,14 @@ void BranchAssociatedPfosTool::Run(const NeutrinoHierarchyAlgorithm *const pAlgo
 
 StatusCode BranchAssociatedPfosTool::ReadSettings(const TiXmlHandle xmlHandle)
 {
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "MinNeutrinoVertexDistance", m_minNeutrinoVertexDistance));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=,
+        XmlHelper::ReadValue(xmlHandle, "MinNeutrinoVertexDistance", m_minNeutrinoVertexDistance));
 
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "TrackBranchAdditionFraction", m_trackBranchAdditionFraction));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=,
+        XmlHelper::ReadValue(xmlHandle, "TrackBranchAdditionFraction", m_trackBranchAdditionFraction));
 
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "MaxParentClusterDistance", m_maxParentClusterDistance));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=,
+        XmlHelper::ReadValue(xmlHandle, "MaxParentClusterDistance", m_maxParentClusterDistance));
 
     return STATUS_CODE_SUCCESS;
 }

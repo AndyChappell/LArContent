@@ -17,9 +17,7 @@ using namespace pandora;
 namespace lar_content
 {
 
-HitCreationBaseTool::HitCreationBaseTool() :
-    m_sigmaX2(1.),
-    m_chiSquaredCut(1.)
+HitCreationBaseTool::HitCreationBaseTool() : m_sigmaX2(1.), m_chiSquaredCut(1.)
 {
 }
 
@@ -77,17 +75,20 @@ void HitCreationBaseTool::GetBestPosition3D(const HitType hitType1, const HitTyp
 {
     // TODO Input better uncertainties into this method (sigmaHit, sigmaFit, sigmaX)
     const CaloHit *const pCaloHit2D(protoHit.GetParentCaloHit2D());
-    const HitType hitType(pCaloHit2D->GetHitType());
+    const HitType        hitType(pCaloHit2D->GetHitType());
 
     const double sigmaFit(LArGeometryHelper::GetSigmaUVW(this->GetPandora()));
     const double sigmaHit(sigmaFit);
 
     CartesianVector position3D(0.f, 0.f, 0.f);
-    double chi2(std::numeric_limits<double>::max());
+    double          chi2(std::numeric_limits<double>::max());
 
-    const double u((TPC_VIEW_U == hitType) ? pCaloHit2D->GetPositionVector().GetZ() : (TPC_VIEW_U == hitType1) ? fitPosition1.GetZ() : fitPosition2.GetZ());
-    const double v((TPC_VIEW_V == hitType) ? pCaloHit2D->GetPositionVector().GetZ() : (TPC_VIEW_V == hitType1) ? fitPosition1.GetZ() : fitPosition2.GetZ());
-    const double w((TPC_VIEW_W == hitType) ? pCaloHit2D->GetPositionVector().GetZ() : (TPC_VIEW_W == hitType1) ? fitPosition1.GetZ() : fitPosition2.GetZ());
+    const double u((TPC_VIEW_U == hitType) ? pCaloHit2D->GetPositionVector().GetZ()
+                                           : (TPC_VIEW_U == hitType1) ? fitPosition1.GetZ() : fitPosition2.GetZ());
+    const double v((TPC_VIEW_V == hitType) ? pCaloHit2D->GetPositionVector().GetZ()
+                                           : (TPC_VIEW_V == hitType1) ? fitPosition1.GetZ() : fitPosition2.GetZ());
+    const double w((TPC_VIEW_W == hitType) ? pCaloHit2D->GetPositionVector().GetZ()
+                                           : (TPC_VIEW_W == hitType1) ? fitPosition1.GetZ() : fitPosition2.GetZ());
 
     const double sigmaU((TPC_VIEW_U == hitType) ? sigmaHit : sigmaFit);
     const double sigmaV((TPC_VIEW_V == hitType) ? sigmaHit : sigmaFit);
@@ -112,15 +113,15 @@ void HitCreationBaseTool::GetBestPosition3D(const HitType hitType, const Cartesi
 {
     // TODO Input better uncertainties into this method (sigmaHit, sigmaFit, sigmaX)
     const CaloHit *const pCaloHit2D(protoHit.GetParentCaloHit2D());
-    const double sigmaFit(LArGeometryHelper::GetSigmaUVW(this->GetPandora()));
+    const double         sigmaFit(LArGeometryHelper::GetSigmaUVW(this->GetPandora()));
 
     if (pCaloHit2D->GetHitType() == hitType)
         throw StatusCodeException(STATUS_CODE_INVALID_PARAMETER);
 
     CartesianVector position3D(0.f, 0.f, 0.f);
-    float chi2(std::numeric_limits<float>::max());
-    LArGeometryHelper::MergeTwoPositions3D(this->GetPandora(), pCaloHit2D->GetHitType(), hitType, pCaloHit2D->GetPositionVector(),
-        fitPosition, position3D, chi2);
+    float           chi2(std::numeric_limits<float>::max());
+    LArGeometryHelper::MergeTwoPositions3D(
+        this->GetPandora(), pCaloHit2D->GetHitType(), hitType, pCaloHit2D->GetPositionVector(), fitPosition, position3D, chi2);
 
     // ATTN Replace chi2 from LArGeometryHelper for consistency with three-view treatment (purely a measure of delta x)
     const double deltaX(pCaloHit2D->GetPositionVector().GetX() - fitPosition.GetX());
@@ -136,8 +137,7 @@ StatusCode HitCreationBaseTool::ReadSettings(const pandora::TiXmlHandle xmlHandl
 {
     double sigmaX(std::sqrt(m_sigmaX2));
 
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "SigmaX", sigmaX));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "SigmaX", sigmaX));
 
     m_sigmaX2 = sigmaX * sigmaX;
 
@@ -147,8 +147,7 @@ StatusCode HitCreationBaseTool::ReadSettings(const pandora::TiXmlHandle xmlHandl
         return STATUS_CODE_INVALID_PARAMETER;
     }
 
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "ChiSquaredCut", m_chiSquaredCut));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "ChiSquaredCut", m_chiSquaredCut));
 
     return STATUS_CODE_SUCCESS;
 }

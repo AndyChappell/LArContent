@@ -29,7 +29,7 @@ private:
     void FindBestSplitPositions(const TwoDSlidingFitResultMap &slidingFitResultMap, ClusterPositionMap &clusterSplittingMap) const;
 
     typedef std::pair<float, pandora::CartesianVector> MyTrajectoryPoint;
-    typedef std::vector<MyTrajectoryPoint> MyTrajectoryPointList;
+    typedef std::vector<MyTrajectoryPoint>             MyTrajectoryPointList;
 
     /**
      *  @brief  Use sliding fit results to calculate intersections of clusters
@@ -67,11 +67,11 @@ private:
 
     pandora::StatusCode ReadSettings(const pandora::TiXmlHandle xmlHandle);
 
-    float           m_minClusterLength;          ///<
-    float           m_maxClusterSeparation;      ///<
-    float           m_minVertexDisplacement;     ///<
-    float           m_maxIntersectDisplacement;
-    float           m_minSplitDisplacement;
+    float m_minClusterLength;      ///<
+    float m_maxClusterSeparation;  ///<
+    float m_minVertexDisplacement; ///<
+    float m_maxIntersectDisplacement;
+    float m_minSplitDisplacement;
 };
 
 } // namespace lar_content

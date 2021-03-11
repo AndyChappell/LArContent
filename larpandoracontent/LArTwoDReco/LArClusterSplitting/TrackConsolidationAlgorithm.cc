@@ -30,7 +30,7 @@ void TrackConsolidationAlgorithm::GetReclusteredHits(const TwoDSlidingFitResultL
     for (const TwoDSlidingFitResult &slidingFitResultI : slidingFitResultListI)
     {
         const Cluster *const pClusterI = slidingFitResultI.GetCluster();
-        const float thisLengthSquaredI(LArClusterHelper::GetLengthSquared(pClusterI));
+        const float          thisLengthSquaredI(LArClusterHelper::GetLengthSquared(pClusterI));
 
         for (const Cluster *const pClusterJ : showerClustersJ)
         {
@@ -81,7 +81,7 @@ void TrackConsolidationAlgorithm::GetReclusteredHits(const TwoDSlidingFitResult 
         const CartesianVector positionJ(pCaloHitJ->GetPositionVector());
         const CartesianVector positionI(LArClusterHelper::GetClosestPosition(positionJ, pClusterI));
 
-        float rL(0.f), rT(0.f);
+        float           rL(0.f), rT(0.f);
         CartesianVector positionK(0.f, 0.f, 0.f);
 
         if (STATUS_CODE_SUCCESS != slidingFitResultI.GetGlobalFitProjection(positionJ, positionK))
@@ -111,14 +111,15 @@ void TrackConsolidationAlgorithm::GetReclusteredHits(const TwoDSlidingFitResult 
     }
 
     const float associatedSpan(maxL - minL);
-    const float associatedFraction(associatedHits.empty() ? 0.f : static_cast<float>(associatedHits.size()) / static_cast<float>(pClusterJ->GetNCaloHits()));
+    const float associatedFraction(
+        associatedHits.empty() ? 0.f : static_cast<float>(associatedHits.size()) / static_cast<float>(pClusterJ->GetNCaloHits()));
 
     if (associatedSpan > m_minAssociatedSpan || associatedFraction > m_minAssociatedFraction)
     {
         for (CaloHitList::const_iterator iterK = associatedHits.begin(), iterEndK = associatedHits.end(); iterK != iterEndK; ++iterK)
         {
             const CaloHit *const pCaloHit = *iterK;
-            const CaloHitList &caloHitList(caloHitsToRemoveJ[pClusterJ]);
+            const CaloHitList &  caloHitList(caloHitsToRemoveJ[pClusterJ]);
 
             if (caloHitList.end() != std::find(caloHitList.begin(), caloHitList.end(), pCaloHit))
                 continue;
@@ -133,14 +134,14 @@ void TrackConsolidationAlgorithm::GetReclusteredHits(const TwoDSlidingFitResult 
 
 StatusCode TrackConsolidationAlgorithm::ReadSettings(const TiXmlHandle xmlHandle)
 {
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "MaxTransverseDisplacement", m_maxTransverseDisplacement));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=,
+        XmlHelper::ReadValue(xmlHandle, "MaxTransverseDisplacement", m_maxTransverseDisplacement));
 
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "MinAssociatedSpan", m_minAssociatedSpan));
+    PANDORA_RETURN_RESULT_IF_AND_IF(
+        STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "MinAssociatedSpan", m_minAssociatedSpan));
 
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "MinAssociatedFraction", m_minAssociatedFraction));
+    PANDORA_RETURN_RESULT_IF_AND_IF(
+        STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "MinAssociatedFraction", m_minAssociatedFraction));
 
     return TwoDSlidingFitConsolidationAlgorithm::ReadSettings(xmlHandle);
 }

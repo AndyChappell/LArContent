@@ -30,7 +30,7 @@ BoundedClusterMopUpAlgorithm::BoundedClusterMopUpAlgorithm() :
 void BoundedClusterMopUpAlgorithm::ClusterMopUp(const ClusterList &pfoClusters, const ClusterList &remnantClusters) const
 {
     ClusterAssociationMap clusterAssociationMap;
-    const float slidingFitPitch(LArGeometryHelper::GetWireZPitch(this->GetPandora()));
+    const float           slidingFitPitch(LArGeometryHelper::GetWireZPitch(this->GetPandora()));
 
     ClusterVector sortedPfoClusters(pfoClusters.begin(), pfoClusters.end());
     std::sort(sortedPfoClusters.begin(), sortedPfoClusters.end(), LArClusterHelper::SortByNHits);
@@ -43,7 +43,7 @@ void BoundedClusterMopUpAlgorithm::ClusterMopUp(const ClusterList &pfoClusters, 
         const TwoDSlidingShowerFitResult fitResult(pPfoCluster, m_slidingFitWindow, slidingFitPitch, m_showerEdgeMultiplier);
 
         ShowerPositionMap showerPositionMap;
-        const XSampling xSampling(fitResult.GetShowerFitResult());
+        const XSampling   xSampling(fitResult.GetShowerFitResult());
         this->GetShowerPositionMap(fitResult, xSampling, showerPositionMap);
 
         for (const Cluster *const pRemnantCluster : sortedRemnantClusters)
@@ -65,10 +65,10 @@ void BoundedClusterMopUpAlgorithm::ClusterMopUp(const ClusterList &pfoClusters, 
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-void BoundedClusterMopUpAlgorithm::GetShowerPositionMap(const TwoDSlidingShowerFitResult &fitResult, const XSampling &xSampling,
-    ShowerPositionMap &showerPositionMap) const
+void BoundedClusterMopUpAlgorithm::GetShowerPositionMap(
+    const TwoDSlidingShowerFitResult &fitResult, const XSampling &xSampling, ShowerPositionMap &showerPositionMap) const
 {
-    for (int n=0; n <= xSampling.m_nPoints; ++n)
+    for (int n = 0; n <= xSampling.m_nPoints; ++n)
     {
         const float x(xSampling.m_minX + (xSampling.m_maxX - xSampling.m_minX) * static_cast<float>(n) / static_cast<float>(xSampling.m_nPoints));
 
@@ -93,15 +93,15 @@ void BoundedClusterMopUpAlgorithm::GetShowerPositionMap(const TwoDSlidingShowerF
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-float BoundedClusterMopUpAlgorithm::GetBoundedFraction(const Cluster *const pCluster, const XSampling &xSampling, const ShowerPositionMap &showerPositionMap) const
+float BoundedClusterMopUpAlgorithm::GetBoundedFraction(
+    const Cluster *const pCluster, const XSampling &xSampling, const ShowerPositionMap &showerPositionMap) const
 {
-  if (((xSampling.m_maxX - xSampling.m_minX) < std::numeric_limits<float>::epsilon()) || (0 >= xSampling.m_nPoints) ||
-      (0 == pCluster->GetNCaloHits()))
+    if (((xSampling.m_maxX - xSampling.m_minX) < std::numeric_limits<float>::epsilon()) || (0 >= xSampling.m_nPoints) || (0 == pCluster->GetNCaloHits()))
     {
         throw StatusCodeException(STATUS_CODE_INVALID_PARAMETER);
     }
 
-    unsigned int nMatchedHits(0);
+    unsigned int              nMatchedHits(0);
     const OrderedCaloHitList &orderedCaloHitList(pCluster->GetOrderedCaloHitList());
 
     for (OrderedCaloHitList::const_iterator iter = orderedCaloHitList.begin(), iterEnd = orderedCaloHitList.end(); iter != iterEnd; ++iter)
@@ -109,8 +109,8 @@ float BoundedClusterMopUpAlgorithm::GetBoundedFraction(const Cluster *const pClu
         for (CaloHitList::const_iterator hIter = iter->second->begin(), hIterEnd = iter->second->end(); hIter != hIterEnd; ++hIter)
         {
             const CaloHit *const pCaloHit = *hIter;
-            const float x(pCaloHit->GetPositionVector().GetX());
-            const float z(pCaloHit->GetPositionVector().GetZ());
+            const float          x(pCaloHit->GetPositionVector().GetX());
+            const float          z(pCaloHit->GetPositionVector().GetZ());
 
             try
             {
@@ -158,14 +158,14 @@ int BoundedClusterMopUpAlgorithm::XSampling::GetBin(const float x) const
 
 StatusCode BoundedClusterMopUpAlgorithm::ReadSettings(const TiXmlHandle xmlHandle)
 {
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "SlidingFitWindow", m_slidingFitWindow));
+    PANDORA_RETURN_RESULT_IF_AND_IF(
+        STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "SlidingFitWindow", m_slidingFitWindow));
 
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "ShowerEdgeMultiplier", m_showerEdgeMultiplier));
+    PANDORA_RETURN_RESULT_IF_AND_IF(
+        STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "ShowerEdgeMultiplier", m_showerEdgeMultiplier));
 
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "MinBoundedFraction", m_minBoundedFraction));
+    PANDORA_RETURN_RESULT_IF_AND_IF(
+        STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "MinBoundedFraction", m_minBoundedFraction));
 
     return ClusterMopUpBaseAlgorithm::ReadSettings(xmlHandle);
 }

@@ -111,7 +111,7 @@ bool PfoCharacterisationBaseAlgorithm::IsClearTrack3x2D(const ParticleFlowObject
     LArPfoHelper::GetTwoDClusterList(pPfo, twoDClusterList);
 
     typedef std::set<pandora::HitType> HitTypeSet;
-    HitTypeSet hitTypeSet;
+    HitTypeSet                         hitTypeSet;
 
     unsigned int nTrackLikeViews(0);
     for (const Cluster *const pCluster : twoDClusterList)
@@ -140,14 +140,14 @@ StatusCode PfoCharacterisationBaseAlgorithm::ReadSettings(const TiXmlHandle xmlH
     PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadValue(xmlHandle, "ShowerPfoListName", m_showerPfoListName));
     m_inputPfoListNames.push_back(m_showerPfoListName);
 
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "UpdateClusterIds", m_updateClusterIds));
+    PANDORA_RETURN_RESULT_IF_AND_IF(
+        STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "UpdateClusterIds", m_updateClusterIds));
 
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "MinTrackLikeViews", m_minTrackLikeViews));
+    PANDORA_RETURN_RESULT_IF_AND_IF(
+        STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "MinTrackLikeViews", m_minTrackLikeViews));
 
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "UseThreeDInformation", m_useThreeDInformation));
+    PANDORA_RETURN_RESULT_IF_AND_IF(
+        STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "UseThreeDInformation", m_useThreeDInformation));
 
     return STATUS_CODE_SUCCESS;
 }

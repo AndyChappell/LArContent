@@ -18,8 +18,8 @@ using namespace pandora;
 namespace lar_content
 {
 
-void TransverseTrackHitsBaseTool::GetTrackHits3D(const CaloHitVector &inputTwoDHits, const MatchedSlidingFitMap &matchedSlidingFitMap,
-    ProtoHitVector &protoHitVector) const
+void TransverseTrackHitsBaseTool::GetTrackHits3D(
+    const CaloHitVector &inputTwoDHits, const MatchedSlidingFitMap &matchedSlidingFitMap, ProtoHitVector &protoHitVector) const
 {
     for (const CaloHit *const pCaloHit2D : inputTwoDHits)
     {
@@ -43,8 +43,8 @@ void TransverseTrackHitsBaseTool::GetTrackHits3D(const CaloHitVector &inputTwoDH
 void TransverseTrackHitsBaseTool::AddTransverseChi2(const MatchedSlidingFitMap &matchedSlidingFitMap, ProtoHit &protoHit) const
 {
     // TODO Develop a proper treatment of the |dz/dx| * sigmaX uncertainty
-    double chiSquared(protoHit.GetChi2());
-    const HitType inputHitType(protoHit.GetParentCaloHit2D()->GetHitType());
+    double                 chiSquared(protoHit.GetChi2());
+    const HitType          inputHitType(protoHit.GetParentCaloHit2D()->GetHitType());
     const CartesianVector &inputPosition3D(protoHit.GetPosition3D());
 
     for (const MatchedSlidingFitMap::value_type &mapEntry : matchedSlidingFitMap)
@@ -69,8 +69,7 @@ double TransverseTrackHitsBaseTool::GetTransverseChi2(const CartesianVector &pos
     const float minX(std::min(minLayerX, maxLayerX));
     const float maxX(std::max(minLayerX, maxLayerX));
 
-    if (((position2D.GetX() - minX) > -std::numeric_limits<float>::epsilon()) &&
-        ((position2D.GetX() - maxX) < +std::numeric_limits<float>::epsilon()))
+    if (((position2D.GetX() - minX) > -std::numeric_limits<float>::epsilon()) && ((position2D.GetX() - maxX) < +std::numeric_limits<float>::epsilon()))
         return 0.;
 
     const float minLayerDistanceSquared((position2D - fitResult.GetGlobalMinLayerPosition()).GetMagnitudeSquared());

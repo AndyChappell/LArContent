@@ -15,8 +15,7 @@ using namespace pandora;
 namespace lar_content
 {
 
-AdaBoostDecisionTree::AdaBoostDecisionTree() :
-    m_pStrongClassifier(nullptr)
+AdaBoostDecisionTree::AdaBoostDecisionTree() : m_pStrongClassifier(nullptr)
 {
 }
 
@@ -63,7 +62,7 @@ StatusCode AdaBoostDecisionTree::Initialize(const std::string &bdtXmlFileName, c
     }
 
     const TiXmlHandle xmlDocumentHandle(&xmlDocument);
-    TiXmlNode *pContainerXmlNode(TiXmlHandle(xmlDocumentHandle).FirstChildElement().Element());
+    TiXmlNode *       pContainerXmlNode(TiXmlHandle(xmlDocumentHandle).FirstChildElement().Element());
 
     while (pContainerXmlNode)
     {
@@ -161,7 +160,8 @@ double AdaBoostDecisionTree::CalculateScore(const LArMvaHelper::MvaFeatureVector
         }
         else if (STATUS_CODE_INVALID_PARAMETER == statusCodeException.GetStatusCode())
         {
-            std::cout << "AdaBoostDecisionTree: Caught exception thrown when classifier weights sum to zero indicating defunct classifier." << std::endl;
+            std::cout << "AdaBoostDecisionTree: Caught exception thrown when classifier weights sum to zero indicating defunct classifier."
+                      << std::endl;
         }
         else if (STATUS_CODE_OUT_OF_RANGE == statusCodeException.GetStatusCode())
         {
@@ -260,11 +260,10 @@ AdaBoostDecisionTree::Node::~Node()
 //------------------------------------------------------------------------------------------------------------------------------------------
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-AdaBoostDecisionTree::WeakClassifier::WeakClassifier(const TiXmlHandle *const pXmlHandle) :
-    m_weight(0.),
-    m_treeId(0)
+AdaBoostDecisionTree::WeakClassifier::WeakClassifier(const TiXmlHandle *const pXmlHandle) : m_weight(0.), m_treeId(0)
 {
-    for (TiXmlElement *pHeadTiXmlElement = pXmlHandle->FirstChildElement().ToElement(); pHeadTiXmlElement != NULL; pHeadTiXmlElement = pHeadTiXmlElement->NextSiblingElement())
+    for (TiXmlElement *pHeadTiXmlElement = pXmlHandle->FirstChildElement().ToElement(); pHeadTiXmlElement != NULL;
+         pHeadTiXmlElement = pHeadTiXmlElement->NextSiblingElement())
     {
         if ("TreeIndex" == pHeadTiXmlElement->ValueStr())
         {
@@ -277,7 +276,7 @@ AdaBoostDecisionTree::WeakClassifier::WeakClassifier(const TiXmlHandle *const pX
         else if ("Node" == pHeadTiXmlElement->ValueStr())
         {
             const TiXmlHandle nodeHandle(pHeadTiXmlElement);
-            const Node *pNode = new Node(&nodeHandle);
+            const Node *      pNode = new Node(&nodeHandle);
             m_idToNodeMap.insert(IdToNodeMap::value_type(pNode->GetNodeId(), pNode));
         }
     }
@@ -285,9 +284,7 @@ AdaBoostDecisionTree::WeakClassifier::WeakClassifier(const TiXmlHandle *const pX
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-AdaBoostDecisionTree::WeakClassifier::WeakClassifier(const WeakClassifier &rhs) :
-    m_weight(rhs.m_weight),
-    m_treeId(rhs.m_treeId)
+AdaBoostDecisionTree::WeakClassifier::WeakClassifier(const WeakClassifier &rhs) : m_weight(rhs.m_weight), m_treeId(rhs.m_treeId)
 {
     for (const auto &mapEntry : rhs.m_idToNodeMap)
     {
@@ -443,7 +440,7 @@ double AdaBoostDecisionTree::StrongClassifier::Predict(const LArMvaHelper::MvaFe
 StatusCode AdaBoostDecisionTree::StrongClassifier::ReadComponent(TiXmlElement *pCurrentXmlElement)
 {
     const std::string componentName(pCurrentXmlElement->ValueStr());
-    TiXmlHandle currentHandle(pCurrentXmlElement);
+    TiXmlHandle       currentHandle(pCurrentXmlElement);
 
     if ((std::string("Name") == componentName) || (std::string("Timestamp") == componentName))
         return STATUS_CODE_SUCCESS;

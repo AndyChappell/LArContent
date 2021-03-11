@@ -18,6 +18,7 @@
 
 #include "larpandoradlcontent/LArDLContent.h"
 
+// clang-format off
 #define LAR_DL_ALGORITHM_LIST(d)                                                                                                   \
     d("LArDLMaster",                            DLMasterAlgorithm)                                                                 \
     d("LArDLHitTrackShowerId",                  DlHitTrackShowerIdAlgorithm)                                                       \
@@ -71,6 +72,7 @@ LAR_DL_ALGORITHM_TOOL_LIST(LAR_DL_CONTENT_CREATE_ALGORITHM_TOOL_FACTORY)
     if (pandora::STATUS_CODE_SUCCESS != statusCode)                                                                                 \
         return statusCode;                                                                                                          \
 }
+// clang-format on
 
 pandora::StatusCode LArDLContent::RegisterAlgorithms(const pandora::Pandora &pandora)
 {

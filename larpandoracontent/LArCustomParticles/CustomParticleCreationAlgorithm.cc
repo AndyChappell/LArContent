@@ -42,16 +42,16 @@ StatusCode CustomParticleCreationAlgorithm::Run()
     }
 
     // Create temporary lists
-    const PfoList *pTempPfoList = NULL; std::string tempPfoListName;
-    PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::CreateTemporaryListAndSetCurrent(*this, pTempPfoList,
-        tempPfoListName));
+    const PfoList *pTempPfoList = NULL;
+    std::string    tempPfoListName;
+    PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::CreateTemporaryListAndSetCurrent(*this, pTempPfoList, tempPfoListName));
 
-    const VertexList *pTempVertexList = NULL; std::string tempVertexListName;
-    PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::CreateTemporaryListAndSetCurrent(*this, pTempVertexList,
-        tempVertexListName));
+    const VertexList *pTempVertexList = NULL;
+    std::string       tempVertexListName;
+    PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::CreateTemporaryListAndSetCurrent(*this, pTempVertexList, tempVertexListName));
 
     // Loop over input Pfos
-    PfoList pfoList(pPfoList->begin(), pPfoList->end());
+    PfoList    pfoList(pPfoList->begin(), pPfoList->end());
     VertexList vertexList(pVertexList->begin(), pVertexList->end());
 
     for (PfoList::const_iterator iter = pfoList.begin(), iterEnd = pfoList.end(); iter != iterEnd; ++iter)
@@ -79,8 +79,8 @@ StatusCode CustomParticleCreationAlgorithm::Run()
 
         // Transfer clusters and hierarchy information to new pfo, and delete old pfo and vertex
         ClusterList clusterList(pInputPfo->GetClusterList().begin(), pInputPfo->GetClusterList().end());
-        PfoList parentList(pInputPfo->GetParentPfoList().begin(), pInputPfo->GetParentPfoList().end());
-        PfoList daughterList(pInputPfo->GetDaughterPfoList().begin(), pInputPfo->GetDaughterPfoList().end());
+        PfoList     parentList(pInputPfo->GetParentPfoList().begin(), pInputPfo->GetParentPfoList().end());
+        PfoList     daughterList(pInputPfo->GetDaughterPfoList().begin(), pInputPfo->GetDaughterPfoList().end());
 
         PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::Delete<Pfo>(*this, pInputPfo, m_pfoListName));
         PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::Delete<Vertex>(*this, pInputVertex, m_vertexListName));

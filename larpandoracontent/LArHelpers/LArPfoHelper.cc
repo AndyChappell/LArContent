@@ -8,10 +8,10 @@
 
 #include "Pandora/PdgTable.h"
 
-#include "larpandoracontent/LArHelpers/LArPfoHelper.h"
-#include "larpandoracontent/LArHelpers/LArPcaHelper.h"
 #include "larpandoracontent/LArHelpers/LArClusterHelper.h"
 #include "larpandoracontent/LArHelpers/LArObjectHelper.h"
+#include "larpandoracontent/LArHelpers/LArPcaHelper.h"
+#include "larpandoracontent/LArHelpers/LArPfoHelper.h"
 
 #include "larpandoracontent/LArObjects/LArThreeDSlidingFitResult.h"
 
@@ -176,7 +176,7 @@ void LArPfoHelper::GetAllDownstreamPfos(const ParticleFlowObject *const pPfo, Pf
 int LArPfoHelper::GetHierarchyTier(const ParticleFlowObject *const pPfo)
 {
     const ParticleFlowObject *pParentPfo = pPfo;
-    int tier(0);
+    int                       tier(0);
 
     while (pParentPfo->GetParentPfoList().empty() == false)
     {
@@ -416,7 +416,7 @@ bool LArPfoHelper::IsTestBeamFinalState(const ParticleFlowObject *const pPfo)
 
 bool LArPfoHelper::IsTestBeam(const ParticleFlowObject *const pPfo)
 {
-    const PropertiesMap &properties(pPfo->GetPropertiesMap());
+    const PropertiesMap &               properties(pPfo->GetPropertiesMap());
     const PropertiesMap::const_iterator iter(properties.find("IsTestBeam"));
 
     if (iter != properties.end())
@@ -459,7 +459,7 @@ const ParticleFlowObject *LArPfoHelper::GetParentNeutrino(const ParticleFlowObje
 {
     const ParticleFlowObject *const pParentPfo = LArPfoHelper::GetParentPfo(pPfo);
 
-    if(!LArPfoHelper::IsNeutrino(pParentPfo))
+    if (!LArPfoHelper::IsNeutrino(pParentPfo))
         throw StatusCodeException(STATUS_CODE_NOT_FOUND);
 
     return pParentPfo;
@@ -558,9 +558,9 @@ void LArPfoHelper::GetSlidingFitTrajectory(const ParticleFlowObject *const pPfo,
 LArShowerPCA LArPfoHelper::GetPrincipalComponents(const CartesianPointVector &pointVector, const CartesianVector &vertexPosition)
 {
     // Run the PCA analysis
-    CartesianVector centroid(0.f, 0.f, 0.f);
+    CartesianVector            centroid(0.f, 0.f, 0.f);
     LArPcaHelper::EigenVectors eigenVecs;
-    LArPcaHelper::EigenValues eigenValues(0.f, 0.f, 0.f);
+    LArPcaHelper::EigenValues  eigenValues(0.f, 0.f, 0.f);
     LArPcaHelper::RunPca(pointVector, centroid, eigenValues, eigenVecs);
 
     // Require that principal eigenvalue should always be positive
@@ -608,7 +608,8 @@ bool LArPfoHelper::SortByHitProjection(const LArTrackTrajectoryPoint &lhs, const
 
 bool LArPfoHelper::SortByNHits(const ParticleFlowObject *const pLhs, const ParticleFlowObject *const pRhs)
 {
-    unsigned int nTwoDHitsLhs(0), nThreeDHitsLhs(0); float energyLhs(0.f);
+    unsigned int nTwoDHitsLhs(0), nThreeDHitsLhs(0);
+    float        energyLhs(0.f);
     for (ClusterList::const_iterator iter = pLhs->GetClusterList().begin(), iterEnd = pLhs->GetClusterList().end(); iter != iterEnd; ++iter)
     {
         const Cluster *const pClusterLhs = *iter;
@@ -621,7 +622,8 @@ bool LArPfoHelper::SortByNHits(const ParticleFlowObject *const pLhs, const Parti
         energyLhs += pClusterLhs->GetHadronicEnergy();
     }
 
-    unsigned int nTwoDHitsRhs(0), nThreeDHitsRhs(0); float energyRhs(0.f);
+    unsigned int nTwoDHitsRhs(0), nThreeDHitsRhs(0);
+    float        energyRhs(0.f);
     for (ClusterList::const_iterator iter = pRhs->GetClusterList().begin(), iterEnd = pRhs->GetClusterList().end(); iter != iterEnd; ++iter)
     {
         const Cluster *const pClusterRhs = *iter;
@@ -649,7 +651,7 @@ bool LArPfoHelper::SortByNHits(const ParticleFlowObject *const pLhs, const Parti
 void LArPfoHelper::GetBreadthFirstHierarchyRepresentation(const pandora::ParticleFlowObject *const pPfo, pandora::PfoList &pfoList)
 {
     const ParticleFlowObject *pRoot{pPfo};
-    PfoList parents{pRoot->GetParentPfoList()};
+    PfoList                   parents{pRoot->GetParentPfoList()};
     while (!parents.empty())
     {
         if (parents.size() > 1)
@@ -690,14 +692,15 @@ void LArPfoHelper::SlidingFitTrajectoryImpl(const T *const pT, const CartesianVe
     std::sort(pointVector.begin(), pointVector.end(), LArClusterHelper::SortCoordinatesByPosition);
 
     LArTrackTrajectory trackTrajectory;
-    IntVector indicesWithoutSpacePoints;
-    if (pIndexVector) pIndexVector->clear();
+    IntVector          indicesWithoutSpacePoints;
+    if (pIndexVector)
+        pIndexVector->clear();
 
     try
     {
         const ThreeDSlidingFitResult slidingFitResult(&pointVector, layerWindow, layerPitch);
-        const CartesianVector minPosition(slidingFitResult.GetGlobalMinLayerPosition());
-        const CartesianVector maxPosition(slidingFitResult.GetGlobalMaxLayerPosition());
+        const CartesianVector        minPosition(slidingFitResult.GetGlobalMinLayerPosition());
+        const CartesianVector        maxPosition(slidingFitResult.GetGlobalMaxLayerPosition());
 
         if ((maxPosition - minPosition).GetMagnitudeSquared() < std::numeric_limits<float>::epsilon())
             throw StatusCodeException(STATUS_CODE_NOT_FOUND);
@@ -716,13 +719,13 @@ void LArPfoHelper::SlidingFitTrajectoryImpl(const T *const pT, const CartesianVe
             {
                 const float rL(slidingFitResult.GetLongitudinalDisplacement(LArObjectHelper::TypeAdaptor::GetPosition(nextPoint)));
 
-                CartesianVector position(0.f, 0.f, 0.f);
+                CartesianVector  position(0.f, 0.f, 0.f);
                 const StatusCode positionStatusCode(slidingFitResult.GetGlobalFitPosition(rL, position));
 
                 if (positionStatusCode != STATUS_CODE_SUCCESS)
                     throw StatusCodeException(positionStatusCode);
 
-                CartesianVector direction(0.f, 0.f, 0.f);
+                CartesianVector  direction(0.f, 0.f, 0.f);
                 const StatusCode directionStatusCode(slidingFitResult.GetGlobalFitDirection(rL, direction));
 
                 if (directionStatusCode != STATUS_CODE_SUCCESS)
@@ -754,7 +757,8 @@ void LArPfoHelper::SlidingFitTrajectoryImpl(const T *const pT, const CartesianVe
     for (const LArTrackTrajectoryPoint &larTrackTrajectoryPoint : trackTrajectory)
     {
         trackStateVector.push_back(larTrackTrajectoryPoint.second);
-        if (pIndexVector) pIndexVector->push_back(larTrackTrajectoryPoint.GetIndex());
+        if (pIndexVector)
+            pIndexVector->push_back(larTrackTrajectoryPoint.GetIndex());
     }
 
     // Store indices of spacepoints with no associated trajectory point at the end of pIndexVector
@@ -767,7 +771,9 @@ void LArPfoHelper::SlidingFitTrajectoryImpl(const T *const pT, const CartesianVe
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-template void LArPfoHelper::SlidingFitTrajectoryImpl(const CartesianPointVector *const, const CartesianVector &, const unsigned int, const float, LArTrackStateVector &, IntVector *const);
-template void LArPfoHelper::SlidingFitTrajectoryImpl(const CaloHitList *const, const CartesianVector &, const unsigned int, const float, LArTrackStateVector &, IntVector *const);
+template void LArPfoHelper::SlidingFitTrajectoryImpl(
+    const CartesianPointVector *const, const CartesianVector &, const unsigned int, const float, LArTrackStateVector &, IntVector *const);
+template void LArPfoHelper::SlidingFitTrajectoryImpl(
+    const CaloHitList *const, const CartesianVector &, const unsigned int, const float, LArTrackStateVector &, IntVector *const);
 
 } // namespace lar_content

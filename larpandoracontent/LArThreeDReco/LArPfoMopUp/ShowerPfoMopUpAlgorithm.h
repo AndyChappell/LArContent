@@ -25,12 +25,13 @@ public:
     ShowerPfoMopUpAlgorithm();
 
 private:
-    bool IsVertexAssociated(const pandora::CartesianVector &vertex2D, const LArPointingCluster &pointingCluster) const;
-    PfoAssociation GetPfoAssociation(const pandora::Pfo *const pVertexPfo, const pandora::Pfo *const pDaughterPfo, HitTypeToAssociationMap &hitTypeToAssociationMap) const;
+    bool                IsVertexAssociated(const pandora::CartesianVector &vertex2D, const LArPointingCluster &pointingCluster) const;
+    PfoAssociation      GetPfoAssociation(const pandora::Pfo *const pVertexPfo, const pandora::Pfo *const pDaughterPfo,
+             HitTypeToAssociationMap &hitTypeToAssociationMap) const;
     pandora::StatusCode ReadSettings(const pandora::TiXmlHandle xmlHandle);
 
-    float                   m_maxVertexLongitudinalDistance;    ///< Vertex association check: max longitudinal distance cut
-    float                   m_vertexAngularAllowance;           ///< Vertex association check: pointing angular allowance in degrees
+    float m_maxVertexLongitudinalDistance; ///< Vertex association check: max longitudinal distance cut
+    float m_vertexAngularAllowance;        ///< Vertex association check: pointing angular allowance in degrees
 };
 
 } // namespace lar_content

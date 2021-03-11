@@ -43,7 +43,7 @@ private:
         PfoMergeStats(const ClusterNumHitsList &numClusterHits, const float trackScore);
 
         const ClusterNumHitsList m_numClusterHits; ///< Vector filled with number of hits in each of the PFO's clusters
-        const float m_trackScore;                  ///< MVA "Track Score" for the PFO
+        const float              m_trackScore;     ///< MVA "Track Score" for the PFO
     };
 
     typedef std::vector<PfoMergeStats> PfoMergeStatsList;
@@ -68,7 +68,7 @@ private:
     pandora::StatusCode Run();
     pandora::StatusCode ReadSettings(const pandora::TiXmlHandle xmlHandle);
 
-    unsigned int m_maxIterations;            ///< Maximum number of iterations
+    unsigned int          m_maxIterations;   ///< Maximum number of iterations
     pandora::StringVector m_pfoListNames;    ///< The list of pfo list names
     pandora::StringVector m_mopUpAlgorithms; ///< Ordered list of mop up algorithms to run
 };

@@ -28,7 +28,7 @@ using namespace pandora;
 
 LArParticleIdPlugins::LArMuonId::LArMuonId() :
     m_layerFitHalfWindow(20),
-    m_minLayerOccupancy (0.75f),
+    m_minLayerOccupancy(0.75f),
     m_maxTrackWidth(0.5f),
     m_trackResidualQuantile(0.8f),
     m_minClustersPassingId(2)
@@ -42,7 +42,7 @@ bool LArParticleIdPlugins::LArMuonId::IsMatch(const Cluster *const pCluster) con
     if (LArClusterHelper::GetLayerOccupancy(pCluster) < m_minLayerOccupancy)
         return false;
 
-    const float slidingFitPitch(LArGeometryHelper::GetWireZPitch(this->GetPandora()));
+    const float                slidingFitPitch(LArGeometryHelper::GetWireZPitch(this->GetPandora()));
     const TwoDSlidingFitResult twoDSlidingFitResult(pCluster, m_layerFitHalfWindow, slidingFitPitch);
 
     if (this->GetMuonTrackWidth(twoDSlidingFitResult) > m_maxTrackWidth)
@@ -79,9 +79,9 @@ bool LArParticleIdPlugins::LArMuonId::IsMatch(const ParticleFlowObject *const pP
 
 float LArParticleIdPlugins::LArMuonId::GetMuonTrackWidth(const TwoDSlidingFitResult &twoDSlidingFitResult) const
 {
-    FloatVector residuals;
+    FloatVector               residuals;
     const OrderedCaloHitList &orderedCaloHitList(twoDSlidingFitResult.GetCluster()->GetOrderedCaloHitList());
-    const LayerFitResultMap &layerFitResultMap(twoDSlidingFitResult.GetLayerFitResultMap());
+    const LayerFitResultMap & layerFitResultMap(twoDSlidingFitResult.GetLayerFitResultMap());
 
     for (OrderedCaloHitList::const_iterator iter = orderedCaloHitList.begin(); iter != orderedCaloHitList.end(); ++iter)
     {
@@ -116,20 +116,19 @@ float LArParticleIdPlugins::LArMuonId::GetMuonTrackWidth(const TwoDSlidingFitRes
 
 StatusCode LArParticleIdPlugins::LArMuonId::ReadSettings(const TiXmlHandle xmlHandle)
 {
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "LayerFitHalfWindow", m_layerFitHalfWindow));
+    PANDORA_RETURN_RESULT_IF_AND_IF(
+        STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "LayerFitHalfWindow", m_layerFitHalfWindow));
 
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "MinLayerOccupancy", m_minLayerOccupancy));
+    PANDORA_RETURN_RESULT_IF_AND_IF(
+        STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "MinLayerOccupancy", m_minLayerOccupancy));
 
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "MaxTrackWidth", m_maxTrackWidth));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "MaxTrackWidth", m_maxTrackWidth));
 
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "TrackResidualQuantile", m_trackResidualQuantile));
+    PANDORA_RETURN_RESULT_IF_AND_IF(
+        STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "TrackResidualQuantile", m_trackResidualQuantile));
 
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "MinClustersPassingId", m_minClustersPassingId));
+    PANDORA_RETURN_RESULT_IF_AND_IF(
+        STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "MinClustersPassingId", m_minClustersPassingId));
 
     return STATUS_CODE_SUCCESS;
 }

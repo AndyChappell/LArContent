@@ -17,8 +17,7 @@ using namespace pandora;
 namespace lar_content
 {
 
-SimpleClusterCreationAlgorithm::SimpleClusterCreationAlgorithm() :
-    m_clusteringWindowSquared(1.f)
+SimpleClusterCreationAlgorithm::SimpleClusterCreationAlgorithm() : m_clusteringWindowSquared(1.f)
 {
 }
 
@@ -88,7 +87,7 @@ void SimpleClusterCreationAlgorithm::BuildAssociationMap(const CaloHitList &calo
 
 void SimpleClusterCreationAlgorithm::CreateClusters(const CaloHitList &caloHitList, const HitAssociationMap &hitAssociationMap) const
 {
-    CaloHitSet vetoList;
+    CaloHitSet    vetoList;
     CaloHitVector caloHitVector(caloHitList.begin(), caloHitList.end());
     std::sort(caloHitVector.begin(), caloHitVector.end(), LArClusterHelper::SortHitsByPosition);
 
@@ -100,7 +99,7 @@ void SimpleClusterCreationAlgorithm::CreateClusters(const CaloHitList &caloHitLi
         CaloHitList mergeList;
         this->CollectAssociatedHits(pSeedCaloHit, pSeedCaloHit, hitAssociationMap, vetoList, mergeList);
 
-        const Cluster *pCluster = NULL;
+        const Cluster *                        pCluster = NULL;
         PandoraContentApi::Cluster::Parameters parameters;
         parameters.m_caloHitList.push_back(pSeedCaloHit);
         PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::Cluster::Create(*this, parameters, pCluster));
@@ -147,8 +146,7 @@ void SimpleClusterCreationAlgorithm::CollectAssociatedHits(const CaloHit *const 
 StatusCode SimpleClusterCreationAlgorithm::ReadSettings(const TiXmlHandle xmlHandle)
 {
     float clusteringWindow = std::sqrt(m_clusteringWindowSquared);
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "ClusteringWindow", clusteringWindow));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "ClusteringWindow", clusteringWindow));
     m_clusteringWindowSquared = clusteringWindow * clusteringWindow;
 
     return STATUS_CODE_SUCCESS;

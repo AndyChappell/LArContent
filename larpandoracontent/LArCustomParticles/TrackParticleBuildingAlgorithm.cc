@@ -22,15 +22,13 @@ using namespace pandora;
 namespace lar_content
 {
 
-TrackParticleBuildingAlgorithm::TrackParticleBuildingAlgorithm() :
-    m_slidingFitHalfWindow(20)
+TrackParticleBuildingAlgorithm::TrackParticleBuildingAlgorithm() : m_slidingFitHalfWindow(20)
 {
-
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-void TrackParticleBuildingAlgorithm::CreatePfo(const ParticleFlowObject *const pInputPfo, const ParticleFlowObject*& pOutputPfo) const
+void TrackParticleBuildingAlgorithm::CreatePfo(const ParticleFlowObject *const pInputPfo, const ParticleFlowObject *&pOutputPfo) const
 {
     try
     {
@@ -54,7 +52,7 @@ void TrackParticleBuildingAlgorithm::CreatePfo(const ParticleFlowObject *const p
 
         // ATTN If wire w pitches vary between TPCs, exception will be raised in initialisation of lar pseudolayer plugin
         const LArTPC *const pFirstLArTPC(this->GetPandora().GetGeometry()->GetLArTPCMap().begin()->second);
-        const float layerPitch(pFirstLArTPC->GetWirePitchW());
+        const float         layerPitch(pFirstLArTPC->GetWirePitchW());
 
         // Calculate sliding fit trajectory
         LArTrackStateVector trackStateVector;
@@ -64,7 +62,7 @@ void TrackParticleBuildingAlgorithm::CreatePfo(const ParticleFlowObject *const p
             return;
 
         // Build track-like pfo from track trajectory (TODO Correct these placeholder parameters)
-        LArTrackPfoFactory trackFactory;
+        LArTrackPfoFactory    trackFactory;
         LArTrackPfoParameters pfoParameters;
         pfoParameters.m_particleId = (LArPfoHelper::IsTrack(pInputPfo) ? pInputPfo->GetParticleId() : MU_MINUS);
         pfoParameters.m_charge = PdgTable::GetParticleCharge(pfoParameters.m_particleId.Get());
@@ -74,10 +72,9 @@ void TrackParticleBuildingAlgorithm::CreatePfo(const ParticleFlowObject *const p
         pfoParameters.m_propertiesToAdd = pInputPfo->GetPropertiesMap();
         pfoParameters.m_trackStateVector = trackStateVector;
 
-        PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::ParticleFlowObject::Create(*this, pfoParameters, pOutputPfo,
-            trackFactory));
+        PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::ParticleFlowObject::Create(*this, pfoParameters, pOutputPfo, trackFactory));
 
-        const LArTrackPfo *const pLArPfo = dynamic_cast<const LArTrackPfo*>(pOutputPfo);
+        const LArTrackPfo *const pLArPfo = dynamic_cast<const LArTrackPfo *>(pOutputPfo);
         if (NULL == pLArPfo)
             throw StatusCodeException(STATUS_CODE_FAILURE);
 
@@ -107,8 +104,8 @@ void TrackParticleBuildingAlgorithm::CreatePfo(const ParticleFlowObject *const p
 
 StatusCode TrackParticleBuildingAlgorithm::ReadSettings(const TiXmlHandle xmlHandle)
 {
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "SlidingFitHalfWindow", m_slidingFitHalfWindow));
+    PANDORA_RETURN_RESULT_IF_AND_IF(
+        STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "SlidingFitHalfWindow", m_slidingFitHalfWindow));
 
     return CustomParticleCreationAlgorithm::ReadSettings(xmlHandle);
 }

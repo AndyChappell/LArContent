@@ -59,7 +59,7 @@ StatusCode SlidingConePfoMopUpAlgorithm::Run()
 
     while (nIterations++ < m_maxIterations)
     {
-        ClusterVector clusters3D;
+        ClusterVector   clusters3D;
         ClusterToPfoMap clusterToPfoMap;
         this->GetThreeDClusters(clusters3D, clusterToPfoMap);
 
@@ -83,7 +83,8 @@ void SlidingConePfoMopUpAlgorithm::GetInteractionVertex(const Vertex *&pVertex) 
     const VertexList *pVertexList = nullptr;
     PANDORA_THROW_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_INITIALIZED, !=, PandoraContentApi::GetCurrentList(*this, pVertexList));
 
-    pVertex = ((pVertexList && (pVertexList->size() == 1) && (VERTEX_3D == (*(pVertexList->begin()))->GetVertexType())) ? *(pVertexList->begin()) : nullptr);
+    pVertex =
+        ((pVertexList && (pVertexList->size() == 1) && (VERTEX_3D == (*(pVertexList->begin()))->GetVertexType())) ? *(pVertexList->begin()) : nullptr);
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
@@ -124,16 +125,16 @@ void SlidingConePfoMopUpAlgorithm::GetClusterMergeMap(const Vertex *const pVerte
     const ClusterToPfoMap &clusterToPfoMap, ClusterMergeMap &clusterMergeMap) const
 {
     VertexAssociationMap vertexAssociationMap;
-    const float layerPitch(LArGeometryHelper::GetWireZPitch(this->GetPandora()));
+    const float          layerPitch(LArGeometryHelper::GetWireZPitch(this->GetPandora()));
 
     for (const Cluster *const pShowerCluster : clusters3D)
     {
         if ((pShowerCluster->GetNCaloHits() < m_minHitsToConsider3DShower) || !LArPfoHelper::IsShower(clusterToPfoMap.at(pShowerCluster)))
             continue;
 
-        float coneLength(0.f);
+        float          coneLength(0.f);
         SimpleConeList simpleConeList;
-        bool isShowerVertexAssociated(false);
+        bool           isShowerVertexAssociated(false);
 
         try
         {
@@ -143,14 +144,19 @@ void SlidingConePfoMopUpAlgorithm::GetClusterMergeMap(const Vertex *const pVerte
             const CartesianVector &maxLayerPosition(slidingConeFitResult3D.GetSlidingFitResult().GetGlobalMaxLayerPosition());
             coneLength = std::min(m_coneLengthMultiplier * (maxLayerPosition - minLayerPosition).GetMagnitude(), m_maxConeLength);
 
-            const float vertexToMinLayer(!pVertex ? 0.f : (pVertex->GetPosition() - minLayerPosition).GetMagnitude());
-            const float vertexToMaxLayer(!pVertex ? 0.f : (pVertex->GetPosition() - maxLayerPosition).GetMagnitude());
-            const ConeSelection coneSelection(!pVertex ? CONE_BOTH_DIRECTIONS : (vertexToMaxLayer > vertexToMinLayer) ? CONE_FORWARD_ONLY : CONE_BACKWARD_ONLY);
+            const float         vertexToMinLayer(!pVertex ? 0.f : (pVertex->GetPosition() - minLayerPosition).GetMagnitude());
+            const float         vertexToMaxLayer(!pVertex ? 0.f : (pVertex->GetPosition() - maxLayerPosition).GetMagnitude());
+            const ConeSelection coneSelection(
+                !pVertex ? CONE_BOTH_DIRECTIONS : (vertexToMaxLayer > vertexToMinLayer) ? CONE_FORWARD_ONLY : CONE_BACKWARD_ONLY);
 
             slidingConeFitResult3D.GetSimpleConeList(m_nConeFitLayers, m_nConeFits, coneSelection, simpleConeList);
-            isShowerVertexAssociated = this->IsVertexAssociated(pShowerCluster, pVertex, vertexAssociationMap, &(slidingConeFitResult3D.GetSlidingFitResult()));
+            isShowerVertexAssociated =
+                this->IsVertexAssociated(pShowerCluster, pVertex, vertexAssociationMap, &(slidingConeFitResult3D.GetSlidingFitResult()));
         }
-        catch (const StatusCodeException &) {continue;}
+        catch (const StatusCodeException &)
+        {
+            continue;
+        }
 
         for (const Cluster *const pNearbyCluster : clusters3D)
         {
@@ -161,8 +167,8 @@ void SlidingConePfoMopUpAlgorithm::GetClusterMergeMap(const Vertex *const pVerte
 
             for (const SimpleCone &simpleCone : simpleConeList)
             {
-                const float boundedFraction1(simpleCone.GetBoundedHitFraction(pNearbyCluster, coneLength, m_coneTanHalfAngle1));
-                const float boundedFraction2(simpleCone.GetBoundedHitFraction(pNearbyCluster, coneLength, m_coneTanHalfAngle2));
+                const float        boundedFraction1(simpleCone.GetBoundedHitFraction(pNearbyCluster, coneLength, m_coneTanHalfAngle1));
+                const float        boundedFraction2(simpleCone.GetBoundedHitFraction(pNearbyCluster, coneLength, m_coneTanHalfAngle2));
                 const ClusterMerge clusterMerge(pShowerCluster, boundedFraction1, boundedFraction2);
 
                 if (clusterMerge < bestClusterMerge)
@@ -172,7 +178,8 @@ void SlidingConePfoMopUpAlgorithm::GetClusterMergeMap(const Vertex *const pVerte
             if (isShowerVertexAssociated && this->IsVertexAssociated(pNearbyCluster, pVertex, vertexAssociationMap))
                 continue;
 
-            if (bestClusterMerge.GetParentCluster() && (bestClusterMerge.GetBoundedFraction1() > m_coneBoundedFraction1) && (bestClusterMerge.GetBoundedFraction2() > m_coneBoundedFraction2))
+            if (bestClusterMerge.GetParentCluster() && (bestClusterMerge.GetBoundedFraction1() > m_coneBoundedFraction1) &&
+                (bestClusterMerge.GetBoundedFraction2() > m_coneBoundedFraction2))
                 clusterMergeMap[pNearbyCluster].push_back(bestClusterMerge);
         }
     }
@@ -195,23 +202,24 @@ bool SlidingConePfoMopUpAlgorithm::IsVertexAssociated(const Cluster *const pClus
         return iter->second;
 
     const bool isVertexAssociated(this->IsVertexAssociated(pCluster, pVertex->GetPosition(), pSlidingFitResult));
-    (void) vertexAssociationMap.insert(VertexAssociationMap::value_type(pCluster, isVertexAssociated));
+    (void)vertexAssociationMap.insert(VertexAssociationMap::value_type(pCluster, isVertexAssociated));
 
     return isVertexAssociated;
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-bool SlidingConePfoMopUpAlgorithm::IsVertexAssociated(const Cluster *const pCluster, const CartesianVector &vertexPosition,
-    const ThreeDSlidingFitResult *const pSlidingFitResult) const
+bool SlidingConePfoMopUpAlgorithm::IsVertexAssociated(
+    const Cluster *const pCluster, const CartesianVector &vertexPosition, const ThreeDSlidingFitResult *const pSlidingFitResult) const
 {
     try
     {
-        const float layerPitch(LArGeometryHelper::GetWireZPitch(this->GetPandora()));
-        const LArPointingCluster pointingCluster(pSlidingFitResult ? LArPointingCluster(*pSlidingFitResult) : LArPointingCluster(pCluster, m_halfWindowLayers, layerPitch));
+        const float              layerPitch(LArGeometryHelper::GetWireZPitch(this->GetPandora()));
+        const LArPointingCluster pointingCluster(
+            pSlidingFitResult ? LArPointingCluster(*pSlidingFitResult) : LArPointingCluster(pCluster, m_halfWindowLayers, layerPitch));
 
         const bool useInner((pointingCluster.GetInnerVertex().GetPosition() - vertexPosition).GetMagnitudeSquared() <
-            (pointingCluster.GetOuterVertex().GetPosition() - vertexPosition).GetMagnitudeSquared());
+                            (pointingCluster.GetOuterVertex().GetPosition() - vertexPosition).GetMagnitudeSquared());
 
         const LArPointingCluster::Vertex &daughterVertex(useInner ? pointingCluster.GetInnerVertex() : pointingCluster.GetOuterVertex());
         return LArPointingClusterHelper::IsNode(vertexPosition, daughterVertex, m_minVertexLongitudinalDistance, m_maxVertexTransverseDistance);
@@ -228,10 +236,11 @@ bool SlidingConePfoMopUpAlgorithm::IsVertexAssociated(const Cluster *const pClus
 bool SlidingConePfoMopUpAlgorithm::MakePfoMerges(const ClusterToPfoMap &clusterToPfoMap, const ClusterMergeMap &clusterMergeMap) const
 {
     ClusterVector daughterClusters;
-    for (const ClusterMergeMap::value_type &mapEntry : clusterMergeMap) daughterClusters.push_back(mapEntry.first);
+    for (const ClusterMergeMap::value_type &mapEntry : clusterMergeMap)
+        daughterClusters.push_back(mapEntry.first);
     std::sort(daughterClusters.begin(), daughterClusters.end(), LArClusterHelper::SortByNHits);
 
-    bool pfosMerged(false);
+    bool                  pfosMerged(false);
     ClusterReplacementMap clusterReplacementMap;
 
     for (ClusterVector::const_reverse_iterator rIter = daughterClusters.rbegin(), rIterEnd = daughterClusters.rend(); rIter != rIterEnd; ++rIter)
@@ -297,53 +306,48 @@ bool SlidingConePfoMopUpAlgorithm::ClusterMerge::operator<(const ClusterMerge &r
 
 StatusCode SlidingConePfoMopUpAlgorithm::ReadSettings(const TiXmlHandle xmlHandle)
 {
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadVectorOfValues(xmlHandle,
-        "InputPfoListNames", m_inputPfoListNames));
+    PANDORA_RETURN_RESULT_IF_AND_IF(
+        STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadVectorOfValues(xmlHandle, "InputPfoListNames", m_inputPfoListNames));
 
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "UseVertex", m_useVertex));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "UseVertex", m_useVertex));
 
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "MaxIterations", m_maxIterations));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "MaxIterations", m_maxIterations));
 
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "MaxHitsToConsider3DTrack", m_maxHitsToConsider3DTrack));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=,
+        XmlHelper::ReadValue(xmlHandle, "MaxHitsToConsider3DTrack", m_maxHitsToConsider3DTrack));
 
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "MinHitsToConsider3DShower", m_minHitsToConsider3DShower));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=,
+        XmlHelper::ReadValue(xmlHandle, "MinHitsToConsider3DShower", m_minHitsToConsider3DShower));
 
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "SlidingFitHalfWindow", m_halfWindowLayers));
+    PANDORA_RETURN_RESULT_IF_AND_IF(
+        STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "SlidingFitHalfWindow", m_halfWindowLayers));
 
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "NConeFitLayers", m_nConeFitLayers));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "NConeFitLayers", m_nConeFitLayers));
 
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "NConeFits", m_nConeFits));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "NConeFits", m_nConeFits));
 
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "ConeLengthMultiplier", m_coneLengthMultiplier));
+    PANDORA_RETURN_RESULT_IF_AND_IF(
+        STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "ConeLengthMultiplier", m_coneLengthMultiplier));
 
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "MaxConeLength", m_maxConeLength));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "MaxConeLength", m_maxConeLength));
 
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "ConeTanHalfAngle1", m_coneTanHalfAngle1));
+    PANDORA_RETURN_RESULT_IF_AND_IF(
+        STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "ConeTanHalfAngle1", m_coneTanHalfAngle1));
 
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "ConeBoundedFraction1", m_coneBoundedFraction1));
+    PANDORA_RETURN_RESULT_IF_AND_IF(
+        STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "ConeBoundedFraction1", m_coneBoundedFraction1));
 
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "ConeTanHalfAngle2", m_coneTanHalfAngle2));
+    PANDORA_RETURN_RESULT_IF_AND_IF(
+        STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "ConeTanHalfAngle2", m_coneTanHalfAngle2));
 
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "ConeBoundedFraction2", m_coneBoundedFraction2));
+    PANDORA_RETURN_RESULT_IF_AND_IF(
+        STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "ConeBoundedFraction2", m_coneBoundedFraction2));
 
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "MinVertexLongitudinalDistance", m_minVertexLongitudinalDistance));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=,
+        XmlHelper::ReadValue(xmlHandle, "MinVertexLongitudinalDistance", m_minVertexLongitudinalDistance));
 
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "MaxVertexTransverseDistance", m_maxVertexTransverseDistance));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=,
+        XmlHelper::ReadValue(xmlHandle, "MaxVertexTransverseDistance", m_maxVertexTransverseDistance));
 
     m_daughterListNames.insert(m_daughterListNames.end(), m_inputPfoListNames.begin(), m_inputPfoListNames.end());
 

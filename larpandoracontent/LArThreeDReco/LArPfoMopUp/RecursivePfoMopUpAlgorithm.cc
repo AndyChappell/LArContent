@@ -52,15 +52,15 @@ RecursivePfoMopUpAlgorithm::PfoMergeStatsList RecursivePfoMopUpAlgorithm::GetPfo
         for (const ParticleFlowObject *const pPfo : *pPfoList)
         {
             ClusterNumHitsList pfoHits;
-            ClusterList clusterList;
+            ClusterList        clusterList;
             LArPfoHelper::GetTwoDClusterList(pPfo, clusterList);
 
             for (auto const &cluster : clusterList)
                 pfoHits.push_back(cluster->GetNCaloHits());
 
             const PropertiesMap &pfoMeta(pPfo->GetPropertiesMap());
-            const auto &trackScoreIter(pfoMeta.find("TrackScore"));
-            const float trackScore(trackScoreIter != pfoMeta.end() ? trackScoreIter->second : -1.f);
+            const auto &         trackScoreIter(pfoMeta.find("TrackScore"));
+            const float          trackScore(trackScoreIter != pfoMeta.end() ? trackScoreIter->second : -1.f);
 
             pfoMergeStatsList.emplace_back(PfoMergeStats{pfoHits, trackScore});
         }

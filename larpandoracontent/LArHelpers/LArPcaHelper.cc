@@ -6,9 +6,9 @@
  *  $Log: $
  */
 
+#include "larpandoracontent/LArHelpers/LArPcaHelper.h"
 #include "larpandoracontent/LArHelpers/LArClusterHelper.h"
 #include "larpandoracontent/LArHelpers/LArObjectHelper.h"
-#include "larpandoracontent/LArHelpers/LArPcaHelper.h"
 
 #include <Eigen/Dense>
 
@@ -51,7 +51,7 @@ void LArPcaHelper::RunPca(const WeightedPointVector &pointVector, CartesianVecto
     for (const WeightedPoint &weightedPoint : pointVector)
     {
         const CartesianVector &point(weightedPoint.first);
-        const double weight(weightedPoint.second);
+        const double           weight(weightedPoint.second);
 
         if (weight < 0.)
         {
@@ -87,25 +87,23 @@ void LArPcaHelper::RunPca(const WeightedPointVector &pointVector, CartesianVecto
     for (const WeightedPoint &weightedPoint : pointVector)
     {
         const CartesianVector &point(weightedPoint.first);
-        const double weight(weightedPoint.second);
-        const double x(static_cast<double>((point.GetX()) - meanPosition[0]));
-        const double y(static_cast<double>((point.GetY()) - meanPosition[1]));
-        const double z(static_cast<double>((point.GetZ()) - meanPosition[2]));
+        const double           weight(weightedPoint.second);
+        const double           x(static_cast<double>((point.GetX()) - meanPosition[0]));
+        const double           y(static_cast<double>((point.GetY()) - meanPosition[1]));
+        const double           z(static_cast<double>((point.GetZ()) - meanPosition[2]));
 
-        xi2  += x * x * weight;
+        xi2 += x * x * weight;
         xiyi += x * y * weight;
         xizi += x * z * weight;
-        yi2  += y * y * weight;
+        yi2 += y * y * weight;
         yizi += y * z * weight;
-        zi2  += z * z * weight;
+        zi2 += z * z * weight;
     }
 
     // Using Eigen package
     Eigen::Matrix3f sig;
 
-    sig <<  xi2, xiyi, xizi,
-           xiyi,  yi2, yizi,
-           xizi, yizi,  zi2;
+    sig << xi2, xiyi, xizi, xiyi, yi2, yizi, xizi, yizi, zi2;
 
     sig *= 1. / sumWeight;
 
@@ -117,16 +115,17 @@ void LArPcaHelper::RunPca(const WeightedPointVector &pointVector, CartesianVecto
         throw StatusCodeException(STATUS_CODE_INVALID_PARAMETER);
     }
 
-    typedef std::pair<float, size_t> EigenValColPair;
+    typedef std::pair<float, size_t>     EigenValColPair;
     typedef std::vector<EigenValColPair> EigenValColVector;
 
     EigenValColVector eigenValColVector;
-    const auto &resultEigenMat(eigenMat.eigenvalues());
+    const auto &      resultEigenMat(eigenMat.eigenvalues());
     eigenValColVector.emplace_back(resultEigenMat(0), 0);
     eigenValColVector.emplace_back(resultEigenMat(1), 1);
     eigenValColVector.emplace_back(resultEigenMat(2), 2);
 
-    std::sort(eigenValColVector.begin(), eigenValColVector.end(), [](const EigenValColPair &left, const EigenValColPair &right){return left.first > right.first;});
+    std::sort(eigenValColVector.begin(), eigenValColVector.end(),
+        [](const EigenValColPair &left, const EigenValColPair &right) { return left.first > right.first; });
 
     // Get the eigen values
     outputEigenValues = CartesianVector(eigenValColVector.at(0).first, eigenValColVector.at(1).first, eigenValColVector.at(2).first);

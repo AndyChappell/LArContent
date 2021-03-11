@@ -33,11 +33,12 @@ bool CheatingPfoCharacterisationAlgorithm::IsClearTrack(const ParticleFlowObject
             mcParticleWeightMap[mapEntry.first] += mapEntry.second;
     }
 
-    float bestWeight(0.f);
+    float             bestWeight(0.f);
     const MCParticle *pBestMCParticle(nullptr);
 
     MCParticleList mcParticleList;
-    for (const auto &mapEntry : mcParticleWeightMap) mcParticleList.push_back(mapEntry.first);
+    for (const auto &mapEntry : mcParticleWeightMap)
+        mcParticleList.push_back(mapEntry.first);
     mcParticleList.sort(LArMCParticleHelper::SortByMomentum);
 
     for (const MCParticle *const pMCParticle : mcParticleList)

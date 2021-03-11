@@ -109,8 +109,8 @@ void MasterAlgorithm::ShiftPfoHierarchy(const ParticleFlowObject *const pParentP
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-void MasterAlgorithm::StitchPfos(const ParticleFlowObject *const pPfoToEnlarge, const ParticleFlowObject *const pPfoToDelete,
-    PfoToLArTPCMap &pfoToLArTPCMap) const
+void MasterAlgorithm::StitchPfos(
+    const ParticleFlowObject *const pPfoToEnlarge, const ParticleFlowObject *const pPfoToDelete, PfoToLArTPCMap &pfoToLArTPCMap) const
 {
     if (pPfoToEnlarge == pPfoToDelete)
         throw StatusCodeException(STATUS_CODE_NOT_ALLOWED);
@@ -119,27 +119,27 @@ void MasterAlgorithm::StitchPfos(const ParticleFlowObject *const pPfoToEnlarge, 
     pfoToLArTPCMap.erase(pPfoToEnlarge);
     pfoToLArTPCMap.erase(pPfoToDelete);
 
-    const PfoList daughterPfos(pPfoToDelete->GetDaughterPfoList());
+    const PfoList       daughterPfos(pPfoToDelete->GetDaughterPfoList());
     const ClusterVector daughterClusters(pPfoToDelete->GetClusterList().begin(), pPfoToDelete->GetClusterList().end());
-    const VertexVector daughterVertices(pPfoToDelete->GetVertexList().begin(), pPfoToDelete->GetVertexList().end());
+    const VertexVector  daughterVertices(pPfoToDelete->GetVertexList().begin(), pPfoToDelete->GetVertexList().end());
 
     PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::Delete(*this, pPfoToDelete, m_recreatedPfoListName));
 
     for (const ParticleFlowObject *const pDaughterPfo : daughterPfos)
         PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::SetPfoParentDaughterRelationship(*this, pPfoToEnlarge, pDaughterPfo));
 
-    for (const  Vertex *const pDaughterVertex : daughterVertices)
+    for (const Vertex *const pDaughterVertex : daughterVertices)
         PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::Delete(*this, pDaughterVertex, m_recreatedVertexListName));
 
     for (const Cluster *const pDaughterCluster : daughterClusters)
     {
-        const HitType daughterHitType(LArClusterHelper::GetClusterHitType(pDaughterCluster));
+        const HitType  daughterHitType(LArClusterHelper::GetClusterHitType(pDaughterCluster));
         const Cluster *pParentCluster(PfoMopUpBaseAlgorithm::GetParentCluster(pPfoToEnlarge->GetClusterList(), daughterHitType));
 
         if (pParentCluster)
         {
-            PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::MergeAndDeleteClusters(*this, pParentCluster, pDaughterCluster,
-                m_recreatedClusterListName, m_recreatedClusterListName));
+            PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=,
+                PandoraContentApi::MergeAndDeleteClusters(*this, pParentCluster, pDaughterCluster, m_recreatedClusterListName, m_recreatedClusterListName));
         }
         else
         {
@@ -160,7 +160,7 @@ StatusCode MasterAlgorithm::Run()
     if (m_passMCParticlesToWorkerInstances)
         PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, this->CopyMCParticles());
 
-    PfoToFloatMap stitchedPfosToX0Map;
+    PfoToFloatMap        stitchedPfosToX0Map;
     VolumeIdToHitListMap volumeIdToHitListMap;
     PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, this->GetVolumeIdToHitListMap(volumeIdToHitListMap));
 
@@ -205,13 +205,14 @@ StatusCode MasterAlgorithm::InitializeWorkerInstances()
 
     try
     {
-        const LArTPCMap &larTPCMap(this->GetPandora().GetGeometry()->GetLArTPCMap());
+        const LArTPCMap &      larTPCMap(this->GetPandora().GetGeometry()->GetLArTPCMap());
         const DetectorGapList &gapList(this->GetPandora().GetGeometry()->GetDetectorGapList());
 
         for (const LArTPCMap::value_type &mapEntry : larTPCMap)
         {
             const unsigned int volumeId(mapEntry.second->GetLArTPCVolumeId());
-            m_crWorkerInstances.push_back(this->CreateWorkerInstance(*(mapEntry.second), gapList, m_crSettingsFile, "CRWorkerInstance" + std::to_string(volumeId)));
+            m_crWorkerInstances.push_back(
+                this->CreateWorkerInstance(*(mapEntry.second), gapList, m_crSettingsFile, "CRWorkerInstance" + std::to_string(volumeId)));
         }
 
         if (m_shouldRunSlicing)
@@ -241,9 +242,12 @@ StatusCode MasterAlgorithm::CopyMCParticles() const
     PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetList(*this, m_inputMCParticleListName, pMCParticleList));
 
     PandoraInstanceList pandoraWorkerInstances(m_crWorkerInstances);
-    if (m_pSlicingWorkerInstance) pandoraWorkerInstances.push_back(m_pSlicingWorkerInstance);
-    if (m_pSliceNuWorkerInstance) pandoraWorkerInstances.push_back(m_pSliceNuWorkerInstance);
-    if (m_pSliceCRWorkerInstance) pandoraWorkerInstances.push_back(m_pSliceCRWorkerInstance);
+    if (m_pSlicingWorkerInstance)
+        pandoraWorkerInstances.push_back(m_pSlicingWorkerInstance);
+    if (m_pSliceNuWorkerInstance)
+        pandoraWorkerInstances.push_back(m_pSliceNuWorkerInstance);
+    if (m_pSliceCRWorkerInstance)
+        pandoraWorkerInstances.push_back(m_pSliceCRWorkerInstance);
 
     LArMCParticleFactory mcParticleFactory;
 
@@ -260,7 +264,7 @@ StatusCode MasterAlgorithm::CopyMCParticles() const
 
 StatusCode MasterAlgorithm::GetVolumeIdToHitListMap(VolumeIdToHitListMap &volumeIdToHitListMap) const
 {
-    const LArTPCMap &larTPCMap(this->GetPandora().GetGeometry()->GetLArTPCMap());
+    const LArTPCMap &  larTPCMap(this->GetPandora().GetGeometry()->GetLArTPCMap());
     const unsigned int nLArTPCs(larTPCMap.size());
 
     const CaloHitList *pCaloHitList(nullptr);
@@ -268,19 +272,19 @@ StatusCode MasterAlgorithm::GetVolumeIdToHitListMap(VolumeIdToHitListMap &volume
 
     for (const CaloHit *const pCaloHit : *pCaloHitList)
     {
-        const LArCaloHit *const pLArCaloHit(dynamic_cast<const LArCaloHit*>(pCaloHit));
+        const LArCaloHit *const pLArCaloHit(dynamic_cast<const LArCaloHit *>(pCaloHit));
 
         if (!pLArCaloHit && (1 != nLArTPCs))
             return STATUS_CODE_INVALID_PARAMETER;
 
-        const unsigned int volumeId(pLArCaloHit ? pLArCaloHit->GetLArTPCVolumeId() : 0);
+        const unsigned int  volumeId(pLArCaloHit ? pLArCaloHit->GetLArTPCVolumeId() : 0);
         const LArTPC *const pLArTPC(larTPCMap.at(volumeId));
 
         LArTPCHitList &larTPCHitList(volumeIdToHitListMap[volumeId]);
         larTPCHitList.m_allHitList.push_back(pCaloHit);
 
         if (((pCaloHit->GetPositionVector().GetX() >= (pLArTPC->GetCenterX() - 0.5f * pLArTPC->GetWidthX())) &&
-            (pCaloHit->GetPositionVector().GetX() <= (pLArTPC->GetCenterX() + 0.5f * pLArTPC->GetWidthX()))))
+                (pCaloHit->GetPositionVector().GetX() <= (pLArTPC->GetCenterX() + 0.5f * pLArTPC->GetWidthX()))))
         {
             larTPCHitList.m_truncatedHitList.push_back(pCaloHit);
         }
@@ -297,7 +301,7 @@ StatusCode MasterAlgorithm::RunCosmicRayReconstruction(const VolumeIdToHitListMa
 
     for (const Pandora *const pCRWorker : m_crWorkerInstances)
     {
-        const LArTPC &larTPC(pCRWorker->GetGeometry()->GetLArTPC());
+        const LArTPC &                       larTPC(pCRWorker->GetGeometry()->GetLArTPC());
         VolumeIdToHitListMap::const_iterator iter(volumeIdToHitListMap.find(larTPC.GetLArTPCVolumeId()));
 
         if (volumeIdToHitListMap.end() == iter)
@@ -375,7 +379,7 @@ StatusCode MasterAlgorithm::TagCosmicRayPfos(const PfoToFloatMap &stitchedPfosTo
             continue;
 
         PfoToFloatMap::const_iterator pfoToX0Iter = stitchedPfosToX0Map.find(pPfo);
-        const float x0Shift((pfoToX0Iter != stitchedPfosToX0Map.end()) ? pfoToX0Iter->second : 0.f);
+        const float                   x0Shift((pfoToX0Iter != stitchedPfosToX0Map.end()) ? pfoToX0Iter->second : 0.f);
         PfoList &targetList((std::fabs(x0Shift) > m_inTimeMaxX0) ? clearCosmicRayPfos : nonStitchedParentCosmicRayPfos);
         targetList.push_back(pPfo);
     }
@@ -389,7 +393,7 @@ StatusCode MasterAlgorithm::TagCosmicRayPfos(const PfoToFloatMap &stitchedPfosTo
 
         if (isClearCosmic)
             clearCosmicRayPfos.push_back(pPfo);
-   }
+    }
 
     for (const Pfo *const pPfo : *pRecreatedCRPfos)
     {
@@ -419,7 +423,7 @@ StatusCode MasterAlgorithm::RunCosmicRayHitRemoval(const PfoList &ambiguousPfos)
     for (const Pfo *const pPfoToDelete : allPfosToDelete)
     {
         const ClusterList clusterList(pPfoToDelete->GetClusterList());
-        const VertexList vertexList(pPfoToDelete->GetVertexList());
+        const VertexList  vertexList(pPfoToDelete->GetVertexList());
 
         // ATTN: If an ambiguous pfo has been stitched, reset the calo hit positions in preparation for subsequent algorithm chains
         if (LArStitchingHelper::HasPfoBeenStitched(pPfoToDelete))
@@ -469,7 +473,8 @@ StatusCode MasterAlgorithm::RunSlicing(const VolumeIdToHitListMap &volumeIdToHit
             }
             else
             {
-                if (sliceVector.empty()) sliceVector.push_back(CaloHitList());
+                if (sliceVector.empty())
+                    sliceVector.push_back(CaloHitList());
                 sliceVector.back().push_back(pCaloHit);
             }
         }
@@ -531,7 +536,7 @@ StatusCode MasterAlgorithm::RunSliceReconstruction(SliceVector &sliceVector, Sli
         for (const CaloHit *const pSliceCaloHit : sliceHits)
         {
             // ATTN Must ensure we copy the hit actually owned by master instance; access differs with/without slicing enabled
-            const CaloHit *const pCaloHitInMaster(m_shouldRunSlicing ? static_cast<const CaloHit*>(pSliceCaloHit->GetParentAddress()) : pSliceCaloHit);
+            const CaloHit *const pCaloHitInMaster(m_shouldRunSlicing ? static_cast<const CaloHit *>(pSliceCaloHit->GetParentAddress()) : pSliceCaloHit);
 
             if (m_shouldRunNeutrinoRecoOption)
                 PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, this->Copy(m_pSliceNuWorkerInstance, pCaloHitInMaster));
@@ -641,7 +646,7 @@ StatusCode MasterAlgorithm::Reset()
 
 StatusCode MasterAlgorithm::Copy(const Pandora *const pPandora, const CaloHit *const pCaloHit) const
 {
-    const LArCaloHit *const pLArCaloHit{dynamic_cast<const LArCaloHit*>(pCaloHit)};
+    const LArCaloHit *const pLArCaloHit{dynamic_cast<const LArCaloHit *>(pCaloHit)};
     if (pLArCaloHit == nullptr)
     {
         std::cout << "MasterAlgorithm: Could not cast CaloHit to LArCaloHit" << std::endl;
@@ -668,7 +673,7 @@ StatusCode MasterAlgorithm::Copy(const Pandora *const pPandora, const CaloHit *c
     parameters.m_layer = pCaloHit->GetLayer();
     parameters.m_isInOuterSamplingLayer = pCaloHit->IsInOuterSamplingLayer();
     // ATTN Parent of calo hit in worker is corresponding calo hit in master
-    parameters.m_pParentAddress = static_cast<const void*>(pCaloHit);
+    parameters.m_pParentAddress = static_cast<const void *>(pCaloHit);
     parameters.m_larTPCVolumeId = pLArCaloHit->GetLArTPCVolumeId();
     parameters.m_daughterVolumeId = (m_larCaloHitVersion > 1) ? pLArCaloHit->GetDaughterVolumeId() : 0;
 
@@ -683,8 +688,8 @@ StatusCode MasterAlgorithm::Copy(const Pandora *const pPandora, const CaloHit *c
 
         for (const MCParticle *const pMCParticle : mcParticleVector)
         {
-            PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraApi::SetCaloHitToMCParticleRelationship(
-                *pPandora, pLArCaloHit, pMCParticle, pLArCaloHit->GetMCParticleWeightMap().at(pMCParticle)));
+            PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=,
+                PandoraApi::SetCaloHitToMCParticleRelationship(*pPandora, pLArCaloHit, pMCParticle, pLArCaloHit->GetMCParticleWeightMap().at(pMCParticle)));
         }
     }
 
@@ -695,8 +700,8 @@ StatusCode MasterAlgorithm::Copy(const Pandora *const pPandora, const CaloHit *c
 
 StatusCode MasterAlgorithm::Copy(const Pandora *const pPandora, const MCParticle *const pMCParticle, const LArMCParticleFactory *const pMCParticleFactory) const
 {
-    LArMCParticleParameters parameters;
-    const LArMCParticle *const pLArMCParticle = dynamic_cast<const LArMCParticle*>(pMCParticle);
+    LArMCParticleParameters    parameters;
+    const LArMCParticle *const pLArMCParticle = dynamic_cast<const LArMCParticle *>(pMCParticle);
 
     if (!pLArMCParticle)
     {
@@ -712,7 +717,7 @@ StatusCode MasterAlgorithm::Copy(const Pandora *const pPandora, const MCParticle
     parameters.m_particleId = pMCParticle->GetParticleId();
     parameters.m_mcParticleType = pMCParticle->GetMCParticleType();
     // ATTN Parent of mc particle in worker is corresponding mc particle in master
-    parameters.m_pParentAddress = static_cast<const void*>(pMCParticle);
+    parameters.m_pParentAddress = static_cast<const void *>(pMCParticle);
     PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraApi::MCParticle::Create(*pPandora, parameters, *pMCParticleFactory));
 
     for (const MCParticle *const pDaughterMCParticle : pMCParticle->GetDaughterList())
@@ -733,15 +738,15 @@ StatusCode MasterAlgorithm::Recreate(const PfoList &inputPfoList, PfoList &newPf
 
     // TODO if no pfo in input list is primary - raise exception
 
-    std::string clusterListName;
+    std::string        clusterListName;
     const ClusterList *pClusterList(nullptr);
     PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::CreateTemporaryListAndSetCurrent(*this, pClusterList, clusterListName));
 
-    std::string vertexListName;
+    std::string       vertexListName;
     const VertexList *pVertexList(nullptr);
     PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::CreateTemporaryListAndSetCurrent(*this, pVertexList, vertexListName));
 
-    std::string pfoListName;
+    std::string    pfoListName;
     const PfoList *pPfoList(nullptr);
     PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::CreateTemporaryListAndSetCurrent(*this, pPfoList, pfoListName));
 
@@ -786,10 +791,10 @@ StatusCode MasterAlgorithm::Recreate(const ParticleFlowObject *const pInputPfo, 
         pInputCluster->GetOrderedCaloHitList().FillCaloHitList(inputCaloHitList);
 
         for (const CaloHit *const pInputCaloHit : inputCaloHitList)
-            newCaloHitList.push_back(static_cast<const CaloHit*>(pInputCaloHit->GetParentAddress()));
+            newCaloHitList.push_back(static_cast<const CaloHit *>(pInputCaloHit->GetParentAddress()));
 
         for (const CaloHit *const pInputCaloHit : pInputCluster->GetIsolatedCaloHitList())
-            newIsolatedCaloHitList.push_back(static_cast<const CaloHit*>(pInputCaloHit->GetParentAddress()));
+            newIsolatedCaloHitList.push_back(static_cast<const CaloHit *>(pInputCaloHit->GetParentAddress()));
 
         if (!newCaloHitList.empty())
             newClusterList.push_back(this->CreateCluster(pInputCluster, newCaloHitList, newIsolatedCaloHitList));
@@ -802,15 +807,15 @@ StatusCode MasterAlgorithm::Recreate(const ParticleFlowObject *const pInputPfo, 
 
         for (const CaloHit *const pInputCaloHit : inputCaloHitList)
         {
-            const CaloHit *const pWorkerParentCaloHit(static_cast<const CaloHit*>(pInputCaloHit->GetParentAddress()));
-            const CaloHit *const pMasterParentCaloHit(static_cast<const CaloHit*>(pWorkerParentCaloHit->GetParentAddress()));
+            const CaloHit *const pWorkerParentCaloHit(static_cast<const CaloHit *>(pInputCaloHit->GetParentAddress()));
+            const CaloHit *const pMasterParentCaloHit(static_cast<const CaloHit *>(pWorkerParentCaloHit->GetParentAddress()));
             newCaloHitList.push_back(this->CreateCaloHit(pInputCaloHit, pMasterParentCaloHit));
         }
 
         for (const CaloHit *const pInputCaloHit : pInputCluster->GetIsolatedCaloHitList())
         {
-            const CaloHit *const pWorkerParentCaloHit(static_cast<const CaloHit*>(pInputCaloHit->GetParentAddress()));
-            const CaloHit *const pMasterParentCaloHit(static_cast<const CaloHit*>(pWorkerParentCaloHit->GetParentAddress()));
+            const CaloHit *const pWorkerParentCaloHit(static_cast<const CaloHit *>(pInputCaloHit->GetParentAddress()));
+            const CaloHit *const pMasterParentCaloHit(static_cast<const CaloHit *>(pWorkerParentCaloHit->GetParentAddress()));
             newIsolatedCaloHitList.push_back(this->CreateCaloHit(pInputCaloHit, pMasterParentCaloHit));
         }
 
@@ -859,7 +864,7 @@ const CaloHit *MasterAlgorithm::CreateCaloHit(const CaloHit *const pInputCaloHit
     parameters.m_hitRegion = pInputCaloHit->GetHitRegion();
     parameters.m_layer = pInputCaloHit->GetLayer();
     parameters.m_isInOuterSamplingLayer = pInputCaloHit->IsInOuterSamplingLayer();
-    parameters.m_pParentAddress = static_cast<const void*>(pParentCaloHit);
+    parameters.m_pParentAddress = static_cast<const void *>(pParentCaloHit);
 
     const CaloHit *pNewCaloHit(nullptr);
     PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::CaloHit::Create(*this, parameters, pNewCaloHit));
@@ -874,8 +879,8 @@ const CaloHit *MasterAlgorithm::CreateCaloHit(const CaloHit *const pInputCaloHit
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-const Cluster *MasterAlgorithm::CreateCluster(const Cluster *const pInputCluster, const CaloHitList &newCaloHitList,
-    const CaloHitList &newIsolatedCaloHitList) const
+const Cluster *MasterAlgorithm::CreateCluster(
+    const Cluster *const pInputCluster, const CaloHitList &newCaloHitList, const CaloHitList &newIsolatedCaloHitList) const
 {
     PandoraContentApi::Cluster::Parameters parameters;
     parameters.m_caloHitList = newCaloHitList;
@@ -908,8 +913,8 @@ const Vertex *MasterAlgorithm::CreateVertex(const Vertex *const pInputVertex) co
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-const ParticleFlowObject *MasterAlgorithm::CreatePfo(const ParticleFlowObject *const pInputPfo, const ClusterList &newClusterList,
-    const VertexList &newVertexList) const
+const ParticleFlowObject *MasterAlgorithm::CreatePfo(
+    const ParticleFlowObject *const pInputPfo, const ClusterList &newClusterList, const VertexList &newVertexList) const
 {
     PandoraContentApi::ParticleFlowObject::Parameters parameters;
     parameters.m_particleId = pInputPfo->GetParticleId();
@@ -930,14 +935,16 @@ const ParticleFlowObject *MasterAlgorithm::CreatePfo(const ParticleFlowObject *c
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-const Pandora *MasterAlgorithm::CreateWorkerInstance(const LArTPC &larTPC, const DetectorGapList &gapList, const std::string &settingsFile, const std::string &name) const
+const Pandora *MasterAlgorithm::CreateWorkerInstance(
+    const LArTPC &larTPC, const DetectorGapList &gapList, const std::string &settingsFile, const std::string &name) const
 {
     // The Pandora instance
     const Pandora *const pPandora(new Pandora(name));
     PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, LArContent::RegisterAlgorithms(*pPandora));
     PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, LArContent::RegisterBasicPlugins(*pPandora));
     PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraApi::SetPseudoLayerPlugin(*pPandora, new lar_content::LArPseudoLayerPlugin));
-    PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraApi::SetLArTransformationPlugin(*pPandora, new lar_content::LArRotationalTransformationPlugin));
+    PANDORA_THROW_RESULT_IF(
+        STATUS_CODE_SUCCESS, !=, PandoraApi::SetLArTransformationPlugin(*pPandora, new lar_content::LArRotationalTransformationPlugin));
     PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, this->RegisterCustomContent(pPandora));
     MultiPandoraApi::AddDaughterPandoraInstance(&(this->GetPandora()), pPandora);
 
@@ -965,18 +972,19 @@ const Pandora *MasterAlgorithm::CreateWorkerInstance(const LArTPC &larTPC, const
     // The Gaps
     for (const DetectorGap *const pGap : gapList)
     {
-        const LineGap *const pLineGap(dynamic_cast<const LineGap*>(pGap));
+        const LineGap *const pLineGap(dynamic_cast<const LineGap *>(pGap));
 
         if (pLineGap && (((pLineGap->GetLineEndX() >= tpcMinX) && (pLineGap->GetLineEndX() <= tpcMaxX)) ||
-            ((pLineGap->GetLineStartX() >= tpcMinX) && (pLineGap->GetLineStartX() <= tpcMaxX))) )
+                            ((pLineGap->GetLineStartX() >= tpcMinX) && (pLineGap->GetLineStartX() <= tpcMaxX))))
         {
             PandoraApi::Geometry::LineGap::Parameters lineGapParameters;
-            const LineGapType lineGapType(pLineGap->GetLineGapType());
+            const LineGapType                         lineGapType(pLineGap->GetLineGapType());
             lineGapParameters.m_lineGapType = lineGapType;
             lineGapParameters.m_lineStartX = pLineGap->GetLineStartX();
             lineGapParameters.m_lineEndX = pLineGap->GetLineEndX();
 
-            if (m_fullWidthCRWorkerWireGaps && ((lineGapType == TPC_WIRE_GAP_VIEW_U) || (lineGapType == TPC_WIRE_GAP_VIEW_V) || (lineGapType == TPC_WIRE_GAP_VIEW_W)))
+            if (m_fullWidthCRWorkerWireGaps &&
+                ((lineGapType == TPC_WIRE_GAP_VIEW_U) || (lineGapType == TPC_WIRE_GAP_VIEW_V) || (lineGapType == TPC_WIRE_GAP_VIEW_W)))
             {
                 lineGapParameters.m_lineStartX = -std::numeric_limits<float>::max();
                 lineGapParameters.m_lineEndX = std::numeric_limits<float>::max();
@@ -995,7 +1003,8 @@ const Pandora *MasterAlgorithm::CreateWorkerInstance(const LArTPC &larTPC, const
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-const Pandora *MasterAlgorithm::CreateWorkerInstance(const LArTPCMap &larTPCMap, const DetectorGapList &gapList, const std::string &settingsFile, const std::string &name) const
+const Pandora *MasterAlgorithm::CreateWorkerInstance(
+    const LArTPCMap &larTPCMap, const DetectorGapList &gapList, const std::string &settingsFile, const std::string &name) const
 {
     if (larTPCMap.empty())
     {
@@ -1008,18 +1017,19 @@ const Pandora *MasterAlgorithm::CreateWorkerInstance(const LArTPCMap &larTPCMap,
     PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, LArContent::RegisterAlgorithms(*pPandora));
     PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, LArContent::RegisterBasicPlugins(*pPandora));
     PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraApi::SetPseudoLayerPlugin(*pPandora, new lar_content::LArPseudoLayerPlugin));
-    PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraApi::SetLArTransformationPlugin(*pPandora, new lar_content::LArRotationalTransformationPlugin));
+    PANDORA_THROW_RESULT_IF(
+        STATUS_CODE_SUCCESS, !=, PandoraApi::SetLArTransformationPlugin(*pPandora, new lar_content::LArRotationalTransformationPlugin));
     PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, this->RegisterCustomContent(pPandora));
     MultiPandoraApi::AddDaughterPandoraInstance(&(this->GetPandora()), pPandora);
 
     // The Parent LArTPC
     const LArTPC *const pFirstLArTPC(larTPCMap.begin()->second);
-    float parentMinX(pFirstLArTPC->GetCenterX() - 0.5f * pFirstLArTPC->GetWidthX());
-    float parentMaxX(pFirstLArTPC->GetCenterX() + 0.5f * pFirstLArTPC->GetWidthX());
-    float parentMinY(pFirstLArTPC->GetCenterY() - 0.5f * pFirstLArTPC->GetWidthY());
-    float parentMaxY(pFirstLArTPC->GetCenterY() + 0.5f * pFirstLArTPC->GetWidthY());
-    float parentMinZ(pFirstLArTPC->GetCenterZ() - 0.5f * pFirstLArTPC->GetWidthZ());
-    float parentMaxZ(pFirstLArTPC->GetCenterZ() + 0.5f * pFirstLArTPC->GetWidthZ());
+    float               parentMinX(pFirstLArTPC->GetCenterX() - 0.5f * pFirstLArTPC->GetWidthX());
+    float               parentMaxX(pFirstLArTPC->GetCenterX() + 0.5f * pFirstLArTPC->GetWidthX());
+    float               parentMinY(pFirstLArTPC->GetCenterY() - 0.5f * pFirstLArTPC->GetWidthY());
+    float               parentMaxY(pFirstLArTPC->GetCenterY() + 0.5f * pFirstLArTPC->GetWidthY());
+    float               parentMinZ(pFirstLArTPC->GetCenterZ() - 0.5f * pFirstLArTPC->GetWidthZ());
+    float               parentMaxZ(pFirstLArTPC->GetCenterZ() + 0.5f * pFirstLArTPC->GetWidthZ());
 
     for (const LArTPCMap::value_type &mapEntry : larTPCMap)
     {
@@ -1053,7 +1063,7 @@ const Pandora *MasterAlgorithm::CreateWorkerInstance(const LArTPCMap &larTPCMap,
     // The Gaps
     for (const DetectorGap *const pGap : gapList)
     {
-        const LineGap *const pLineGap(dynamic_cast<const LineGap*>(pGap));
+        const LineGap *const pLineGap(dynamic_cast<const LineGap *>(pGap));
 
         if (pLineGap)
         {
@@ -1087,28 +1097,32 @@ StatusCode MasterAlgorithm::ReadSettings(const TiXmlHandle xmlHandle)
 
     if (this->ExternalParametersPresent())
     {
-        pExternalParameters = dynamic_cast<ExternalSteeringParameters*>(this->GetExternalParameters());
-        if (!pExternalParameters) return STATUS_CODE_FAILURE;
+        pExternalParameters = dynamic_cast<ExternalSteeringParameters *>(this->GetExternalParameters());
+        if (!pExternalParameters)
+            return STATUS_CODE_FAILURE;
     }
 
     {
         AlgorithmToolVector algorithmToolVector;
-        PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ProcessAlgorithmToolList(*this, xmlHandle, "SliceSelectionTools",
-            algorithmToolVector));
+        PANDORA_RETURN_RESULT_IF(
+            STATUS_CODE_SUCCESS, !=, XmlHelper::ProcessAlgorithmToolList(*this, xmlHandle, "SliceSelectionTools", algorithmToolVector));
 
         for (AlgorithmTool *const pAlgorithmTool : algorithmToolVector)
         {
-            SliceSelectionBaseTool *const pSliceSelectionTool(dynamic_cast<SliceSelectionBaseTool*>(pAlgorithmTool));
-            if (!pSliceSelectionTool) return STATUS_CODE_INVALID_PARAMETER;
+            SliceSelectionBaseTool *const pSliceSelectionTool(dynamic_cast<SliceSelectionBaseTool *>(pAlgorithmTool));
+            if (!pSliceSelectionTool)
+                return STATUS_CODE_INVALID_PARAMETER;
             m_sliceSelectionToolVector.push_back(pSliceSelectionTool);
         }
     }
 
-    PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, this->ReadExternalSettings(pExternalParameters, !pExternalParameters ? InputBool() :
-        pExternalParameters->m_shouldRunAllHitsCosmicReco, xmlHandle, "ShouldRunAllHitsCosmicReco", m_shouldRunAllHitsCosmicReco));
+    PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=,
+        this->ReadExternalSettings(pExternalParameters, !pExternalParameters ? InputBool() : pExternalParameters->m_shouldRunAllHitsCosmicReco,
+            xmlHandle, "ShouldRunAllHitsCosmicReco", m_shouldRunAllHitsCosmicReco));
 
-    PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, this->ReadExternalSettings(pExternalParameters, !pExternalParameters ? InputBool() :
-        pExternalParameters->m_shouldRunStitching, xmlHandle, "ShouldRunStitching", m_shouldRunStitching));
+    PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=,
+        this->ReadExternalSettings(pExternalParameters, !pExternalParameters ? InputBool() : pExternalParameters->m_shouldRunStitching,
+            xmlHandle, "ShouldRunStitching", m_shouldRunStitching));
 
     if (m_shouldRunStitching && !m_shouldRunAllHitsCosmicReco)
     {
@@ -1123,14 +1137,16 @@ StatusCode MasterAlgorithm::ReadSettings(const TiXmlHandle xmlHandle)
 
         for (AlgorithmTool *const pAlgorithmTool : algorithmToolVector)
         {
-            StitchingBaseTool *const pStitchingTool(dynamic_cast<StitchingBaseTool*>(pAlgorithmTool));
-            if (!pStitchingTool) return STATUS_CODE_INVALID_PARAMETER;
+            StitchingBaseTool *const pStitchingTool(dynamic_cast<StitchingBaseTool *>(pAlgorithmTool));
+            if (!pStitchingTool)
+                return STATUS_CODE_INVALID_PARAMETER;
             m_stitchingToolVector.push_back(pStitchingTool);
         }
     }
 
-    PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, this->ReadExternalSettings(pExternalParameters, !pExternalParameters ? InputBool() :
-        pExternalParameters->m_shouldRunCosmicHitRemoval, xmlHandle, "ShouldRunCosmicHitRemoval", m_shouldRunCosmicHitRemoval));
+    PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=,
+        this->ReadExternalSettings(pExternalParameters, !pExternalParameters ? InputBool() : pExternalParameters->m_shouldRunCosmicHitRemoval,
+            xmlHandle, "ShouldRunCosmicHitRemoval", m_shouldRunCosmicHitRemoval));
 
     if (m_shouldRunCosmicHitRemoval && !m_shouldRunAllHitsCosmicReco)
     {
@@ -1141,31 +1157,38 @@ StatusCode MasterAlgorithm::ReadSettings(const TiXmlHandle xmlHandle)
     if (m_shouldRunCosmicHitRemoval)
     {
         AlgorithmToolVector algorithmToolVector;
-        PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ProcessAlgorithmToolList(*this, xmlHandle, "CosmicRayTaggingTools", algorithmToolVector));
+        PANDORA_RETURN_RESULT_IF(
+            STATUS_CODE_SUCCESS, !=, XmlHelper::ProcessAlgorithmToolList(*this, xmlHandle, "CosmicRayTaggingTools", algorithmToolVector));
 
         for (AlgorithmTool *const pAlgorithmTool : algorithmToolVector)
         {
-            CosmicRayTaggingBaseTool *const pCosmicRayTaggingTool(dynamic_cast<CosmicRayTaggingBaseTool*>(pAlgorithmTool));
-            if (!pCosmicRayTaggingTool) return STATUS_CODE_INVALID_PARAMETER;
+            CosmicRayTaggingBaseTool *const pCosmicRayTaggingTool(dynamic_cast<CosmicRayTaggingBaseTool *>(pAlgorithmTool));
+            if (!pCosmicRayTaggingTool)
+                return STATUS_CODE_INVALID_PARAMETER;
             m_cosmicRayTaggingToolVector.push_back(pCosmicRayTaggingTool);
         }
     }
 
-    PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, this->ReadExternalSettings(pExternalParameters, !pExternalParameters ? InputBool() :
-        pExternalParameters->m_shouldRunSlicing, xmlHandle, "ShouldRunSlicing", m_shouldRunSlicing));
+    PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=,
+        this->ReadExternalSettings(pExternalParameters, !pExternalParameters ? InputBool() : pExternalParameters->m_shouldRunSlicing,
+            xmlHandle, "ShouldRunSlicing", m_shouldRunSlicing));
 
-    PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, this->ReadExternalSettings(pExternalParameters, !pExternalParameters ? InputBool() :
-        pExternalParameters->m_shouldRunNeutrinoRecoOption, xmlHandle, "ShouldRunNeutrinoRecoOption", m_shouldRunNeutrinoRecoOption));
+    PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=,
+        this->ReadExternalSettings(pExternalParameters, !pExternalParameters ? InputBool() : pExternalParameters->m_shouldRunNeutrinoRecoOption,
+            xmlHandle, "ShouldRunNeutrinoRecoOption", m_shouldRunNeutrinoRecoOption));
 
-    PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, this->ReadExternalSettings(pExternalParameters, !pExternalParameters ? InputBool() :
-        pExternalParameters->m_shouldRunCosmicRecoOption, xmlHandle, "ShouldRunCosmicRecoOption", m_shouldRunCosmicRecoOption));
+    PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=,
+        this->ReadExternalSettings(pExternalParameters, !pExternalParameters ? InputBool() : pExternalParameters->m_shouldRunCosmicRecoOption,
+            xmlHandle, "ShouldRunCosmicRecoOption", m_shouldRunCosmicRecoOption));
 
-    PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, this->ReadExternalSettings(pExternalParameters, !pExternalParameters ? InputBool() :
-        pExternalParameters->m_shouldPerformSliceId, xmlHandle, "ShouldPerformSliceId", m_shouldPerformSliceId));
+    PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=,
+        this->ReadExternalSettings(pExternalParameters, !pExternalParameters ? InputBool() : pExternalParameters->m_shouldPerformSliceId,
+            xmlHandle, "ShouldPerformSliceId", m_shouldPerformSliceId));
 
     if (m_shouldPerformSliceId && (!m_shouldRunSlicing || !m_shouldRunNeutrinoRecoOption || !m_shouldRunCosmicRecoOption))
     {
-        std::cout << "MasterAlgorithm::ReadSettings - ShouldPerformSliceId requires ShouldRunSlicing and both neutrino and cosmic reconstruction options" << std::endl;
+        std::cout << "MasterAlgorithm::ReadSettings - ShouldPerformSliceId requires ShouldRunSlicing and both neutrino and cosmic reconstruction options"
+                  << std::endl;
         return STATUS_CODE_INVALID_PARAMETER;
     }
 
@@ -1176,32 +1199,34 @@ StatusCode MasterAlgorithm::ReadSettings(const TiXmlHandle xmlHandle)
 
         for (AlgorithmTool *const pAlgorithmTool : algorithmToolVector)
         {
-            SliceIdBaseTool *const pSliceIdIdTool(dynamic_cast<SliceIdBaseTool*>(pAlgorithmTool));
-            if (!pSliceIdIdTool) return STATUS_CODE_INVALID_PARAMETER;
+            SliceIdBaseTool *const pSliceIdIdTool(dynamic_cast<SliceIdBaseTool *>(pAlgorithmTool));
+            if (!pSliceIdIdTool)
+                return STATUS_CODE_INVALID_PARAMETER;
             m_sliceIdToolVector.push_back(pSliceIdIdTool);
         }
     }
 
-    PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, this->ReadExternalSettings(pExternalParameters, !pExternalParameters ? InputBool() :
-        pExternalParameters->m_printOverallRecoStatus, xmlHandle, "PrintOverallRecoStatus", m_printOverallRecoStatus));
+    PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=,
+        this->ReadExternalSettings(pExternalParameters, !pExternalParameters ? InputBool() : pExternalParameters->m_printOverallRecoStatus,
+            xmlHandle, "PrintOverallRecoStatus", m_printOverallRecoStatus));
 
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "VisualizeOverallRecoStatus", m_visualizeOverallRecoStatus));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=,
+        XmlHelper::ReadValue(xmlHandle, "VisualizeOverallRecoStatus", m_visualizeOverallRecoStatus));
 
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "LArCaloHitVersion", m_larCaloHitVersion));
+    PANDORA_RETURN_RESULT_IF_AND_IF(
+        STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "LArCaloHitVersion", m_larCaloHitVersion));
 
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "ShouldRemoveOutOfTimeHits", m_shouldRemoveOutOfTimeHits));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=,
+        XmlHelper::ReadValue(xmlHandle, "ShouldRemoveOutOfTimeHits", m_shouldRemoveOutOfTimeHits));
 
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "FullWidthCRWorkerWireGaps", m_fullWidthCRWorkerWireGaps));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=,
+        XmlHelper::ReadValue(xmlHandle, "FullWidthCRWorkerWireGaps", m_fullWidthCRWorkerWireGaps));
 
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "PassMCParticlesToWorkerInstances", m_passMCParticlesToWorkerInstances));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=,
+        XmlHelper::ReadValue(xmlHandle, "PassMCParticlesToWorkerInstances", m_passMCParticlesToWorkerInstances));
 
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "FilePathEnvironmentVariable", m_filePathEnvironmentVariable));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=,
+        XmlHelper::ReadValue(xmlHandle, "FilePathEnvironmentVariable", m_filePathEnvironmentVariable));
 
     PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadValue(xmlHandle, "CRSettingsFile", m_crSettingsFile));
     PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadValue(xmlHandle, "NuSettingsFile", m_nuSettingsFile));

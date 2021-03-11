@@ -17,8 +17,7 @@ using namespace pandora;
 namespace lar_content
 {
 
-ThreeViewShowerHitsTool::ThreeViewShowerHitsTool() :
-    m_zTolerance(1.f)
+ThreeViewShowerHitsTool::ThreeViewShowerHitsTool() : m_zTolerance(1.f)
 {
 }
 
@@ -33,8 +32,8 @@ void ThreeViewShowerHitsTool::GetShowerHit3D(const CaloHitVector &caloHitVector1
     const HitType hitType2(caloHitVector2.at(0)->GetHitType());
 
     const CaloHit *const pCaloHit2D(protoHit.GetParentCaloHit2D());
-    const HitType hitType2D(pCaloHit2D->GetHitType());
-    const float position2D(pCaloHit2D->GetPositionVector().GetZ());
+    const HitType        hitType2D(pCaloHit2D->GetHitType());
+    const float          position2D(pCaloHit2D->GetPositionVector().GetZ());
 
     for (const CaloHit *const pCaloHit1 : caloHitVector1)
     {
@@ -61,8 +60,7 @@ void ThreeViewShowerHitsTool::GetShowerHit3D(const CaloHitVector &caloHitVector1
 
 StatusCode ThreeViewShowerHitsTool::ReadSettings(const TiXmlHandle xmlHandle)
 {
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "ZTolerance", m_zTolerance));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "ZTolerance", m_zTolerance));
 
     return ShowerHitsBaseTool::ReadSettings(xmlHandle);
 }

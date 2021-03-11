@@ -8,10 +8,10 @@
 
 #include "Pandora/AlgorithmHeaders.h"
 
-#include "larpandoracontent/LArHelpers/LArPointingClusterHelper.h"
-#include "larpandoracontent/LArHelpers/LArPfoHelper.h"
-#include "larpandoracontent/LArHelpers/LArStitchingHelper.h"
 #include "larpandoracontent/LArHelpers/LArGeometryHelper.h"
+#include "larpandoracontent/LArHelpers/LArPfoHelper.h"
+#include "larpandoracontent/LArHelpers/LArPointingClusterHelper.h"
+#include "larpandoracontent/LArHelpers/LArStitchingHelper.h"
 
 #include "larpandoracontent/LArObjects/LArThreeDSlidingFitResult.h"
 
@@ -39,10 +39,11 @@ StitchingCosmicRayMergingTool::StitchingCosmicRayMergingTool() :
 {
 }
 
-void StitchingCosmicRayMergingTool::Run(const MasterAlgorithm *const pAlgorithm, const PfoList *const pMultiPfoList, PfoToLArTPCMap &pfoToLArTPCMap, PfoToFloatMap &stitchedPfosToX0Map)
+void StitchingCosmicRayMergingTool::Run(const MasterAlgorithm *const pAlgorithm, const PfoList *const pMultiPfoList,
+    PfoToLArTPCMap &pfoToLArTPCMap, PfoToFloatMap &stitchedPfosToX0Map)
 {
     if (PandoraContentApi::GetSettings(*pAlgorithm)->ShouldDisplayAlgorithmInfo())
-       std::cout << "----> Running Algorithm Tool: " << this->GetInstanceName() << ", " << this->GetType() << std::endl;
+        std::cout << "----> Running Algorithm Tool: " << this->GetInstanceName() << ", " << this->GetType() << std::endl;
 
     if (this->GetPandora().GetGeometry()->GetLArTPCMap().size() < 2)
         return;
@@ -94,7 +95,8 @@ void StitchingCosmicRayMergingTool::SelectPrimaryPfos(const PfoList *pInputPfoLi
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-void StitchingCosmicRayMergingTool::BuildPointingClusterMaps(const PfoList &inputPfoList, const PfoToLArTPCMap &pfoToLArTPCMap, ThreeDPointingClusterMap &pointingClusterMap) const
+void StitchingCosmicRayMergingTool::BuildPointingClusterMaps(
+    const PfoList &inputPfoList, const PfoToLArTPCMap &pfoToLArTPCMap, ThreeDPointingClusterMap &pointingClusterMap) const
 {
     for (const ParticleFlowObject *const pPfo : inputPfoList)
     {
@@ -114,9 +116,11 @@ void StitchingCosmicRayMergingTool::BuildPointingClusterMaps(const PfoList &inpu
                 throw StatusCodeException(STATUS_CODE_INVALID_PARAMETER);
 
             const ThreeDSlidingFitResult slidingFitResult(clusterList.front(), m_halfWindowLayers, slidingFitPitch);
-            (void) pointingClusterMap.insert(ThreeDPointingClusterMap::value_type(pPfo, LArPointingCluster(slidingFitResult)));
+            (void)pointingClusterMap.insert(ThreeDPointingClusterMap::value_type(pPfo, LArPointingCluster(slidingFitResult)));
         }
-        catch (const StatusCodeException &) {}
+        catch (const StatusCodeException &)
+        {
+        }
     }
 }
 
@@ -135,22 +139,23 @@ void StitchingCosmicRayMergingTool::BuildTPCMaps(const PfoList &inputPfoList, co
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-void StitchingCosmicRayMergingTool::CreatePfoMatches(const LArTPCToPfoMap &larTPCToPfoMap, const ThreeDPointingClusterMap &pointingClusterMap,
-    PfoAssociationMatrix &pfoAssociationMatrix) const
+void StitchingCosmicRayMergingTool::CreatePfoMatches(const LArTPCToPfoMap &larTPCToPfoMap,
+    const ThreeDPointingClusterMap &pointingClusterMap, PfoAssociationMatrix &pfoAssociationMatrix) const
 {
     LArTPCVector larTPCVector;
-    for (const auto &mapEntry : larTPCToPfoMap) larTPCVector.push_back(mapEntry.first);
+    for (const auto &mapEntry : larTPCToPfoMap)
+        larTPCVector.push_back(mapEntry.first);
     std::sort(larTPCVector.begin(), larTPCVector.end(), LArStitchingHelper::SortTPCs);
 
     for (LArTPCVector::const_iterator tpcIter1 = larTPCVector.begin(), tpcIterEnd = larTPCVector.end(); tpcIter1 != tpcIterEnd; ++tpcIter1)
     {
         const LArTPC *const pLArTPC1(*tpcIter1);
-        const PfoList &pfoList1(larTPCToPfoMap.at(pLArTPC1));
+        const PfoList &     pfoList1(larTPCToPfoMap.at(pLArTPC1));
 
         for (LArTPCVector::const_iterator tpcIter2 = tpcIter1; tpcIter2 != tpcIterEnd; ++tpcIter2)
         {
             const LArTPC *const pLArTPC2(*tpcIter2);
-            const PfoList &pfoList2(larTPCToPfoMap.at(pLArTPC2));
+            const PfoList &     pfoList2(larTPCToPfoMap.at(pLArTPC2));
 
             if (!LArStitchingHelper::CanTPCsBeStitched(*pLArTPC1, *pLArTPC2))
                 continue;
@@ -166,9 +171,8 @@ void StitchingCosmicRayMergingTool::CreatePfoMatches(const LArTPCToPfoMap &larTP
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-void StitchingCosmicRayMergingTool::CreatePfoMatches(const LArTPC &larTPC1, const LArTPC &larTPC2,
-    const ParticleFlowObject *const pPfo1, const ParticleFlowObject *const pPfo2,
-    const ThreeDPointingClusterMap &pointingClusterMap, PfoAssociationMatrix &pfoAssociationMatrix) const
+void StitchingCosmicRayMergingTool::CreatePfoMatches(const LArTPC &larTPC1, const LArTPC &larTPC2, const ParticleFlowObject *const pPfo1,
+    const ParticleFlowObject *const pPfo2, const ThreeDPointingClusterMap &pointingClusterMap, PfoAssociationMatrix &pfoAssociationMatrix) const
 {
     // Get centre and width of boundary between tpcs
     const float boundaryCenterX(LArStitchingHelper::GetTPCBoundaryCenterX(larTPC1, larTPC2));
@@ -252,12 +256,12 @@ void StitchingCosmicRayMergingTool::CreatePfoMatches(const LArTPC &larTPC1, cons
         return;
     }
 
-    const float minL((!LArGeometryHelper::IsInGap(this->GetPandora(), pointingVertex1.GetPosition(),  TPC_3D) ||
-        !LArGeometryHelper::IsInGap(this->GetPandora(), pointingVertex2.GetPosition(),  TPC_3D)) ? -1.f : m_relaxMinLongitudinalDisplacement);
-    const float dXdL1(m_useXcoordinate ? pX1 :
-        (1.f - pX1 * pX1 > std::numeric_limits<float>::epsilon()) ? pX1 / std::sqrt(1.f - pX1 * pX1) : minL);
-    const float dXdL2(m_useXcoordinate ? pX2 :
-        (1.f - pX2 * pX2 > std::numeric_limits<float>::epsilon()) ? pX2 / std::sqrt(1.f - pX2 * pX2) : minL);
+    const float minL((!LArGeometryHelper::IsInGap(this->GetPandora(), pointingVertex1.GetPosition(), TPC_3D) ||
+                         !LArGeometryHelper::IsInGap(this->GetPandora(), pointingVertex2.GetPosition(), TPC_3D))
+                         ? -1.f
+                         : m_relaxMinLongitudinalDisplacement);
+    const float dXdL1(m_useXcoordinate ? pX1 : (1.f - pX1 * pX1 > std::numeric_limits<float>::epsilon()) ? pX1 / std::sqrt(1.f - pX1 * pX1) : minL);
+    const float dXdL2(m_useXcoordinate ? pX2 : (1.f - pX2 * pX2 > std::numeric_limits<float>::epsilon()) ? pX2 / std::sqrt(1.f - pX2 * pX2) : minL);
     const float maxL1(maxLongitudinalDisplacementX / dXdL1);
     const float maxL2(maxLongitudinalDisplacementX / dXdL2);
 
@@ -291,7 +295,8 @@ void StitchingCosmicRayMergingTool::SelectPfoMatches(const PfoAssociationMatrix 
     PfoAssociationMatrix bestAssociationMatrix;
 
     PfoVector pfoVector1;
-    for (const auto &mapEntry : pfoAssociationMatrix) pfoVector1.push_back(mapEntry.first);
+    for (const auto &mapEntry : pfoAssociationMatrix)
+        pfoVector1.push_back(mapEntry.first);
     std::sort(pfoVector1.begin(), pfoVector1.end(), LArPfoHelper::SortByNHits);
 
     for (const ParticleFlowObject *const pPfo1 : pfoVector1)
@@ -299,13 +304,14 @@ void StitchingCosmicRayMergingTool::SelectPfoMatches(const PfoAssociationMatrix 
         const PfoAssociationMap &pfoAssociationMap(pfoAssociationMatrix.at(pPfo1));
 
         const ParticleFlowObject *pBestPfoInner(nullptr);
-        PfoAssociation bestAssociationInner(PfoAssociation::UNDEFINED, PfoAssociation::UNDEFINED, 0.f);
+        PfoAssociation            bestAssociationInner(PfoAssociation::UNDEFINED, PfoAssociation::UNDEFINED, 0.f);
 
         const ParticleFlowObject *pBestPfoOuter(nullptr);
-        PfoAssociation bestAssociationOuter(PfoAssociation::UNDEFINED, PfoAssociation::UNDEFINED, 0.f);
+        PfoAssociation            bestAssociationOuter(PfoAssociation::UNDEFINED, PfoAssociation::UNDEFINED, 0.f);
 
         PfoVector pfoVector2;
-        for (const auto &mapEntry : pfoAssociationMap) pfoVector2.push_back(mapEntry.first);
+        for (const auto &mapEntry : pfoAssociationMap)
+            pfoVector2.push_back(mapEntry.first);
         std::sort(pfoVector2.begin(), pfoVector2.end(), LArPfoHelper::SortByNHits);
 
         for (const ParticleFlowObject *const pPfo2 : pfoVector2)
@@ -334,16 +340,17 @@ void StitchingCosmicRayMergingTool::SelectPfoMatches(const PfoAssociationMatrix 
         }
 
         if (pBestPfoInner)
-            (void) bestAssociationMatrix[pPfo1].insert(PfoAssociationMap::value_type(pBestPfoInner, bestAssociationInner));
+            (void)bestAssociationMatrix[pPfo1].insert(PfoAssociationMap::value_type(pBestPfoInner, bestAssociationInner));
 
         if (pBestPfoOuter)
-            (void) bestAssociationMatrix[pPfo1].insert(PfoAssociationMap::value_type(pBestPfoOuter, bestAssociationOuter));
+            (void)bestAssociationMatrix[pPfo1].insert(PfoAssociationMap::value_type(pBestPfoOuter, bestAssociationOuter));
     }
 
     // Second step: make the merge if A -> X and B -> Y is in fact A -> B and B -> A
     // =============================================================================
     PfoVector pfoVector3;
-    for (const auto &mapEntry : bestAssociationMatrix) pfoVector3.push_back(mapEntry.first);
+    for (const auto &mapEntry : bestAssociationMatrix)
+        pfoVector3.push_back(mapEntry.first);
     std::sort(pfoVector3.begin(), pfoVector3.end(), LArPfoHelper::SortByNHits);
 
     for (const ParticleFlowObject *const pParentPfo : pfoVector3)
@@ -351,12 +358,13 @@ void StitchingCosmicRayMergingTool::SelectPfoMatches(const PfoAssociationMatrix 
         const PfoAssociationMap &parentAssociationMap(bestAssociationMatrix.at(pParentPfo));
 
         PfoVector pfoVector4;
-        for (const auto &mapEntry : parentAssociationMap) pfoVector4.push_back(mapEntry.first);
+        for (const auto &mapEntry : parentAssociationMap)
+            pfoVector4.push_back(mapEntry.first);
         std::sort(pfoVector4.begin(), pfoVector4.end(), LArPfoHelper::SortByNHits);
 
         for (const ParticleFlowObject *const pDaughterPfo : pfoVector4)
         {
-            const PfoAssociation &parentToDaughterAssociation(parentAssociationMap.at(pDaughterPfo));
+            const PfoAssociation &               parentToDaughterAssociation(parentAssociationMap.at(pDaughterPfo));
             PfoAssociationMatrix::const_iterator iter5 = bestAssociationMatrix.find(pDaughterPfo);
 
             if (bestAssociationMatrix.end() == iter5)
@@ -386,7 +394,8 @@ void StitchingCosmicRayMergingTool::SelectPfoMerges(const PfoMergeMap &pfoMatche
     PfoSet vetoSet;
 
     PfoVector inputPfoVector;
-    for (const auto &mapEntry : pfoMatches) inputPfoVector.push_back(mapEntry.first);
+    for (const auto &mapEntry : pfoMatches)
+        inputPfoVector.push_back(mapEntry.first);
     std::sort(inputPfoVector.begin(), inputPfoVector.end(), LArPfoHelper::SortByNHits);
 
     for (const ParticleFlowObject *const pInputPfo : inputPfoVector)
@@ -420,8 +429,8 @@ void StitchingCosmicRayMergingTool::SelectPfoMerges(const PfoMergeMap &pfoMatche
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-void StitchingCosmicRayMergingTool::CollectAssociatedPfos(const ParticleFlowObject *const pSeedPfo, const ParticleFlowObject *const pCurrentPfo,
-    const PfoMergeMap &pfoMergeMap, const PfoSet &vetoSet, PfoList &associatedList) const
+void StitchingCosmicRayMergingTool::CollectAssociatedPfos(const ParticleFlowObject *const pSeedPfo,
+    const ParticleFlowObject *const pCurrentPfo, const PfoMergeMap &pfoMergeMap, const PfoSet &vetoSet, PfoList &associatedList) const
 {
     if (vetoSet.count(pCurrentPfo))
         return;
@@ -453,38 +462,39 @@ void StitchingCosmicRayMergingTool::OrderPfoMerges(const PfoToLArTPCMap &pfoToLA
     const PfoMergeMap &inputPfoMerges, PfoMergeMap &outputPfoMerges) const
 {
     PfoVector inputPfoVector;
-    for (const auto &mapEntry : inputPfoMerges) inputPfoVector.push_back(mapEntry.first);
+    for (const auto &mapEntry : inputPfoMerges)
+        inputPfoVector.push_back(mapEntry.first);
     std::sort(inputPfoVector.begin(), inputPfoVector.end(), LArPfoHelper::SortByNHits);
 
     for (const ParticleFlowObject *const pInputPfo : inputPfoVector)
     {
         const PfoList &pfoList(inputPfoMerges.at(pInputPfo));
 
-        float bestLength(0.f);
+        float                     bestLength(0.f);
         const ParticleFlowObject *pVertexPfo = nullptr;
 
         for (PfoList::const_iterator iter1 = pfoList.begin(), iterEnd = pfoList.end(); iter1 != iterEnd; ++iter1)
         {
-            const ParticleFlowObject *const pPfo1(*iter1);
-            PfoToLArTPCMap::const_iterator tpcIter1 = pfoToLArTPCMap.find(pPfo1);
+            const ParticleFlowObject *const          pPfo1(*iter1);
+            PfoToLArTPCMap::const_iterator           tpcIter1 = pfoToLArTPCMap.find(pPfo1);
             ThreeDPointingClusterMap::const_iterator pointingIter1 = pointingClusterMap.find(pPfo1);
 
             if (pfoToLArTPCMap.end() == tpcIter1 || pointingClusterMap.end() == pointingIter1)
                 throw StatusCodeException(STATUS_CODE_FAILURE);
 
-            const LArTPC *const pLArTPC1(tpcIter1->second);
+            const LArTPC *const       pLArTPC1(tpcIter1->second);
             const LArPointingCluster &pointingCluster1(pointingIter1->second);
 
             for (PfoList::const_iterator iter2 = iter1; iter2 != iterEnd; ++iter2)
             {
-                const ParticleFlowObject *const pPfo2(*iter2);
-                PfoToLArTPCMap::const_iterator tpcIter2 = pfoToLArTPCMap.find(pPfo2);
+                const ParticleFlowObject *const          pPfo2(*iter2);
+                PfoToLArTPCMap::const_iterator           tpcIter2 = pfoToLArTPCMap.find(pPfo2);
                 ThreeDPointingClusterMap::const_iterator pointingIter2 = pointingClusterMap.find(pPfo2);
 
                 if (pfoToLArTPCMap.end() == tpcIter2 || pointingClusterMap.end() == pointingIter2)
                     throw StatusCodeException(STATUS_CODE_FAILURE);
 
-                const LArTPC *const pLArTPC2(tpcIter2->second);
+                const LArTPC *const       pLArTPC2(tpcIter2->second);
                 const LArPointingCluster &pointingCluster2(pointingIter2->second);
 
                 if (pLArTPC1 == pLArTPC2)
@@ -504,16 +514,20 @@ void StitchingCosmicRayMergingTool::OrderPfoMerges(const PfoToLArTPCMap &pfoToLA
                     LArPointingCluster::Vertex nearVertex1, nearVertex2;
                     LArStitchingHelper::GetClosestVertices(*pLArTPC1, *pLArTPC2, pointingCluster1, pointingCluster2, nearVertex1, nearVertex2);
 
-                    const LArPointingCluster::Vertex &farVertex1(nearVertex1.IsInnerVertex() ? pointingCluster1.GetOuterVertex() : pointingCluster1.GetInnerVertex());
-                    const LArPointingCluster::Vertex &farVertex2(nearVertex2.IsInnerVertex() ? pointingCluster2.GetOuterVertex() : pointingCluster2.GetInnerVertex());
+                    const LArPointingCluster::Vertex &farVertex1(
+                        nearVertex1.IsInnerVertex() ? pointingCluster1.GetOuterVertex() : pointingCluster1.GetInnerVertex());
+                    const LArPointingCluster::Vertex &farVertex2(
+                        nearVertex2.IsInnerVertex() ? pointingCluster2.GetOuterVertex() : pointingCluster2.GetInnerVertex());
                     const float deltaY(farVertex1.GetPosition().GetY() - farVertex2.GetPosition().GetY());
 
                     if (std::fabs(deltaY) < std::numeric_limits<float>::epsilon())
-                         throw StatusCodeException(STATUS_CODE_NOT_FOUND);
+                        throw StatusCodeException(STATUS_CODE_NOT_FOUND);
 
                     pVertexPfo = ((deltaY > 0.f) ? pPfo1 : pPfo2);
                 }
-                catch (const pandora::StatusCodeException &) {}
+                catch (const pandora::StatusCodeException &)
+                {
+                }
             }
         }
 
@@ -528,15 +542,16 @@ void StitchingCosmicRayMergingTool::StitchPfos(const MasterAlgorithm *const pAlg
     const PfoMergeMap &pfoMerges, PfoToLArTPCMap &pfoToLArTPCMap, PfoToFloatMap &stitchedPfosToX0Map) const
 {
     PfoVector pfoVectorToEnlarge;
-    for (const auto &mapEntry : pfoMerges) pfoVectorToEnlarge.push_back(mapEntry.first);
+    for (const auto &mapEntry : pfoMerges)
+        pfoVectorToEnlarge.push_back(mapEntry.first);
     std::sort(pfoVectorToEnlarge.begin(), pfoVectorToEnlarge.end(), LArPfoHelper::SortByNHits);
 
     for (const ParticleFlowObject *const pPfoToEnlarge : pfoVectorToEnlarge)
     {
-        const PfoList &pfoList(pfoMerges.at(pPfoToEnlarge));
-        const PfoVector pfoVector(pfoList.begin(), pfoList.end());
+        const PfoList &           pfoList(pfoMerges.at(pPfoToEnlarge));
+        const PfoVector           pfoVector(pfoList.begin(), pfoList.end());
         PfoToPointingVertexMatrix pfoToPointingVertexMatrix;
-        float x0(0.f);
+        float                     x0(0.f);
 
         if (!m_useXcoordinate || m_alwaysApplyT0Calculation)
         {
@@ -557,12 +572,12 @@ void StitchingCosmicRayMergingTool::StitchPfos(const MasterAlgorithm *const pAlg
         for (PfoVector::const_iterator iterI = pfoVector.begin(); iterI != pfoVector.end(); ++iterI)
         {
             const ParticleFlowObject *const pPfoI(*iterI);
-            const LArTPC *const pLArTPCI(pfoToLArTPCMap.at(pPfoI));
+            const LArTPC *const             pLArTPCI(pfoToLArTPCMap.at(pPfoI));
 
             for (PfoVector::const_iterator iterJ = std::next(iterI); iterJ != pfoVector.end(); ++iterJ)
             {
                 const ParticleFlowObject *const pPfoJ(*iterJ);
-                const LArTPC *const pLArTPCJ(pfoToLArTPCMap.at(pPfoJ));
+                const LArTPC *const             pLArTPCJ(pfoToLArTPCMap.at(pPfoJ));
 
                 if (!LArStitchingHelper::CanTPCsBeStitched(*pLArTPCI, *pLArTPCJ))
                     continue;
@@ -600,18 +615,20 @@ void StitchingCosmicRayMergingTool::StitchPfos(const MasterAlgorithm *const pAlg
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-void StitchingCosmicRayMergingTool::ShiftPfo(const MasterAlgorithm *const pAlgorithm, const ParticleFlowObject *const pPfoToShift, const ParticleFlowObject *const pMatchedPfo, const float x0, const PfoToLArTPCMap &pfoToLArTPCMap, const PfoToPointingVertexMatrix &pfoToPointingVertexMatrix) const
+void StitchingCosmicRayMergingTool::ShiftPfo(const MasterAlgorithm *const pAlgorithm, const ParticleFlowObject *const pPfoToShift,
+    const ParticleFlowObject *const pMatchedPfo, const float x0, const PfoToLArTPCMap &pfoToLArTPCMap,
+    const PfoToPointingVertexMatrix &pfoToPointingVertexMatrix) const
 {
     // get stitching vertex for the pfo to be shifted
     const PfoToPointingVertexMatrix::const_iterator pfoToPointingVertexMatrixIter(pfoToPointingVertexMatrix.find(pPfoToShift));
-    const LArPointingCluster::Vertex stitchingVertex(pfoToPointingVertexMatrixIter->second.at(pMatchedPfo));
+    const LArPointingCluster::Vertex                stitchingVertex(pfoToPointingVertexMatrixIter->second.at(pMatchedPfo));
 
     const LArTPC *const pShiftLArTPC(pfoToLArTPCMap.at(pPfoToShift));
     const LArTPC *const pMatchedLArTPC(pfoToLArTPCMap.at(pMatchedPfo));
 
     // determine shift sign from the relative position of stitching vertex and the relevant TPC boundary position
     const float tpcBoundaryCenterX(LArStitchingHelper::GetTPCBoundaryCenterX(*pShiftLArTPC, *pMatchedLArTPC));
-    float tpcBoundaryX(0.f);
+    float       tpcBoundaryX(0.f);
 
     if (pShiftLArTPC->GetCenterX() < tpcBoundaryCenterX)
     {
@@ -649,26 +666,26 @@ bool StitchingCosmicRayMergingTool::CalculateX0(const PfoToLArTPCMap &pfoToLArTP
 
     for (PfoVector::const_iterator iter1 = pfoVector.begin(), iterEnd = pfoVector.end(); iter1 != iterEnd; ++iter1)
     {
-        const ParticleFlowObject *const pPfo1(*iter1);
-        PfoToLArTPCMap::const_iterator tpcIter1 = pfoToLArTPCMap.find(pPfo1);
+        const ParticleFlowObject *const          pPfo1(*iter1);
+        PfoToLArTPCMap::const_iterator           tpcIter1 = pfoToLArTPCMap.find(pPfo1);
         ThreeDPointingClusterMap::const_iterator pointingIter1 = pointingClusterMap.find(pPfo1);
 
         if (pfoToLArTPCMap.end() == tpcIter1 || pointingClusterMap.end() == pointingIter1)
             throw StatusCodeException(STATUS_CODE_FAILURE);
 
-        const LArTPC *const pLArTPC1(tpcIter1->second);
+        const LArTPC *const       pLArTPC1(tpcIter1->second);
         const LArPointingCluster &pointingCluster1(pointingIter1->second);
 
         for (PfoVector::const_iterator iter2 = std::next(iter1); iter2 != iterEnd; ++iter2)
         {
-            const ParticleFlowObject *const pPfo2(*iter2);
-            PfoToLArTPCMap::const_iterator tpcIter2 = pfoToLArTPCMap.find(pPfo2);
+            const ParticleFlowObject *const          pPfo2(*iter2);
+            PfoToLArTPCMap::const_iterator           tpcIter2 = pfoToLArTPCMap.find(pPfo2);
             ThreeDPointingClusterMap::const_iterator pointingIter2 = pointingClusterMap.find(pPfo2);
 
             if (pfoToLArTPCMap.end() == tpcIter2 || pointingClusterMap.end() == pointingIter2)
                 throw StatusCodeException(STATUS_CODE_FAILURE);
 
-            const LArTPC *const pLArTPC2(tpcIter2->second);
+            const LArTPC *const       pLArTPC2(tpcIter2->second);
             const LArPointingCluster &pointingCluster2(pointingIter2->second);
 
             if (!LArStitchingHelper::CanTPCsBeStitched(*pLArTPC1, *pLArTPC2))
@@ -678,8 +695,7 @@ bool StitchingCosmicRayMergingTool::CalculateX0(const PfoToLArTPCMap &pfoToLArTP
             LArPointingCluster::Vertex pointingVertex1, pointingVertex2;
             try
             {
-                LArStitchingHelper::GetClosestVertices(*pLArTPC1, *pLArTPC2, pointingCluster1, pointingCluster2,
-                    pointingVertex1, pointingVertex2);
+                LArStitchingHelper::GetClosestVertices(*pLArTPC1, *pLArTPC2, pointingCluster1, pointingCluster2, pointingVertex1, pointingVertex2);
 
                 // Record pfo1 stitching vertex for pfo1<->pfo2 match, used to determine shifting direction in later step
                 const PfoToPointingVertexMatrix::iterator pfoToPointingVertexMatrixIter1(pfoToPointingVertexMatrix.find(pPfo1));
@@ -687,20 +703,21 @@ bool StitchingCosmicRayMergingTool::CalculateX0(const PfoToLArTPCMap &pfoToLArTP
                 {
                     // No matches present in map, add pfo1<->pfo2 match
                     const PfoToPointingVertexMap pfoToPointingVertexMap({{pPfo2, pointingVertex1}});
-                    (void) pfoToPointingVertexMatrix.insert(PfoToPointingVertexMatrix::value_type(pPfo1, pfoToPointingVertexMap));
+                    (void)pfoToPointingVertexMatrix.insert(PfoToPointingVertexMatrix::value_type(pPfo1, pfoToPointingVertexMap));
                 }
                 else
                 {
                     // ATTN: another match for a different TPC boundary may be present, add pfo1<->pfo2 match
-                    PfoToPointingVertexMap &pfoToPointingVertexMap(pfoToPointingVertexMatrixIter1->second);
+                    PfoToPointingVertexMap &               pfoToPointingVertexMap(pfoToPointingVertexMatrixIter1->second);
                     const PfoToPointingVertexMap::iterator pfoToPointingVertexMapIter(pfoToPointingVertexMap.find(pPfo2));
                     if (pfoToPointingVertexMapIter == pfoToPointingVertexMap.end())
                     {
-                        (void) pfoToPointingVertexMap.insert(PfoToPointingVertexMap::value_type(pPfo2, pointingVertex1));
+                        (void)pfoToPointingVertexMap.insert(PfoToPointingVertexMap::value_type(pPfo2, pointingVertex1));
                     }
                     else
                     {
-                        if ((pfoToPointingVertexMapIter->second.GetPosition() - pointingVertex1.GetPosition()).GetMagnitude() > std::numeric_limits<float>::epsilon())
+                        if ((pfoToPointingVertexMapIter->second.GetPosition() - pointingVertex1.GetPosition()).GetMagnitude() >
+                            std::numeric_limits<float>::epsilon())
                             throw StatusCodeException(STATUS_CODE_FAILURE);
                     }
                 }
@@ -711,20 +728,21 @@ bool StitchingCosmicRayMergingTool::CalculateX0(const PfoToLArTPCMap &pfoToLArTP
                 {
                     // No matches present in map, add pfo1<->pfo2 match
                     const PfoToPointingVertexMap pfoToPointingVertexMap({{pPfo1, pointingVertex2}});
-                    (void) pfoToPointingVertexMatrix.insert(PfoToPointingVertexMatrix::value_type(pPfo2, pfoToPointingVertexMap));
+                    (void)pfoToPointingVertexMatrix.insert(PfoToPointingVertexMatrix::value_type(pPfo2, pfoToPointingVertexMap));
                 }
                 else
                 {
                     // ATTN: another match for a different TPC boundary may be present, add pfo1<->pfo2 match
-                    PfoToPointingVertexMap &pfoToPointingVertexMap(pfoToPointingVertexMatrixIter2->second);
+                    PfoToPointingVertexMap &               pfoToPointingVertexMap(pfoToPointingVertexMatrixIter2->second);
                     const PfoToPointingVertexMap::iterator pfoToPointingVertexMapIter(pfoToPointingVertexMap.find(pPfo1));
                     if (pfoToPointingVertexMapIter == pfoToPointingVertexMap.end())
                     {
-                        (void) pfoToPointingVertexMap.insert(PfoToPointingVertexMap::value_type(pPfo1, pointingVertex2));
+                        (void)pfoToPointingVertexMap.insert(PfoToPointingVertexMap::value_type(pPfo1, pointingVertex2));
                     }
                     else
                     {
-                        if ((pfoToPointingVertexMapIter->second.GetPosition() - pointingVertex2.GetPosition()).GetMagnitude() > std::numeric_limits<float>::epsilon())
+                        if ((pfoToPointingVertexMapIter->second.GetPosition() - pointingVertex2.GetPosition()).GetMagnitude() >
+                            std::numeric_limits<float>::epsilon())
                             throw StatusCodeException(STATUS_CODE_FAILURE);
                     }
                 }
@@ -744,7 +762,8 @@ bool StitchingCosmicRayMergingTool::CalculateX0(const PfoToLArTPCMap &pfoToLArTP
                         return false;
                 }
 
-                sumX += thisX0; sumN += 1.f;
+                sumX += thisX0;
+                sumN += 1.f;
             }
             catch (const pandora::StatusCodeException &statusCodeException)
             {
@@ -798,46 +817,44 @@ float StitchingCosmicRayMergingTool::PfoAssociation::GetFigureOfMerit() const
 
 StatusCode StitchingCosmicRayMergingTool::ReadSettings(const TiXmlHandle xmlHandle)
 {
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "ThreeDStitchingMode", m_useXcoordinate));
+    PANDORA_RETURN_RESULT_IF_AND_IF(
+        STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "ThreeDStitchingMode", m_useXcoordinate));
 
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "AlwaysApplyT0Calculation", m_alwaysApplyT0Calculation));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=,
+        XmlHelper::ReadValue(xmlHandle, "AlwaysApplyT0Calculation", m_alwaysApplyT0Calculation));
 
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "HalfWindowLayers", m_halfWindowLayers));
+    PANDORA_RETURN_RESULT_IF_AND_IF(
+        STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "HalfWindowLayers", m_halfWindowLayers));
 
     float minLength(std::sqrt(m_minLengthSquared));
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "MinPfoLength", minLength));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "MinPfoLength", minLength));
     m_minLengthSquared = minLength * minLength;
 
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "MinCosRelativeAngle", m_minCosRelativeAngle));
+    PANDORA_RETURN_RESULT_IF_AND_IF(
+        STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "MinCosRelativeAngle", m_minCosRelativeAngle));
 
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "RelaxMinLongitudinalDisplacement", m_relaxMinLongitudinalDisplacement));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=,
+        XmlHelper::ReadValue(xmlHandle, "RelaxMinLongitudinalDisplacement", m_relaxMinLongitudinalDisplacement));
 
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "MaxLongitudinalDisplacementX", m_maxLongitudinalDisplacementX));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=,
+        XmlHelper::ReadValue(xmlHandle, "MaxLongitudinalDisplacementX", m_maxLongitudinalDisplacementX));
 
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "MaxTransverseDisplacement", m_maxTransverseDisplacement));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=,
+        XmlHelper::ReadValue(xmlHandle, "MaxTransverseDisplacement", m_maxTransverseDisplacement));
 
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "LooserMinCosRelativeAngle", m_relaxCosRelativeAngle));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=,
+        XmlHelper::ReadValue(xmlHandle, "LooserMinCosRelativeAngle", m_relaxCosRelativeAngle));
 
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "LooserMaxTransverseDisplacement", m_relaxTransverseDisplacement));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=,
+        XmlHelper::ReadValue(xmlHandle, "LooserMaxTransverseDisplacement", m_relaxTransverseDisplacement));
 
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "MinNCaloHits3D", m_minNCaloHits3D));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "MinNCaloHits3D", m_minNCaloHits3D));
 
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "MaxX0FractionalDeviation", m_maxX0FractionalDeviation));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=,
+        XmlHelper::ReadValue(xmlHandle, "MaxX0FractionalDeviation", m_maxX0FractionalDeviation));
 
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "BoundaryToleranceWidth", m_boundaryToleranceWidth));
+    PANDORA_RETURN_RESULT_IF_AND_IF(
+        STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "BoundaryToleranceWidth", m_boundaryToleranceWidth));
 
     return STATUS_CODE_SUCCESS;
 }

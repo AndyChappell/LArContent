@@ -15,8 +15,7 @@ using namespace pandora;
 namespace lar_content
 {
 
-ListPruningAlgorithm::ListPruningAlgorithm() :
-    m_warnIfObjectsUnavailable(true)
+ListPruningAlgorithm::ListPruningAlgorithm() : m_warnIfObjectsUnavailable(true)
 {
 }
 
@@ -28,7 +27,7 @@ StatusCode ListPruningAlgorithm::Run()
     {
         try
         {
-            const PfoList *pPfoList(nullptr);
+            const PfoList *  pPfoList(nullptr);
             const StatusCode statusCode(PandoraContentApi::GetList(*this, listName, pPfoList));
 
             if (STATUS_CODE_SUCCESS != statusCode)
@@ -54,7 +53,7 @@ StatusCode ListPruningAlgorithm::Run()
         try
         {
             const ClusterList *pClusterList(nullptr);
-            const StatusCode statusCode(PandoraContentApi::GetList(*this, listName, pClusterList));
+            const StatusCode   statusCode(PandoraContentApi::GetList(*this, listName, pClusterList));
 
             if (STATUS_CODE_SUCCESS != statusCode)
                 throw StatusCodeException(statusCode);
@@ -82,7 +81,7 @@ StatusCode ListPruningAlgorithm::Run()
         try
         {
             const VertexList *pVertexList(nullptr);
-            const StatusCode statusCode(PandoraContentApi::GetList(*this, listName, pVertexList));
+            const StatusCode  statusCode(PandoraContentApi::GetList(*this, listName, pVertexList));
 
             if (STATUS_CODE_SUCCESS != statusCode)
                 throw StatusCodeException(statusCode);
@@ -112,17 +111,17 @@ StatusCode ListPruningAlgorithm::Run()
 
 StatusCode ListPruningAlgorithm::ReadSettings(const TiXmlHandle xmlHandle)
 {
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadVectorOfValues(xmlHandle,
-        "PfoListNames", m_pfoListNames));
+    PANDORA_RETURN_RESULT_IF_AND_IF(
+        STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadVectorOfValues(xmlHandle, "PfoListNames", m_pfoListNames));
 
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadVectorOfValues(xmlHandle,
-        "ClusterListNames", m_clusterListNames));
+    PANDORA_RETURN_RESULT_IF_AND_IF(
+        STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadVectorOfValues(xmlHandle, "ClusterListNames", m_clusterListNames));
 
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadVectorOfValues(xmlHandle,
-        "VertexListNames", m_vertexListNames));
+    PANDORA_RETURN_RESULT_IF_AND_IF(
+        STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadVectorOfValues(xmlHandle, "VertexListNames", m_vertexListNames));
 
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "WarnIfObjectsUnavailable", m_warnIfObjectsUnavailable));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=,
+        XmlHelper::ReadValue(xmlHandle, "WarnIfObjectsUnavailable", m_warnIfObjectsUnavailable));
 
     return STATUS_CODE_SUCCESS;
 }

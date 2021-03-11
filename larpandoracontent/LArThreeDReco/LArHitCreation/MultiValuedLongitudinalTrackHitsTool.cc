@@ -17,13 +17,13 @@ using namespace pandora;
 namespace lar_content
 {
 
-void MultiValuedLongitudinalTrackHitsTool::GetLongitudinalTrackHit3D(const MatchedSlidingFitMap &matchedSlidingFitMap, const CartesianVector &vtx3D,
-    const CartesianVector &end3D, ProtoHit &protoHit) const
+void MultiValuedLongitudinalTrackHitsTool::GetLongitudinalTrackHit3D(
+    const MatchedSlidingFitMap &matchedSlidingFitMap, const CartesianVector &vtx3D, const CartesianVector &end3D, ProtoHit &protoHit) const
 {
     const CaloHit *const pCaloHit2D(protoHit.GetParentCaloHit2D());
-    const HitType hitType(pCaloHit2D->GetHitType());
-    const HitType hitType1((TPC_VIEW_U == hitType) ? TPC_VIEW_V : (TPC_VIEW_V == hitType) ? TPC_VIEW_W : TPC_VIEW_U);
-    const HitType hitType2((TPC_VIEW_U == hitType) ? TPC_VIEW_W : (TPC_VIEW_V == hitType) ? TPC_VIEW_U : TPC_VIEW_V);
+    const HitType        hitType(pCaloHit2D->GetHitType());
+    const HitType        hitType1((TPC_VIEW_U == hitType) ? TPC_VIEW_V : (TPC_VIEW_V == hitType) ? TPC_VIEW_W : TPC_VIEW_U);
+    const HitType        hitType2((TPC_VIEW_U == hitType) ? TPC_VIEW_W : (TPC_VIEW_V == hitType) ? TPC_VIEW_U : TPC_VIEW_V);
 
     const CartesianVector vtx2D(LArGeometryHelper::ProjectPosition(this->GetPandora(), vtx3D, hitType));
     const CartesianVector end2D(LArGeometryHelper::ProjectPosition(this->GetPandora(), end3D, hitType));
@@ -40,9 +40,9 @@ void MultiValuedLongitudinalTrackHitsTool::GetLongitudinalTrackHit3D(const Match
     if (matchedSlidingFitMap.end() != fIter1)
     {
         const TwoDSlidingFitResult &fitResult1 = fIter1->second;
-        const CartesianVector position2D(LArGeometryHelper::ProjectPosition(this->GetPandora(), projection3D, hitType1));
+        const CartesianVector       position2D(LArGeometryHelper::ProjectPosition(this->GetPandora(), projection3D, hitType1));
 
-        CartesianVector position1(0.f, 0.f, 0.f);
+        CartesianVector  position1(0.f, 0.f, 0.f);
         const StatusCode statusCode(fitResult1.GetGlobalFitProjection(position2D, position1));
 
         if ((STATUS_CODE_SUCCESS != statusCode) && (STATUS_CODE_NOT_FOUND != statusCode))
@@ -56,9 +56,9 @@ void MultiValuedLongitudinalTrackHitsTool::GetLongitudinalTrackHit3D(const Match
     if (matchedSlidingFitMap.end() != fIter2)
     {
         const TwoDSlidingFitResult &fitResult2 = fIter2->second;
-        const CartesianVector position2D(LArGeometryHelper::ProjectPosition(this->GetPandora(), projection3D, hitType2));
+        const CartesianVector       position2D(LArGeometryHelper::ProjectPosition(this->GetPandora(), projection3D, hitType2));
 
-        CartesianVector position2(0.f, 0.f, 0.f);
+        CartesianVector  position2(0.f, 0.f, 0.f);
         const StatusCode statusCode(fitResult2.GetGlobalFitProjection(position2D, position2));
 
         if ((STATUS_CODE_SUCCESS != statusCode) && (STATUS_CODE_NOT_FOUND != statusCode))
@@ -69,8 +69,10 @@ void MultiValuedLongitudinalTrackHitsTool::GetLongitudinalTrackHit3D(const Match
     }
 
     unsigned int nViews(1);
-    if (fitPositionList1.size() > 0) ++nViews;
-    if (fitPositionList2.size() > 0) ++nViews;
+    if (fitPositionList1.size() > 0)
+        ++nViews;
+    if (fitPositionList2.size() > 0)
+        ++nViews;
 
     if (nViews < m_minViews)
         throw StatusCodeException(STATUS_CODE_NOT_FOUND);

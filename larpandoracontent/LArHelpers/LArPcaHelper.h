@@ -10,6 +10,8 @@
 
 #include "Objects/CartesianVector.h"
 
+#include <vector>
+
 namespace lar_content
 {
 
@@ -19,10 +21,10 @@ namespace lar_content
 class LArPcaHelper
 {
 public:
-    typedef pandora::CartesianVector EigenValues;
-    typedef std::vector<pandora::CartesianVector> EigenVectors;
+    typedef pandora::CartesianVector                          EigenValues;
+    typedef std::vector<pandora::CartesianVector>             EigenVectors;
     typedef std::pair<const pandora::CartesianVector, double> WeightedPoint;
-    typedef std::vector<WeightedPoint> WeightedPointVector;
+    typedef std::vector<WeightedPoint>                        WeightedPointVector;
 
     /**
      *  @brief  Run principal component analysis using input calo hits (TPC_VIEW_U,V,W or TPC_3D; all treated as 3D points)

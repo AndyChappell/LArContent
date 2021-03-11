@@ -10,8 +10,8 @@
 
 #include "larpandoracontent/LArThreeDReco/LArCosmicRay/CosmicRayTrackRecoveryAlgorithm.h"
 
-#include "larpandoracontent/LArHelpers/LArGeometryHelper.h"
 #include "larpandoracontent/LArHelpers/LArClusterHelper.h"
+#include "larpandoracontent/LArHelpers/LArGeometryHelper.h"
 #include "larpandoracontent/LArHelpers/LArPointingClusterHelper.h"
 
 using namespace pandora;
@@ -58,14 +58,11 @@ StatusCode CosmicRayTrackRecoveryAlgorithm::Run()
     // Create candidate particles using one, two and three primary views
     ParticleList candidateParticles;
 
-    this->MatchThreeViews(cleanClustersU, cleanClustersV, cleanClustersW,
-        matchedClustersUV, matchedClustersVW, matchedClustersWU, candidateParticles);
+    this->MatchThreeViews(cleanClustersU, cleanClustersV, cleanClustersW, matchedClustersUV, matchedClustersVW, matchedClustersWU, candidateParticles);
 
-    this->MatchTwoViews(cleanClustersU, cleanClustersV, cleanClustersW,
-        matchedClustersUV, matchedClustersVW, matchedClustersWU, candidateParticles);
+    this->MatchTwoViews(cleanClustersU, cleanClustersV, cleanClustersW, matchedClustersUV, matchedClustersVW, matchedClustersWU, candidateParticles);
 
-    this->MatchOneView(cleanClustersU, cleanClustersV, cleanClustersW,
-        matchedClustersUV, matchedClustersVW, matchedClustersWU, candidateParticles);
+    this->MatchOneView(cleanClustersU, cleanClustersV, cleanClustersW, matchedClustersUV, matchedClustersVW, matchedClustersWU, candidateParticles);
 
     // Build particle flow objects from candidate particles
     this->BuildParticles(candidateParticles);
@@ -78,8 +75,8 @@ StatusCode CosmicRayTrackRecoveryAlgorithm::Run()
 StatusCode CosmicRayTrackRecoveryAlgorithm::GetAvailableClusters(const std::string &inputClusterListName, ClusterVector &clusterVector) const
 {
     const ClusterList *pClusterList = NULL;
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_INITIALIZED, !=, PandoraContentApi::GetList(*this,
-        inputClusterListName, pClusterList))
+    PANDORA_RETURN_RESULT_IF_AND_IF(
+        STATUS_CODE_SUCCESS, STATUS_CODE_NOT_INITIALIZED, !=, PandoraContentApi::GetList(*this, inputClusterListName, pClusterList))
 
     if (!pClusterList || pClusterList->empty())
     {
@@ -130,7 +127,7 @@ void CosmicRayTrackRecoveryAlgorithm::SelectCleanClusters(const ClusterVector &i
 void CosmicRayTrackRecoveryAlgorithm::BuildSlidingFitResultMap(const ClusterVector &clusterVector, TwoDSlidingFitResultMap &slidingFitResultMap) const
 {
     const unsigned int m_halfWindowLayers(25);
-    const float slidingFitPitch(LArGeometryHelper::GetWireZPitch(this->GetPandora()));
+    const float        slidingFitPitch(LArGeometryHelper::GetWireZPitch(this->GetPandora()));
 
     for (ClusterVector::const_iterator iter = clusterVector.begin(), iterEnd = clusterVector.end(); iter != iterEnd; ++iter)
     {
@@ -166,7 +163,7 @@ void CosmicRayTrackRecoveryAlgorithm::MatchViews(const ClusterVector &clusterVec
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-void CosmicRayTrackRecoveryAlgorithm::MatchClusters(const Cluster* const pSeedCluster, const ClusterVector &targetClusters,
+void CosmicRayTrackRecoveryAlgorithm::MatchClusters(const Cluster *const pSeedCluster, const ClusterVector &targetClusters,
     const TwoDSlidingFitResultMap &slidingFitResultMap, ClusterAssociationMap &clusterAssociationMap) const
 {
     // Match seed cluster to target clusters according to alignment in X position of start/end positions
@@ -180,9 +177,9 @@ void CosmicRayTrackRecoveryAlgorithm::MatchClusters(const Cluster* const pSeedCl
         throw StatusCodeException(STATUS_CODE_FAILURE);
 
     const TwoDSlidingFitResult &slidingFitResult1(fsIter->second);
-    const CartesianVector &innerVertex1(slidingFitResult1.GetGlobalMinLayerPosition());
-    const CartesianVector &outerVertex1(slidingFitResult1.GetGlobalMaxLayerPosition());
-    const float xSpan1(std::fabs(outerVertex1.GetX() - innerVertex1.GetX()));
+    const CartesianVector &     innerVertex1(slidingFitResult1.GetGlobalMinLayerPosition());
+    const CartesianVector &     outerVertex1(slidingFitResult1.GetGlobalMaxLayerPosition());
+    const float                 xSpan1(std::fabs(outerVertex1.GetX() - innerVertex1.GetX()));
 
     const Cluster *pBestClusterInner(NULL);
     const Cluster *pBestClusterOuter(NULL);
@@ -211,9 +208,9 @@ void CosmicRayTrackRecoveryAlgorithm::MatchClusters(const Cluster* const pSeedCl
             throw StatusCodeException(STATUS_CODE_FAILURE);
 
         const TwoDSlidingFitResult &slidingFitResult2(ftIter->second);
-        const CartesianVector &innerVertex2(slidingFitResult2.GetGlobalMinLayerPosition());
-        const CartesianVector &outerVertex2(slidingFitResult2.GetGlobalMaxLayerPosition());
-        const float xSpan2(std::fabs(outerVertex2.GetX() - innerVertex2.GetX()));
+        const CartesianVector &     innerVertex2(slidingFitResult2.GetGlobalMinLayerPosition());
+        const CartesianVector &     outerVertex2(slidingFitResult2.GetGlobalMaxLayerPosition());
+        const float                 xSpan2(std::fabs(outerVertex2.GetX() - innerVertex2.GetX()));
 
         if (xSpan2 > 1.5f * xSpan1)
             continue;
@@ -222,7 +219,7 @@ void CosmicRayTrackRecoveryAlgorithm::MatchClusters(const Cluster* const pSeedCl
         const float xMax1(std::max(innerVertex1.GetX(), outerVertex1.GetX()));
         const float xMin2(std::min(innerVertex2.GetX(), outerVertex2.GetX()));
         const float xMax2(std::max(innerVertex2.GetX(), outerVertex2.GetX()));
-        const float xOverlap(std::min(xMax1,xMax2) - std::max(xMin1,xMin2));
+        const float xOverlap(std::min(xMax1, xMax2) - std::max(xMin1, xMin2));
 
         if (xOverlap < m_clusterMinOverlapX)
             continue;
@@ -283,8 +280,10 @@ void CosmicRayTrackRecoveryAlgorithm::MatchClusters(const Cluster* const pSeedCl
             return;
         }
 
-        const LArPointingCluster::Vertex pointingEndInner(pointingVertexInner.IsInnerVertex() ? pointingClusterInner.GetOuterVertex() : pointingClusterInner.GetInnerVertex());
-        const LArPointingCluster::Vertex pointingEndOuter(pointingVertexOuter.IsInnerVertex() ? pointingClusterOuter.GetOuterVertex() : pointingClusterOuter.GetInnerVertex());
+        const LArPointingCluster::Vertex pointingEndInner(
+            pointingVertexInner.IsInnerVertex() ? pointingClusterInner.GetOuterVertex() : pointingClusterInner.GetInnerVertex());
+        const LArPointingCluster::Vertex pointingEndOuter(
+            pointingVertexOuter.IsInnerVertex() ? pointingClusterOuter.GetOuterVertex() : pointingClusterOuter.GetInnerVertex());
 
         const float rSpan((pointingEndInner.GetPosition() - pointingEndOuter.GetPosition()).GetMagnitude());
 
@@ -306,7 +305,7 @@ void CosmicRayTrackRecoveryAlgorithm::MatchClusters(const Cluster* const pSeedCl
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-void CosmicRayTrackRecoveryAlgorithm::MatchThreeViews(const ClusterVector &clusterVectorU,  const ClusterVector &clusterVectorV,
+void CosmicRayTrackRecoveryAlgorithm::MatchThreeViews(const ClusterVector &clusterVectorU, const ClusterVector &clusterVectorV,
     const ClusterVector &clusterVectorW, const ClusterAssociationMap &matchedClustersUV, const ClusterAssociationMap &matchedClustersVW,
     const ClusterAssociationMap &matchedClustersWU, ParticleList &particleList) const
 {
@@ -362,23 +361,32 @@ void CosmicRayTrackRecoveryAlgorithm::MatchThreeViews(const ClusterVector &clust
                 const ClusterAssociationMap::const_iterator iter313 = matchedClusters31.find(pCluster3);
                 const ClusterList matchedClusters31_pCluster3(iter313 != matchedClusters31.end() ? iter313->second : ClusterList());
 
-                const bool match12((matchedClusters12_pCluster1.size() +  matchedClusters12_pCluster2.size() > 0) &&
-                    ((matchedClusters12_pCluster1.size() == 1 && std::find(matchedClusters12_pCluster1.begin(), matchedClusters12_pCluster1.end(), pCluster2) != matchedClusters12_pCluster1.end()) ||
-                     (matchedClusters12_pCluster1.size() == 0)) &&
-                    ((matchedClusters12_pCluster2.size() == 1 && std::find(matchedClusters12_pCluster2.begin(), matchedClusters12_pCluster2.end(), pCluster1) != matchedClusters12_pCluster2.end()) ||
-                     (matchedClusters12_pCluster2.size() == 0)));
+                const bool match12(
+                    (matchedClusters12_pCluster1.size() + matchedClusters12_pCluster2.size() > 0) &&
+                    ((matchedClusters12_pCluster1.size() == 1 && std::find(matchedClusters12_pCluster1.begin(), matchedClusters12_pCluster1.end(),
+                                                                     pCluster2) != matchedClusters12_pCluster1.end()) ||
+                        (matchedClusters12_pCluster1.size() == 0)) &&
+                    ((matchedClusters12_pCluster2.size() == 1 && std::find(matchedClusters12_pCluster2.begin(), matchedClusters12_pCluster2.end(),
+                                                                     pCluster1) != matchedClusters12_pCluster2.end()) ||
+                        (matchedClusters12_pCluster2.size() == 0)));
 
-                const bool match23((matchedClusters23_pCluster2.size() +  matchedClusters23_pCluster3.size() > 0) &&
-                    ((matchedClusters23_pCluster2.size() == 1 && std::find(matchedClusters23_pCluster2.begin(), matchedClusters23_pCluster2.end(), pCluster3) != matchedClusters23_pCluster2.end()) ||
-                     (matchedClusters23_pCluster2.size() == 0)) &&
-                    ((matchedClusters23_pCluster3.size() == 1 && std::find(matchedClusters23_pCluster3.begin(), matchedClusters23_pCluster3.end(), pCluster2) != matchedClusters23_pCluster3.end()) ||
-                    (matchedClusters23_pCluster3.size() == 0)));
+                const bool match23(
+                    (matchedClusters23_pCluster2.size() + matchedClusters23_pCluster3.size() > 0) &&
+                    ((matchedClusters23_pCluster2.size() == 1 && std::find(matchedClusters23_pCluster2.begin(), matchedClusters23_pCluster2.end(),
+                                                                     pCluster3) != matchedClusters23_pCluster2.end()) ||
+                        (matchedClusters23_pCluster2.size() == 0)) &&
+                    ((matchedClusters23_pCluster3.size() == 1 && std::find(matchedClusters23_pCluster3.begin(), matchedClusters23_pCluster3.end(),
+                                                                     pCluster2) != matchedClusters23_pCluster3.end()) ||
+                        (matchedClusters23_pCluster3.size() == 0)));
 
-                const bool match31((matchedClusters31_pCluster3.size() +  matchedClusters31_pCluster1.size() > 0) &&
-                    ((matchedClusters31_pCluster3.size() == 1 && std::find(matchedClusters31_pCluster3.begin(), matchedClusters31_pCluster3.end(), pCluster1) != matchedClusters31_pCluster3.end()) ||
-                    (matchedClusters31_pCluster3.size() == 0)) &&
-                    ((matchedClusters31_pCluster1.size() == 1 && std::find(matchedClusters31_pCluster1.begin(), matchedClusters31_pCluster1.end(), pCluster3) != matchedClusters31_pCluster1.end()) ||
-                    (matchedClusters31_pCluster1.size() == 0)));
+                const bool match31(
+                    (matchedClusters31_pCluster3.size() + matchedClusters31_pCluster1.size() > 0) &&
+                    ((matchedClusters31_pCluster3.size() == 1 && std::find(matchedClusters31_pCluster3.begin(), matchedClusters31_pCluster3.end(),
+                                                                     pCluster1) != matchedClusters31_pCluster3.end()) ||
+                        (matchedClusters31_pCluster3.size() == 0)) &&
+                    ((matchedClusters31_pCluster1.size() == 1 && std::find(matchedClusters31_pCluster1.begin(), matchedClusters31_pCluster1.end(),
+                                                                     pCluster3) != matchedClusters31_pCluster1.end()) ||
+                        (matchedClusters31_pCluster1.size() == 0)));
 
                 if (match12 && match23 && match31)
                 {
@@ -397,7 +405,7 @@ void CosmicRayTrackRecoveryAlgorithm::MatchThreeViews(const ClusterVector &clust
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-void CosmicRayTrackRecoveryAlgorithm::MatchTwoViews(const ClusterVector &clusterVectorU,  const ClusterVector &clusterVectorV,
+void CosmicRayTrackRecoveryAlgorithm::MatchTwoViews(const ClusterVector &clusterVectorU, const ClusterVector &clusterVectorV,
     const ClusterVector &clusterVectorW, const ClusterAssociationMap &matchedClustersUV, const ClusterAssociationMap &matchedClustersVW,
     const ClusterAssociationMap &matchedClustersWU, ParticleList &particleList) const
 {
@@ -442,12 +450,15 @@ void CosmicRayTrackRecoveryAlgorithm::MatchTwoViews(const ClusterVector &cluster
                 const ClusterAssociationMap::const_iterator iter232 = matchedClusters23.find(pCluster2);
                 const ClusterList matchedClusters23_pCluster2(iter232 != matchedClusters23.end() ? iter232->second : ClusterList());
 
-                const bool match12((matchedClusters12_pCluster1.size() == 1 && std::find(matchedClusters12_pCluster1.begin(), matchedClusters12_pCluster1.end(), pCluster2) != matchedClusters12_pCluster1.end()) &&
-                    (matchedClusters12_pCluster2.size() == 1 && std::find(matchedClusters12_pCluster2.begin(), matchedClusters12_pCluster2.end(), pCluster1) != matchedClusters12_pCluster2.end()) &&
+                const bool match12(
+                    (matchedClusters12_pCluster1.size() == 1 && std::find(matchedClusters12_pCluster1.begin(), matchedClusters12_pCluster1.end(),
+                                                                    pCluster2) != matchedClusters12_pCluster1.end()) &&
+                    (matchedClusters12_pCluster2.size() == 1 && std::find(matchedClusters12_pCluster2.begin(), matchedClusters12_pCluster2.end(),
+                                                                    pCluster1) != matchedClusters12_pCluster2.end()) &&
                     (matchedClusters23_pCluster2.size() == 0 && matchedClusters31_pCluster1.size() == 0));
 
                 if (!match12)
-                continue;
+                    continue;
 
                 Particle newParticle;
                 newParticle.m_clusterList.push_back(pCluster1);
@@ -466,11 +477,15 @@ void CosmicRayTrackRecoveryAlgorithm::MatchTwoViews(const ClusterVector &cluster
                     const ClusterAssociationMap::const_iterator iter313 = matchedClusters31.find(pCluster3);
                     const ClusterList matchedClusters31_pCluster3(iter313 != matchedClusters31.end() ? iter313->second : ClusterList());
 
-                    const bool match3((matchedClusters31_pCluster3.size() +  matchedClusters23_pCluster3.size() > 0) &&
-                        ((matchedClusters31_pCluster3.size() == 1 && std::find(matchedClusters31_pCluster3.begin(), matchedClusters31_pCluster3.end(), pCluster1) != matchedClusters31_pCluster3.end()) ||
-                        (matchedClusters31_pCluster3.size() == 0)) &&
-                        ((matchedClusters23_pCluster3.size() == 1 && std::find(matchedClusters23_pCluster3.begin(), matchedClusters23_pCluster3.end(), pCluster2) != matchedClusters23_pCluster3.end()) ||
-                        (matchedClusters23_pCluster3.size() == 0)));
+                    const bool match3((matchedClusters31_pCluster3.size() + matchedClusters23_pCluster3.size() > 0) &&
+                                      ((matchedClusters31_pCluster3.size() == 1 &&
+                                           std::find(matchedClusters31_pCluster3.begin(), matchedClusters31_pCluster3.end(), pCluster1) !=
+                                               matchedClusters31_pCluster3.end()) ||
+                                          (matchedClusters31_pCluster3.size() == 0)) &&
+                                      ((matchedClusters23_pCluster3.size() == 1 &&
+                                           std::find(matchedClusters23_pCluster3.begin(), matchedClusters23_pCluster3.end(), pCluster2) !=
+                                               matchedClusters23_pCluster3.end()) ||
+                                          (matchedClusters23_pCluster3.size() == 0)));
 
                     if (match3)
                         newParticle.m_clusterList.push_back(pCluster3);
@@ -486,7 +501,7 @@ void CosmicRayTrackRecoveryAlgorithm::MatchTwoViews(const ClusterVector &cluster
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-void CosmicRayTrackRecoveryAlgorithm::MatchOneView(const ClusterVector &clusterVectorU,  const ClusterVector &clusterVectorV,
+void CosmicRayTrackRecoveryAlgorithm::MatchOneView(const ClusterVector &clusterVectorU, const ClusterVector &clusterVectorV,
     const ClusterVector &clusterVectorW, const ClusterAssociationMap &matchedClustersUV, const ClusterAssociationMap &matchedClustersVW,
     const ClusterAssociationMap &matchedClustersWU, ParticleList &particleList) const
 {
@@ -537,7 +552,9 @@ void CosmicRayTrackRecoveryAlgorithm::MatchOneView(const ClusterVector &clusterV
                 const ClusterAssociationMap::const_iterator iter232 = matchedClusters23.find(pCluster2);
                 const ClusterList matchedClusters23_pCluster2(iter232 != matchedClusters23.end() ? iter232->second : ClusterList());
 
-                if (matchedClusters12_pCluster2.size() == 1 && std::find(matchedClusters12_pCluster2.begin(), matchedClusters12_pCluster2.end(), pCluster1) != matchedClusters12_pCluster2.end() &&
+                if (matchedClusters12_pCluster2.size() == 1 &&
+                    std::find(matchedClusters12_pCluster2.begin(), matchedClusters12_pCluster2.end(), pCluster1) !=
+                        matchedClusters12_pCluster2.end() &&
                     matchedClusters23_pCluster2.size() == 0)
                     newParticle.m_clusterList.push_back(pCluster2);
             }
@@ -555,7 +572,9 @@ void CosmicRayTrackRecoveryAlgorithm::MatchOneView(const ClusterVector &clusterV
                 const ClusterAssociationMap::const_iterator iter313 = matchedClusters31.find(pCluster3);
                 const ClusterList matchedClusters31_pCluster3(iter313 != matchedClusters31.end() ? iter313->second : ClusterList());
 
-                if (matchedClusters31_pCluster3.size() == 1 && std::find(matchedClusters31_pCluster3.begin(), matchedClusters31_pCluster3.end(), pCluster1) != matchedClusters31_pCluster3.end() &&
+                if (matchedClusters31_pCluster3.size() == 1 &&
+                    std::find(matchedClusters31_pCluster3.begin(), matchedClusters31_pCluster3.end(), pCluster1) !=
+                        matchedClusters31_pCluster3.end() &&
                     matchedClusters23_pCluster3.size() == 0)
                     newParticle.m_clusterList.push_back(pCluster3);
             }
@@ -585,7 +604,7 @@ void CosmicRayTrackRecoveryAlgorithm::RemoveAmbiguities(const ParticleList &inpu
 {
     for (ParticleList::const_iterator pIter1 = inputParticleList.begin(), pIterEnd1 = inputParticleList.end(); pIter1 != pIterEnd1; ++pIter1)
     {
-        const Particle &particle1 = *pIter1;
+        const Particle &   particle1 = *pIter1;
         const ClusterList &clusterList1 = particle1.m_clusterList;
 
         try
@@ -594,7 +613,7 @@ void CosmicRayTrackRecoveryAlgorithm::RemoveAmbiguities(const ParticleList &inpu
 
             for (ParticleList::const_iterator pIter2 = pIter1, pIterEnd2 = inputParticleList.end(); pIter2 != pIterEnd2; ++pIter2)
             {
-                const Particle &particle2 = *pIter2;
+                const Particle &   particle2 = *pIter2;
                 const ClusterList &clusterList2 = particle2.m_clusterList;
 
                 ClusterSet duplicateSet;
@@ -633,7 +652,8 @@ void CosmicRayTrackRecoveryAlgorithm::BuildParticles(const ParticleList &particl
     if (particleList.empty())
         return;
 
-    const PfoList *pPfoList(nullptr); std::string pfoListName;
+    const PfoList *pPfoList(nullptr);
+    std::string    pfoListName;
     PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::CreateTemporaryListAndSetCurrent(*this, pPfoList, pfoListName));
 
     for (const Particle &particle : particleList)
@@ -674,7 +694,7 @@ void CosmicRayTrackRecoveryAlgorithm::MergeClusters(const ClusterList &inputClus
 
     for (unsigned int iView = 0; iView < 3; ++iView)
     {
-        const ClusterList clusterList((0 == iView) ? clusterListU : (1 == iView) ?  clusterListV : clusterListW);
+        const ClusterList clusterList((0 == iView) ? clusterListU : (1 == iView) ? clusterListV : clusterListW);
         const std::string inputClusterListName((0 == iView) ? m_inputClusterListNameU : (1 == iView) ? m_inputClusterListNameV : m_inputClusterListNameW);
 
         if (clusterList.empty())
@@ -693,8 +713,8 @@ void CosmicRayTrackRecoveryAlgorithm::MergeClusters(const ClusterList &inputClus
             if (!PandoraContentApi::IsAvailable(*this, pAssociatedCluster))
                 continue;
 
-            PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::MergeAndDeleteClusters(*this, pSeedCluster, pAssociatedCluster,
-                inputClusterListName, inputClusterListName));
+            PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=,
+                PandoraContentApi::MergeAndDeleteClusters(*this, pSeedCluster, pAssociatedCluster, inputClusterListName, inputClusterListName));
         }
 
         outputClusterList.push_back(pSeedCluster);
@@ -705,17 +725,16 @@ void CosmicRayTrackRecoveryAlgorithm::MergeClusters(const ClusterList &inputClus
 
 StatusCode CosmicRayTrackRecoveryAlgorithm::ReadSettings(const TiXmlHandle xmlHandle)
 {
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "ClusterMinLength", m_clusterMinLength));
+    PANDORA_RETURN_RESULT_IF_AND_IF(
+        STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "ClusterMinLength", m_clusterMinLength));
 
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "ClusterMinSpanZ", m_clusterMinSpanZ));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "ClusterMinSpanZ", m_clusterMinSpanZ));
 
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "ClusterMinOverlapX", m_clusterMinOverlapX));
+    PANDORA_RETURN_RESULT_IF_AND_IF(
+        STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "ClusterMinOverlapX", m_clusterMinOverlapX));
 
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "ClusterMaxDeltaX", m_clusterMaxDeltaX));
+    PANDORA_RETURN_RESULT_IF_AND_IF(
+        STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "ClusterMaxDeltaX", m_clusterMaxDeltaX));
 
     PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadValue(xmlHandle, "InputClusterListNameU", m_inputClusterListNameU));
     PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadValue(xmlHandle, "InputClusterListNameV", m_inputClusterListNameV));

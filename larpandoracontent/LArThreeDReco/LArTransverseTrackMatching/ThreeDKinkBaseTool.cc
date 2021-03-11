@@ -56,8 +56,8 @@ bool ThreeDKinkBaseTool::PassesElementCuts(TensorType::ElementList::const_iterat
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-float ThreeDKinkBaseTool::GetXSamplingPoint(const CartesianVector &splitPosition1, const bool isForwardInX, const TwoDSlidingFitResult &fitResult1,
-    const TwoDSlidingFitResult &fitResult2, const TwoDSlidingFitResult &fitResult3) const
+float ThreeDKinkBaseTool::GetXSamplingPoint(const CartesianVector &splitPosition1, const bool isForwardInX,
+    const TwoDSlidingFitResult &fitResult1, const TwoDSlidingFitResult &fitResult2, const TwoDSlidingFitResult &fitResult3) const
 {
     // Nearest common x position
     float xMin1(std::numeric_limits<float>::max()), xMax1(-std::numeric_limits<float>::max());
@@ -107,13 +107,13 @@ float ThreeDKinkBaseTool::GetXSamplingPoint(const CartesianVector &splitPosition
 bool ThreeDKinkBaseTool::IsALowestInX(const LArPointingCluster &pointingClusterA, const LArPointingCluster &pointingClusterB)
 {
     if ((pointingClusterA.GetInnerVertex().GetPosition().GetX() < pointingClusterB.GetInnerVertex().GetPosition().GetX()) &&
-        (pointingClusterA.GetInnerVertex().GetPosition().GetX() < pointingClusterB.GetOuterVertex().GetPosition().GetX()) )
+        (pointingClusterA.GetInnerVertex().GetPosition().GetX() < pointingClusterB.GetOuterVertex().GetPosition().GetX()))
     {
         return true;
     }
 
     if ((pointingClusterA.GetOuterVertex().GetPosition().GetX() < pointingClusterB.GetInnerVertex().GetPosition().GetX()) &&
-        (pointingClusterA.GetOuterVertex().GetPosition().GetX() < pointingClusterB.GetOuterVertex().GetPosition().GetX()) )
+        (pointingClusterA.GetOuterVertex().GetPosition().GetX() < pointingClusterB.GetOuterVertex().GetPosition().GetX()))
     {
         return true;
     }
@@ -126,7 +126,7 @@ bool ThreeDKinkBaseTool::IsALowestInX(const LArPointingCluster &pointingClusterA
 bool ThreeDKinkBaseTool::Run(ThreeViewTransverseTracksAlgorithm *const pAlgorithm, TensorType &overlapTensor)
 {
     if (PandoraContentApi::GetSettings(*pAlgorithm)->ShouldDisplayAlgorithmInfo())
-       std::cout << "----> Running Algorithm Tool: " << this->GetInstanceName() << ", " << this->GetType() << std::endl;
+        std::cout << "----> Running Algorithm Tool: " << this->GetInstanceName() << ", " << this->GetType() << std::endl;
 
     ModificationList modificationList;
     this->GetModifications(pAlgorithm, overlapTensor, modificationList);
@@ -137,9 +137,10 @@ bool ThreeDKinkBaseTool::Run(ThreeViewTransverseTracksAlgorithm *const pAlgorith
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-void ThreeDKinkBaseTool::GetModifications(ThreeViewTransverseTracksAlgorithm *const pAlgorithm, const TensorType &overlapTensor, ModificationList &modificationList) const
+void ThreeDKinkBaseTool::GetModifications(
+    ThreeViewTransverseTracksAlgorithm *const pAlgorithm, const TensorType &overlapTensor, ModificationList &modificationList) const
 {
-    ClusterSet usedClusters;
+    ClusterSet    usedClusters;
     ClusterVector sortedKeyClusters;
     overlapTensor.GetSortedKeyClusters(sortedKeyClusters);
 
@@ -148,7 +149,7 @@ void ThreeDKinkBaseTool::GetModifications(ThreeViewTransverseTracksAlgorithm *co
         if (!pKeyCluster->IsAvailable())
             continue;
 
-        unsigned int nU(0), nV(0), nW(0);
+        unsigned int            nU(0), nV(0), nW(0);
         TensorType::ElementList elementList;
         overlapTensor.GetConnectedElements(pKeyCluster, true, elementList, nU, nV, nW);
 
@@ -186,13 +187,14 @@ void ThreeDKinkBaseTool::GetModifications(ThreeViewTransverseTracksAlgorithm *co
 
 bool ThreeDKinkBaseTool::ApplyChanges(ThreeViewTransverseTracksAlgorithm *const pAlgorithm, const ModificationList &modificationList) const
 {
-    ClusterMergeMap consolidatedMergeMap;
+    ClusterMergeMap  consolidatedMergeMap;
     SplitPositionMap consolidatedSplitMap;
 
     for (const Modification &modification : modificationList)
     {
         ClusterList parentClusters;
-        for (const auto &mapEntry : modification.m_clusterMergeMap) parentClusters.push_back(mapEntry.first);
+        for (const auto &mapEntry : modification.m_clusterMergeMap)
+            parentClusters.push_back(mapEntry.first);
         parentClusters.sort(LArClusterHelper::SortByNHits);
 
         for (const Cluster *const pParentCluster : parentClusters)
@@ -210,7 +212,8 @@ bool ThreeDKinkBaseTool::ApplyChanges(ThreeViewTransverseTracksAlgorithm *const 
         }
 
         ClusterList splitClusters;
-        for (const auto &mapEntry : modification.m_splitPositionMap) splitClusters.push_back(mapEntry.first);
+        for (const auto &mapEntry : modification.m_splitPositionMap)
+            splitClusters.push_back(mapEntry.first);
         splitClusters.sort(LArClusterHelper::SortByNHits);
 
         for (const Cluster *const pSplitCluster : splitClusters)
@@ -273,23 +276,23 @@ void ThreeDKinkBaseTool::SelectTensorElements(TensorType::ElementList::const_ite
 
 StatusCode ThreeDKinkBaseTool::ReadSettings(const TiXmlHandle xmlHandle)
 {
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "MajorityRulesMode", m_majorityRulesMode));
+    PANDORA_RETURN_RESULT_IF_AND_IF(
+        STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "MajorityRulesMode", m_majorityRulesMode));
 
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "MinMatchedFraction", m_minMatchedFraction));
+    PANDORA_RETURN_RESULT_IF_AND_IF(
+        STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "MinMatchedFraction", m_minMatchedFraction));
 
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "MinMatchedSamplingPoints", m_minMatchedSamplingPoints));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=,
+        XmlHelper::ReadValue(xmlHandle, "MinMatchedSamplingPoints", m_minMatchedSamplingPoints));
 
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "MinLongitudinalImpactParameter", m_minLongitudinalImpactParameter));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=,
+        XmlHelper::ReadValue(xmlHandle, "MinLongitudinalImpactParameter", m_minLongitudinalImpactParameter));
 
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "NLayersForKinkSearch", m_nLayersForKinkSearch));
+    PANDORA_RETURN_RESULT_IF_AND_IF(
+        STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "NLayersForKinkSearch", m_nLayersForKinkSearch));
 
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "AdditionalXStepForKinkSearch", m_additionalXStepForKinkSearch));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=,
+        XmlHelper::ReadValue(xmlHandle, "AdditionalXStepForKinkSearch", m_additionalXStepForKinkSearch));
 
     return STATUS_CODE_SUCCESS;
 }

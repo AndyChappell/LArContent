@@ -16,7 +16,7 @@ namespace lar_content
 /**
  *  @brief  NViewMatchingAlgorithm class
  */
-template<typename T>
+template <typename T>
 class NViewMatchingAlgorithm : public MatchingBaseAlgorithm
 {
 public:
@@ -32,9 +32,9 @@ public:
      */
     virtual ~NViewMatchingAlgorithm();
 
-    void UpdateForNewCluster(const pandora::Cluster *const pNewCluster);
-    void UpdateUponDeletion(const pandora::Cluster *const pDeletedCluster);
-    const std::string &GetClusterListName(const pandora::HitType hitType) const;
+    void                        UpdateForNewCluster(const pandora::Cluster *const pNewCluster);
+    void                        UpdateUponDeletion(const pandora::Cluster *const pDeletedCluster);
+    const std::string &         GetClusterListName(const pandora::HitType hitType) const;
     const pandora::ClusterList &GetInputClusterList(const pandora::HitType hitType) const;
     const pandora::ClusterList &GetSelectedClusterList(const pandora::HitType hitType) const;
 
@@ -44,18 +44,18 @@ protected:
      */
     MatchingType &GetMatchingControl();
 
-    virtual void SelectAllInputClusters();
-    virtual void PrepareAllInputClusters();
-    virtual void PerformMainLoop();
-    virtual void TidyUp();
+    virtual void                SelectAllInputClusters();
+    virtual void                PrepareAllInputClusters();
+    virtual void                PerformMainLoop();
+    virtual void                TidyUp();
     virtual pandora::StatusCode ReadSettings(const pandora::TiXmlHandle xmlHandle);
 
-    MatchingType    m_matchingControl;     ///< The matching control
+    MatchingType m_matchingControl; ///< The matching control
 };
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-template<typename T>
+template <typename T>
 inline T &NViewMatchingAlgorithm<T>::GetMatchingControl()
 {
     return m_matchingControl;

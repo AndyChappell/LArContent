@@ -18,9 +18,7 @@ using namespace pandora;
 namespace lar_content
 {
 
-TwoDSlidingFitSplittingAlgorithm::TwoDSlidingFitSplittingAlgorithm() :
-    m_slidingFitHalfWindow(20),
-    m_minClusterLength(10.f)
+TwoDSlidingFitSplittingAlgorithm::TwoDSlidingFitSplittingAlgorithm() : m_slidingFitHalfWindow(20), m_minClusterLength(10.f)
 {
 }
 
@@ -36,7 +34,7 @@ StatusCode TwoDSlidingFitSplittingAlgorithm::DivideCaloHits(const Cluster *const
         const float slidingFitPitch(LArGeometryHelper::GetWireZPitch(this->GetPandora()));
 
         const TwoDSlidingFitResult slidingFitResult(pCluster, m_slidingFitHalfWindow, slidingFitPitch);
-        CartesianVector splitPosition(0.f, 0.f, 0.f);
+        CartesianVector            splitPosition(0.f, 0.f, 0.f);
 
         if (STATUS_CODE_SUCCESS == this->FindBestSplitPosition(slidingFitResult, splitPosition))
         {
@@ -54,13 +52,13 @@ StatusCode TwoDSlidingFitSplittingAlgorithm::DivideCaloHits(const Cluster *const
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-StatusCode TwoDSlidingFitSplittingAlgorithm::DivideCaloHits(const TwoDSlidingFitResult &slidingFitResult, const CartesianVector &splitPosition,
-    CaloHitList &firstCaloHitList, CaloHitList &secondCaloHitList) const
+StatusCode TwoDSlidingFitSplittingAlgorithm::DivideCaloHits(const TwoDSlidingFitResult &slidingFitResult,
+    const CartesianVector &splitPosition, CaloHitList &firstCaloHitList, CaloHitList &secondCaloHitList) const
 {
     float rL(0.f), rT(0.f);
     slidingFitResult.GetLocalPosition(splitPosition, rL, rT);
 
-    const Cluster *const pCluster(slidingFitResult.GetCluster());
+    const Cluster *const      pCluster(slidingFitResult.GetCluster());
     const OrderedCaloHitList &orderedCaloHitList(pCluster->GetOrderedCaloHitList());
 
     for (OrderedCaloHitList::const_iterator iter = orderedCaloHitList.begin(); iter != orderedCaloHitList.end(); ++iter)
@@ -93,11 +91,11 @@ StatusCode TwoDSlidingFitSplittingAlgorithm::DivideCaloHits(const TwoDSlidingFit
 
 StatusCode TwoDSlidingFitSplittingAlgorithm::ReadSettings(const TiXmlHandle xmlHandle)
 {
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "SlidingFitHalfWindow", m_slidingFitHalfWindow));
+    PANDORA_RETURN_RESULT_IF_AND_IF(
+        STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "SlidingFitHalfWindow", m_slidingFitHalfWindow));
 
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "MinClusterLength", m_minClusterLength));
+    PANDORA_RETURN_RESULT_IF_AND_IF(
+        STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "MinClusterLength", m_minClusterLength));
 
     return ClusterSplittingAlgorithm::ReadSettings(xmlHandle);
 }

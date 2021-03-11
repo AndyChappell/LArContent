@@ -39,7 +39,7 @@ void TwoViewShowerHitsTool::GetShowerHit3D(const CaloHitVector &caloHitVector, P
         throw StatusCodeException(STATUS_CODE_NOT_FOUND);
 
     const CaloHit *const pCaloHit2D(protoHit.GetParentCaloHit2D());
-    const HitType hitType(caloHitVector.at(0)->GetHitType());
+    const HitType        hitType(caloHitVector.at(0)->GetHitType());
 
     if (pCaloHit2D->GetHitType() == hitType)
         throw StatusCodeException(STATUS_CODE_INVALID_PARAMETER);
@@ -50,7 +50,7 @@ void TwoViewShowerHitsTool::GetShowerHit3D(const CaloHitVector &caloHitVector, P
     {
         Sqx += pCaloHit->GetMipEquivalentEnergy() * pCaloHit->GetPositionVector().GetX();
         Sqz += pCaloHit->GetMipEquivalentEnergy() * pCaloHit->GetPositionVector().GetZ();
-        Sq  += pCaloHit->GetMipEquivalentEnergy();
+        Sq += pCaloHit->GetMipEquivalentEnergy();
     }
 
     if (Sq < std::numeric_limits<double>::epsilon())

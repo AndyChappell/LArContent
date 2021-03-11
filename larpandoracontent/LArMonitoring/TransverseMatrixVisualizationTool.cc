@@ -28,9 +28,9 @@ TransverseMatrixVisualizationTool::TransverseMatrixVisualizationTool() :
 bool TransverseMatrixVisualizationTool::Run(TwoViewTransverseTracksAlgorithm *const pAlgorithm, MatrixType &overlapMatrix)
 {
     if (PandoraContentApi::GetSettings(*pAlgorithm)->ShouldDisplayAlgorithmInfo())
-       std::cout << "----> Running Algorithm Tool: " << this->GetInstanceName() << ", " << this->GetType() << std::endl;
+        std::cout << "----> Running Algorithm Tool: " << this->GetInstanceName() << ", " << this->GetType() << std::endl;
 
-    ClusterSet usedKeyClusters;
+    ClusterSet    usedKeyClusters;
     ClusterVector sortedKeyClusters;
     overlapMatrix.GetSortedKeyClusters(sortedKeyClusters);
 
@@ -42,7 +42,7 @@ bool TransverseMatrixVisualizationTool::Run(TwoViewTransverseTracksAlgorithm *co
         if (usedKeyClusters.count(pKeyCluster))
             continue;
 
-        unsigned int n1(0), n2(0);
+        unsigned int            n1(0), n2(0);
         MatrixType::ElementList elementList;
         overlapMatrix.GetConnectedElements(pKeyCluster, m_ignoreUnavailableClusters, elementList, n1, n2);
 
@@ -52,7 +52,7 @@ bool TransverseMatrixVisualizationTool::Run(TwoViewTransverseTracksAlgorithm *co
         if (n1 * n2 == 0)
             continue;
 
-        int counter(0);
+        int         counter(0);
         ClusterList allClusterList1, allClusterList2;
         std::cout << " Connections: n1 " << n1 << ", n2 " << n2 << ", nElements " << elementList.size() << std::endl;
 
@@ -63,51 +63,51 @@ bool TransverseMatrixVisualizationTool::Run(TwoViewTransverseTracksAlgorithm *co
             if (allClusterList2.end() == std::find(allClusterList2.begin(), allClusterList2.end(), eIter->GetCluster2()))
                 allClusterList2.push_back(eIter->GetCluster2());
             usedKeyClusters.insert(eIter->GetCluster1());
-
         }
 
         for (MatrixType::ElementList::const_iterator eIter = elementList.begin(); eIter != elementList.end(); ++eIter)
         {
-            int pdg0(0);
-            int pdg1(0);
+            int  pdg0(0);
+            int  pdg1(0);
             bool isPrimary0(false);
             bool isPrimary1(false);
             bool sameParticle(false);
             try
             {
-                const MCParticle* particle0(MCParticleHelper::GetMainMCParticle(eIter->GetCluster1()));
-                const MCParticle* particle1(MCParticleHelper::GetMainMCParticle(eIter->GetCluster2()));
+                const MCParticle *particle0(MCParticleHelper::GetMainMCParticle(eIter->GetCluster1()));
+                const MCParticle *particle1(MCParticleHelper::GetMainMCParticle(eIter->GetCluster2()));
                 pdg0 = (particle0->GetParticleId());
                 isPrimary0 = (particle0->IsRootParticle());
                 pdg1 = (particle1->GetParticleId());
                 isPrimary1 = (particle1->IsRootParticle());
                 sameParticle = (particle0->GetUid() == particle1->GetUid());
             }
-            catch(const StatusCodeException &){};
+            catch (const StatusCodeException &)
+            {
+            };
 
             if (m_showOnlyTrueMatchIndividualElements && !sameParticle)
                 continue;
 
             std::cout << " Element " << counter++ << std::endl;
-            std::cout <<" ---True PDG 0: " << pdg0 << std::endl;
-            std::cout <<" ---True PDG 1: " << pdg1 << std::endl;
-            std::cout <<" ---True is primary 0: " << isPrimary0 << std::endl;
-            std::cout <<" ---True is primary 1: " << isPrimary1 << std::endl;
-            std::cout <<" ---True is same particle: " << sameParticle << std::endl;
-            std::cout <<" ---Is cluster 0 available: " << eIter->GetCluster1()->IsAvailable() << std::endl;
-            std::cout <<" ---Is cluster 1 available: " << eIter->GetCluster2()->IsAvailable() << std::endl;
-            std::cout <<" ---XOverlap: " << eIter->GetOverlapResult().GetTwoViewXOverlap().GetTwoViewXOverlapSpan() <<std::endl;
-            std::cout <<" ---XOverlap fraction view0: " <<
-                eIter->GetOverlapResult().GetTwoViewXOverlap().GetXOverlapFraction0() << std::endl;
-            std::cout <<" ---XOverlap fraction view1: " <<
-                eIter->GetOverlapResult().GetTwoViewXOverlap().GetXOverlapFraction1() << std::endl;
-            std::cout <<" ---Matching score: " << eIter->GetOverlapResult().GetMatchingScore() << std::endl;
-            std::cout <<" ---N. sampling points: " << eIter->GetOverlapResult().GetNSamplingPoints() << std::endl;
-            std::cout <<" ---N. matched sampling points: " << eIter->GetOverlapResult().GetNMatchedSamplingPoints() << std::endl;
-            std::cout <<" ---N. (re-)upsampled sampling points: " << eIter->GetOverlapResult().GetNReUpsampledSamplingPoints() << std::endl;
-            std::cout <<" ---N. (re-)upsampled matched sampling points: " << eIter->GetOverlapResult().GetNMatchedReUpsampledSamplingPoints() << std::endl;
-            std::cout <<" ---Correlation coeff.: " << eIter->GetOverlapResult().GetCorrelationCoefficient() << std::endl;
-            std::cout <<" ---Locally matched fraction: " << eIter->GetOverlapResult().GetLocallyMatchedFraction() << std::endl;
+            std::cout << " ---True PDG 0: " << pdg0 << std::endl;
+            std::cout << " ---True PDG 1: " << pdg1 << std::endl;
+            std::cout << " ---True is primary 0: " << isPrimary0 << std::endl;
+            std::cout << " ---True is primary 1: " << isPrimary1 << std::endl;
+            std::cout << " ---True is same particle: " << sameParticle << std::endl;
+            std::cout << " ---Is cluster 0 available: " << eIter->GetCluster1()->IsAvailable() << std::endl;
+            std::cout << " ---Is cluster 1 available: " << eIter->GetCluster2()->IsAvailable() << std::endl;
+            std::cout << " ---XOverlap: " << eIter->GetOverlapResult().GetTwoViewXOverlap().GetTwoViewXOverlapSpan() << std::endl;
+            std::cout << " ---XOverlap fraction view0: " << eIter->GetOverlapResult().GetTwoViewXOverlap().GetXOverlapFraction0() << std::endl;
+            std::cout << " ---XOverlap fraction view1: " << eIter->GetOverlapResult().GetTwoViewXOverlap().GetXOverlapFraction1() << std::endl;
+            std::cout << " ---Matching score: " << eIter->GetOverlapResult().GetMatchingScore() << std::endl;
+            std::cout << " ---N. sampling points: " << eIter->GetOverlapResult().GetNSamplingPoints() << std::endl;
+            std::cout << " ---N. matched sampling points: " << eIter->GetOverlapResult().GetNMatchedSamplingPoints() << std::endl;
+            std::cout << " ---N. (re-)upsampled sampling points: " << eIter->GetOverlapResult().GetNReUpsampledSamplingPoints() << std::endl;
+            std::cout << " ---N. (re-)upsampled matched sampling points: " << eIter->GetOverlapResult().GetNMatchedReUpsampledSamplingPoints()
+                      << std::endl;
+            std::cout << " ---Correlation coeff.: " << eIter->GetOverlapResult().GetCorrelationCoefficient() << std::endl;
+            std::cout << " ---Locally matched fraction: " << eIter->GetOverlapResult().GetLocallyMatchedFraction() << std::endl;
 
             if (m_showEachIndividualElement)
             {
@@ -136,17 +136,17 @@ bool TransverseMatrixVisualizationTool::Run(TwoViewTransverseTracksAlgorithm *co
 
 StatusCode TransverseMatrixVisualizationTool::ReadSettings(const TiXmlHandle xmlHandle)
 {
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "MinClusterConnections", m_minClusterConnections));
+    PANDORA_RETURN_RESULT_IF_AND_IF(
+        STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "MinClusterConnections", m_minClusterConnections));
 
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "IgnoreUnavailableClusters", m_ignoreUnavailableClusters));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=,
+        XmlHelper::ReadValue(xmlHandle, "IgnoreUnavailableClusters", m_ignoreUnavailableClusters));
 
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "ShowEachIndividualElement", m_showEachIndividualElement));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=,
+        XmlHelper::ReadValue(xmlHandle, "ShowEachIndividualElement", m_showEachIndividualElement));
 
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle,
-        "ShowOnlyTrueMatchIndividualElements", m_showOnlyTrueMatchIndividualElements));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=,
+        XmlHelper::ReadValue(xmlHandle, "ShowOnlyTrueMatchIndividualElements", m_showOnlyTrueMatchIndividualElements));
 
     return STATUS_CODE_SUCCESS;
 }

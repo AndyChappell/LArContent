@@ -18,17 +18,18 @@ using namespace pandora;
 namespace lar_content
 {
 
-void CheatingNeutrinoIdTool::SelectOutputPfos(const pandora::Algorithm *const /*pAlgorithm*/, const SliceHypotheses &nuSliceHypotheses, const SliceHypotheses &crSliceHypotheses, PfoList &selectedPfos)
+void CheatingNeutrinoIdTool::SelectOutputPfos(const pandora::Algorithm *const /*pAlgorithm*/, const SliceHypotheses &nuSliceHypotheses,
+    const SliceHypotheses &crSliceHypotheses, PfoList &selectedPfos)
 {
     if (nuSliceHypotheses.size() != crSliceHypotheses.size())
         throw StatusCodeException(STATUS_CODE_INVALID_PARAMETER);
 
-    float bestNeutrinoWeight(0.f);
+    float        bestNeutrinoWeight(0.f);
     unsigned int bestSliceIndex(std::numeric_limits<unsigned int>::max());
 
     for (unsigned int sliceIndex = 0, nSlices = nuSliceHypotheses.size(); sliceIndex < nSlices; ++sliceIndex)
     {
-        float neutrinoWeight(0.f);
+        float          neutrinoWeight(0.f);
         const PfoList &neutrinoPfoList(nuSliceHypotheses.at(sliceIndex));
 
         for (const Pfo *const pNeutrinoPfo : neutrinoPfoList)

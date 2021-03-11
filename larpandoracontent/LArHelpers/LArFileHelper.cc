@@ -20,7 +20,7 @@ namespace lar_content
 
 std::string LArFileHelper::FindFileInPath(const std::string &unqualifiedFileName, const std::string &environmentVariable, const std::string &delimiter)
 {
-    StringVector filePaths;
+    StringVector      filePaths;
     const char *const pFilePathList(std::getenv(environmentVariable.c_str()));
 
     if (pFilePathList)
@@ -32,13 +32,14 @@ std::string LArFileHelper::FindFileInPath(const std::string &unqualifiedFileName
     for (const std::string &filePath : filePaths)
     {
         const std::string qualifiedFileNameAttempt(filePath + "/" + unqualifiedFileName);
-        struct stat fileInfo;
+        struct stat       fileInfo;
 
         if (0 == stat(qualifiedFileNameAttempt.c_str(), &fileInfo))
             return qualifiedFileNameAttempt;
     }
 
-    std::cout << "Unable to find file  " << unqualifiedFileName << " in any path specified by environment variable " << environmentVariable << ", delimiter " << delimiter << std::endl;
+    std::cout << "Unable to find file  " << unqualifiedFileName << " in any path specified by environment variable " << environmentVariable
+              << ", delimiter " << delimiter << std::endl;
     throw StatusCodeException(STATUS_CODE_NOT_FOUND);
 }
 

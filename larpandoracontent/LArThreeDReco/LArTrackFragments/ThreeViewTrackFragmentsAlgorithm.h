@@ -28,10 +28,10 @@ class FragmentTensorTool;
 /**
  *  @brief  ThreeViewTrackFragmentsAlgorithm class
  */
-class ThreeViewTrackFragmentsAlgorithm : public NViewTrackMatchingAlgorithm<ThreeViewMatchingControl<FragmentOverlapResult> >
+class ThreeViewTrackFragmentsAlgorithm : public NViewTrackMatchingAlgorithm<ThreeViewMatchingControl<FragmentOverlapResult>>
 {
 public:
-    typedef NViewTrackMatchingAlgorithm<ThreeViewMatchingControl<FragmentOverlapResult> > BaseAlgorithm;
+    typedef NViewTrackMatchingAlgorithm<ThreeViewMatchingControl<FragmentOverlapResult>> BaseAlgorithm;
 
     /**
      *  @brief  Default constructor
@@ -66,7 +66,7 @@ protected:
     pandora::StatusCode CalculateOverlapResult(const TwoDSlidingFitResult &fitResult1, const TwoDSlidingFitResult &fitResult2,
         const pandora::ClusterList &inputClusterList, const pandora::Cluster *&pBestMatchedCluster, FragmentOverlapResult &fragmentOverlapResult) const;
 
-    typedef std::unordered_map<const pandora::CaloHit*, const pandora::Cluster*> HitToClusterMap;
+    typedef std::unordered_map<const pandora::CaloHit *, const pandora::Cluster *> HitToClusterMap;
 
     /**
      *  @brief  Get the list of projected positions, in the third view, corresponding to a pair of sliding fit results
@@ -136,23 +136,23 @@ protected:
      */
     bool CheckOverlapResult(const FragmentOverlapResult &overlapResult) const;
 
-    void ExamineOverlapContainer();
+    void                ExamineOverlapContainer();
     pandora::StatusCode ReadSettings(const pandora::TiXmlHandle xmlHandle);
 
-    typedef std::unordered_map<const pandora::Cluster*, unsigned int> ClusterToMatchedHitsMap;
+    typedef std::unordered_map<const pandora::Cluster *, unsigned int> ClusterToMatchedHitsMap;
 
-    std::string         m_reclusteringAlgorithmName;        ///< Name of daughter algorithm to use for cluster re-building
+    std::string m_reclusteringAlgorithmName; ///< Name of daughter algorithm to use for cluster re-building
 
-    typedef std::vector<FragmentTensorTool*> TensorToolVector;
-    TensorToolVector    m_algorithmToolVector;              ///< The algorithm tool list
+    typedef std::vector<FragmentTensorTool *> TensorToolVector;
+    TensorToolVector                          m_algorithmToolVector; ///< The algorithm tool list
 
-    unsigned int        m_nMaxTensorToolRepeats;            ///< The maximum number of repeat loops over tensor tools
+    unsigned int m_nMaxTensorToolRepeats; ///< The maximum number of repeat loops over tensor tools
 
-    float               m_minXOverlap;                      ///< requirement on minimum X overlap for associated clusters
-    float               m_minXOverlapFraction;              ///< requirement on minimum X overlap fraction for associated clusters
-    float               m_maxPointDisplacementSquared;      ///< maximum allowed distance (squared) between projected points and associated hits
-    float               m_minMatchedSamplingPointFraction;  ///< minimum fraction of matched sampling points
-    unsigned int        m_minMatchedHits;                   ///< minimum number of matched calo hits
+    float        m_minXOverlap;                     ///< requirement on minimum X overlap for associated clusters
+    float        m_minXOverlapFraction;             ///< requirement on minimum X overlap fraction for associated clusters
+    float        m_maxPointDisplacementSquared;     ///< maximum allowed distance (squared) between projected points and associated hits
+    float        m_minMatchedSamplingPointFraction; ///< minimum fraction of matched sampling points
+    unsigned int m_minMatchedHits;                  ///< minimum number of matched calo hits
 };
 
 //------------------------------------------------------------------------------------------------------------------------------------------
@@ -164,7 +164,7 @@ class FragmentTensorTool : public pandora::AlgorithmTool
 {
 public:
     typedef ThreeViewTrackFragmentsAlgorithm::MatchingType::TensorType TensorType;
-    typedef std::vector<TensorType::ElementList::const_iterator> IteratorList;
+    typedef std::vector<TensorType::ElementList::const_iterator>       IteratorList;
 
     /**
      *  @brief  Run the algorithm tool

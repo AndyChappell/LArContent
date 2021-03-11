@@ -18,7 +18,7 @@ namespace lar_content
 /**
  *  @brief  ThreeViewMatchingControl class
  */
-template<typename T>
+template <typename T>
 class ThreeViewMatchingControl : public NViewMatchingControl
 {
 public:
@@ -44,32 +44,32 @@ public:
     TensorType &GetOverlapTensor();
 
 private:
-    void UpdateForNewCluster(const pandora::Cluster *const pNewCluster);
-    void UpdateUponDeletion(const pandora::Cluster *const pDeletedCluster);
-    const std::string &GetClusterListName(const pandora::HitType hitType) const;
+    void                        UpdateForNewCluster(const pandora::Cluster *const pNewCluster);
+    void                        UpdateUponDeletion(const pandora::Cluster *const pDeletedCluster);
+    const std::string &         GetClusterListName(const pandora::HitType hitType) const;
     const pandora::ClusterList &GetInputClusterList(const pandora::HitType hitType) const;
     const pandora::ClusterList &GetSelectedClusterList(const pandora::HitType hitType) const;
-    void SelectAllInputClusters();
-    void PrepareAllInputClusters();
-    void PerformMainLoop();
-    void TidyUp();
-    pandora::StatusCode ReadSettings(const pandora::TiXmlHandle xmlHandle);
+    void                        SelectAllInputClusters();
+    void                        PrepareAllInputClusters();
+    void                        PerformMainLoop();
+    void                        TidyUp();
+    pandora::StatusCode         ReadSettings(const pandora::TiXmlHandle xmlHandle);
 
-    const pandora::ClusterList *m_pInputClusterListU;           ///< Address of the input cluster list U
-    const pandora::ClusterList *m_pInputClusterListV;           ///< Address of the input cluster list V
-    const pandora::ClusterList *m_pInputClusterListW;           ///< Address of the input cluster list W
+    const pandora::ClusterList *m_pInputClusterListU; ///< Address of the input cluster list U
+    const pandora::ClusterList *m_pInputClusterListV; ///< Address of the input cluster list V
+    const pandora::ClusterList *m_pInputClusterListW; ///< Address of the input cluster list W
 
-    pandora::ClusterList        m_clusterListU;                 ///< The selected modified cluster list U
-    pandora::ClusterList        m_clusterListV;                 ///< The selected modified cluster list V
-    pandora::ClusterList        m_clusterListW;                 ///< The selected modified cluster list W
+    pandora::ClusterList m_clusterListU; ///< The selected modified cluster list U
+    pandora::ClusterList m_clusterListV; ///< The selected modified cluster list V
+    pandora::ClusterList m_clusterListW; ///< The selected modified cluster list W
 
-    TensorType                  m_overlapTensor;                ///< The overlap tensor
+    TensorType m_overlapTensor; ///< The overlap tensor
 
-    std::string                 m_inputClusterListNameU;        ///< The name of the view U cluster list
-    std::string                 m_inputClusterListNameV;        ///< The name of the view V cluster list
-    std::string                 m_inputClusterListNameW;        ///< The name of the view W cluster list
+    std::string m_inputClusterListNameU; ///< The name of the view U cluster list
+    std::string m_inputClusterListNameV; ///< The name of the view V cluster list
+    std::string m_inputClusterListNameW; ///< The name of the view W cluster list
 
-    friend class ThreeViewTrackFragmentsAlgorithm;              ///< ATTN This is for legacy purposes only
+    friend class ThreeViewTrackFragmentsAlgorithm; ///< ATTN This is for legacy purposes only
 
     template <typename U>
     friend class NViewMatchingAlgorithm;

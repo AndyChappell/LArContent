@@ -24,7 +24,7 @@ void DeltaRayShowerHitsTool::Run(ThreeDHitCreationAlgorithm *const pAlgorithm, c
     const CaloHitVector &inputTwoDHits, ProtoHitVector &protoHitVector)
 {
     if (PandoraContentApi::GetSettings(*pAlgorithm)->ShouldDisplayAlgorithmInfo())
-       std::cout << "----> Running Algorithm Tool: " << this->GetInstanceName() << ", " << this->GetType() << std::endl;
+        std::cout << "----> Running Algorithm Tool: " << this->GetInstanceName() << ", " << this->GetType() << std::endl;
 
     try
     {
@@ -51,8 +51,8 @@ void DeltaRayShowerHitsTool::Run(ThreeDHitCreationAlgorithm *const pAlgorithm, c
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-void DeltaRayShowerHitsTool::CreateDeltaRayShowerHits3D(const CaloHitVector &inputTwoDHits, const CaloHitVector &parentHits3D,
-    ProtoHitVector &protoHitVector) const
+void DeltaRayShowerHitsTool::CreateDeltaRayShowerHits3D(
+    const CaloHitVector &inputTwoDHits, const CaloHitVector &parentHits3D, ProtoHitVector &protoHitVector) const
 {
     for (const CaloHit *const pCaloHit2D : inputTwoDHits)
     {
@@ -62,17 +62,17 @@ void DeltaRayShowerHitsTool::CreateDeltaRayShowerHits3D(const CaloHitVector &inp
             const HitType hitType1((TPC_VIEW_U == hitType) ? TPC_VIEW_V : (TPC_VIEW_V == hitType) ? TPC_VIEW_W : TPC_VIEW_U);
             const HitType hitType2((TPC_VIEW_U == hitType) ? TPC_VIEW_W : (TPC_VIEW_V == hitType) ? TPC_VIEW_U : TPC_VIEW_V);
 
-            bool foundClosestPosition(false);
-            float closestDistanceSquared(std::numeric_limits<float>::max());
+            bool            foundClosestPosition(false);
+            float           closestDistanceSquared(std::numeric_limits<float>::max());
             CartesianVector closestPosition3D(0.f, 0.f, 0.f);
 
             for (const CaloHit *const pCaloHit3D : parentHits3D)
             {
                 const CartesianVector thisPosition3D(pCaloHit3D->GetPositionVector());
                 const CartesianVector thisPosition2D(LArGeometryHelper::ProjectPosition(this->GetPandora(), thisPosition3D, hitType));
-                const float thisDistanceSquared((pCaloHit2D->GetPositionVector() - thisPosition2D).GetMagnitudeSquared());
+                const float           thisDistanceSquared((pCaloHit2D->GetPositionVector() - thisPosition2D).GetMagnitudeSquared());
 
-                if (thisDistanceSquared <  closestDistanceSquared)
+                if (thisDistanceSquared < closestDistanceSquared)
                 {
                     foundClosestPosition = true;
                     closestDistanceSquared = thisDistanceSquared;

@@ -22,8 +22,8 @@ namespace lar_content
 {
 
 template <typename T>
-TwoDSlidingShowerFitResult::TwoDSlidingShowerFitResult(const T *const pT, const unsigned int slidingFitWindow, const float slidingFitLayerPitch,
-        const float showerEdgeMultiplier) :
+TwoDSlidingShowerFitResult::TwoDSlidingShowerFitResult(
+    const T *const pT, const unsigned int slidingFitWindow, const float slidingFitLayerPitch, const float showerEdgeMultiplier) :
     m_showerFitResult(TwoDSlidingFitResult(pT, slidingFitWindow, slidingFitLayerPitch)),
     m_negativeEdgeFitResult(TwoDSlidingShowerFitResult::LArTwoDShowerEdgeFit(pT, m_showerFitResult, NEGATIVE_SHOWER_EDGE, showerEdgeMultiplier)),
     m_positiveEdgeFitResult(TwoDSlidingShowerFitResult::LArTwoDShowerEdgeFit(pT, m_showerFitResult, POSITIVE_SHOWER_EDGE, showerEdgeMultiplier))
@@ -36,8 +36,10 @@ void TwoDSlidingShowerFitResult::GetShowerEdges(const float x, const bool widenI
 {
     edgePositions.clear();
     CartesianPointVector fitPositionVector;
-    PANDORA_THROW_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, this->GetNegativeEdgeFitResult().GetGlobalFitPositionListAtX(x, fitPositionVector));
-    PANDORA_THROW_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, this->GetPositiveEdgeFitResult().GetGlobalFitPositionListAtX(x, fitPositionVector));
+    PANDORA_THROW_RESULT_IF_AND_IF(
+        STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, this->GetNegativeEdgeFitResult().GetGlobalFitPositionListAtX(x, fitPositionVector));
+    PANDORA_THROW_RESULT_IF_AND_IF(
+        STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, this->GetPositiveEdgeFitResult().GetGlobalFitPositionListAtX(x, fitPositionVector));
 
     if (fitPositionVector.size() < 2)
     {
@@ -86,8 +88,8 @@ void TwoDSlidingShowerFitResult::GetShowerEdges(const float x, const bool widenI
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-TwoDSlidingFitResult TwoDSlidingShowerFitResult::LArTwoDShowerEdgeFit(const Cluster *const pCluster, const TwoDSlidingFitResult &fullShowerFit,
-    const ShowerEdge showerEdge, const float showerEdgeMultiplier)
+TwoDSlidingFitResult TwoDSlidingShowerFitResult::LArTwoDShowerEdgeFit(
+    const Cluster *const pCluster, const TwoDSlidingFitResult &fullShowerFit, const ShowerEdge showerEdge, const float showerEdgeMultiplier)
 {
     CartesianPointVector pointVector;
     LArClusterHelper::GetCoordinateVector(pCluster, pointVector);
@@ -129,10 +131,9 @@ TwoDSlidingFitResult TwoDSlidingShowerFitResult::LArTwoDShowerEdgeFit(const Cart
     for (const FitCoordinateMap::value_type &mapEntry : fitCoordinateMap)
     {
         // ATTN Could modify this hit selection, e.g. add inertia to edge positions
-        bool bestFitCoordinateFound(false);
-        FitCoordinate bestFitCoordinate = (POSITIVE_SHOWER_EDGE == showerEdge) ?
-            FitCoordinate(0.f, -std::numeric_limits<float>::max()) :
-            FitCoordinate(0.f, +std::numeric_limits<float>::max());
+        bool          bestFitCoordinateFound(false);
+        FitCoordinate bestFitCoordinate = (POSITIVE_SHOWER_EDGE == showerEdge) ? FitCoordinate(0.f, -std::numeric_limits<float>::max())
+                                                                               : FitCoordinate(0.f, +std::numeric_limits<float>::max());
 
         for (const FitCoordinate &fitCoordinate : mapEntry.second)
         {

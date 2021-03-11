@@ -128,7 +128,7 @@ StatusCode ThreeDSlidingFitResult::GetGlobalFitPosition(const float rL, Cartesia
         return STATUS_CODE_INVALID_PARAMETER;
 
     // Get local positions from each sliding fit (TODO: Make this more efficient)
-    CartesianVector firstPosition(0.f, 0.f, 0.f), secondPosition(0.f, 0.f, 0.f);
+    CartesianVector  firstPosition(0.f, 0.f, 0.f), secondPosition(0.f, 0.f, 0.f);
     const StatusCode statusCode1(m_firstFitResult.GetGlobalFitPosition(rL, firstPosition));
 
     if (STATUS_CODE_SUCCESS != statusCode1)
@@ -161,7 +161,7 @@ StatusCode ThreeDSlidingFitResult::GetGlobalFitDirection(const float rL, Cartesi
         return STATUS_CODE_INVALID_PARAMETER;
 
     // Get local directions from each sliding fit (TODO: Make this more efficient)
-    CartesianVector firstDirection(0.f, 0.f, 0.f), secondDirection(0.f, 0.f, 0.f);
+    CartesianVector  firstDirection(0.f, 0.f, 0.f), secondDirection(0.f, 0.f, 0.f);
     const StatusCode statusCode1(m_firstFitResult.GetGlobalFitDirection(rL, firstDirection));
 
     if (STATUS_CODE_SUCCESS != statusCode1)
@@ -218,12 +218,12 @@ TrackState ThreeDSlidingFitResult::GetPrimaryAxis(const CartesianPointVector *co
     if (pPointVector->size() < 2)
         throw StatusCodeException(STATUS_CODE_INVALID_PARAMETER);
 
-    CartesianVector centroid(0.f, 0.f, 0.f);
+    CartesianVector            centroid(0.f, 0.f, 0.f);
     LArPcaHelper::EigenVectors eigenVecs;
-    LArPcaHelper::EigenValues eigenValues(0.f, 0.f, 0.f);
+    LArPcaHelper::EigenValues  eigenValues(0.f, 0.f, 0.f);
     LArPcaHelper::RunPca(*pPointVector, centroid, eigenValues, eigenVecs);
 
-    float minProjection(std::numeric_limits<float>::max());
+    float           minProjection(std::numeric_limits<float>::max());
     CartesianVector fitDirection(eigenVecs.at(0));
 
     // By convention, the primary axis has a positive z-component.
@@ -248,17 +248,17 @@ CartesianVector ThreeDSlidingFitResult::GetSeedDirection(const CartesianVector &
     const float py(std::fabs(axisDirection.GetY()));
     const float pz(std::fabs(axisDirection.GetZ()));
 
-    if (px < std::min(py,pz) + std::numeric_limits<float>::epsilon())
+    if (px < std::min(py, pz) + std::numeric_limits<float>::epsilon())
     {
         return CartesianVector(1.f, 0.f, 0.f);
     }
 
-    if (py < std::min(pz,px) + std::numeric_limits<float>::epsilon())
+    if (py < std::min(pz, px) + std::numeric_limits<float>::epsilon())
     {
         return CartesianVector(0.f, 1.f, 0.f);
     }
 
-    if (pz < std::min(px,py) + std::numeric_limits<float>::epsilon())
+    if (pz < std::min(px, py) + std::numeric_limits<float>::epsilon())
     {
         return CartesianVector(0.f, 0.f, 1.f);
     }

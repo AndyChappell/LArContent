@@ -79,7 +79,7 @@ public:
         bool   m_isInitialized; ///< Whether the number has been initialized
     };
 
-    typedef InitializedDouble MvaFeature;
+    typedef InitializedDouble       MvaFeature;
     typedef std::vector<MvaFeature> MvaFeatureVector;
 };
 
@@ -127,17 +127,13 @@ public:
 //------------------------------------------------------------------------------------------------------------------------------------------
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-inline MvaTypes::InitializedDouble::InitializedDouble() :
-    m_number(0.),
-    m_isInitialized(false)
+inline MvaTypes::InitializedDouble::InitializedDouble() : m_number(0.), m_isInitialized(false)
 {
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-inline MvaTypes::InitializedDouble::InitializedDouble(const double number) :
-    m_number(number),
-    m_isInitialized(true)
+inline MvaTypes::InitializedDouble::InitializedDouble(const double number) : m_number(number), m_isInitialized(true)
 {
 }
 
