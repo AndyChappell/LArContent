@@ -38,6 +38,7 @@ StreamingAlgorithm::~StreamingAlgorithm()
 
 StatusCode StreamingAlgorithm::Run()
 {
+    unsigned int i{0};
     for (std::string listName : m_inputListNames)
     {
         std::string algStreamName{"Algorithms" + listName};
@@ -56,16 +57,21 @@ StatusCode StreamingAlgorithm::Run()
                 }
             }
             // Save the current list to the target output list
-            PandoraContentApi::SaveList<Cluster>(*this, m_outputListName);
+            if (!m_outputListName.empty())
+                PandoraContentApi::SaveList<Cluster>(*this, m_outputListName);
+            else
+                PandoraContentApi::SaveList<Cluster>(*this, m_outputListNames.at(i));
         }
         else if (code != STATUS_CODE_NOT_INITIALIZED)
         {
             return code;
         }
+        ++i;
     }
 
-    // Set the current list to the final output list
-    PandoraContentApi::ReplaceCurrentList<Cluster>(*this, m_outputListName);
+    // If we have a single output list specified, set that list as the current list
+    if (!m_outputListName.empty())
+        PandoraContentApi::ReplaceCurrentList<Cluster>(*this, m_outputListName);
 
     return STATUS_CODE_SUCCESS;
 }
@@ -89,7 +95,22 @@ StatusCode StreamingAlgorithm::ReadSettings(const TiXmlHandle xmlHandle)
         return STATUS_CODE_NOT_FOUND;
     }
 
-    PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadValue(xmlHandle, "OutputListName", m_outputListName));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "OutputListName",
+        m_outputListName));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadVectorOfValues(xmlHandle, "OutputListNames",
+        m_outputListNames));
+    if ((m_outputListName.empty() && m_outputListNames.empty()) || (!m_outputListName.empty() && !m_outputListNames.empty()))
+    {
+        std::cout << "StreamingAlgorithm::ReadSettings - Error: You must provide either a single output list name OR a list of output list names" <<
+            std::endl;
+        return STATUS_CODE_NOT_FOUND;
+    }
+    if (!m_outputListNames.empty() && m_inputListNames.size() != m_outputListNames.size())
+    {
+        std::cout << "StreamingAlgorithm::ReadSettings - Error: When providing a list of output lists, there should be a one-to-one " <<
+            "correspondence with the list of input lists" << std::endl;
+        return STATUS_CODE_INVALID_PARAMETER;
+    }
 
     for (std::string listName : m_inputListNames)
     {

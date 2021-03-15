@@ -34,6 +34,7 @@ private:
     std::string m_outputListName;               ///< The name of the output list
     std::string m_listType;                     ///< The type of the input lists (currently only Cluster is supported)
     pandora::StringVector m_inputListNames;     ///< The names of the input lists
+    pandora::StringVector m_outputListNames;    ///< Names of the output lists if not combining into a single list at the end
     StreamAlgorithmMap m_streamAlgorithmMap;    ///< A map from individual streams to the algorithms that stream should run
 };
 
