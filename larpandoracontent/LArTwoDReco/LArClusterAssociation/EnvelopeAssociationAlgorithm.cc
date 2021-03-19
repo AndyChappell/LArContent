@@ -9,6 +9,7 @@
 #include "Pandora/AlgorithmHeaders.h"
 
 #include "larpandoracontent/LArHelpers/LArClusterHelper.h"
+#include "larpandoracontent/LArHelpers/LArGeometryHelper.h"
 #include "larpandoracontent/LArHelpers/LArPcaHelper.h"
 
 #include "larpandoracontent/LArTwoDReco/LArClusterAssociation/EnvelopeAssociationAlgorithm.h"
@@ -17,6 +18,161 @@ using namespace pandora;
 
 namespace lar_content
 {
+
+EnvelopeAssociationAlgorithm::AssociationCandidate::AssociationCandidate(const Cone &cone, const ClusterList &clusters) :
+    m_cone(cone),
+    m_clusters(clusters)
+{
+    for (const Cluster *pCluster : clusters)
+    {
+        const OrderedCaloHitList &orderedCaloHits(pCluster->GetOrderedCaloHitList());
+        orderedCaloHits.FillCaloHitList(m_hits);
+    }
+    m_sortedHits = CaloHitVector(m_hits.begin(), m_hits.end());
+    std::sort(m_sortedHits.begin(), m_sortedHits.end(), LArClusterHelper::SortHitsByPositionInX);
+    m_xMin = m_sortedHits.front()->GetPositionVector().GetX();
+    m_xMax = m_sortedHits.back()->GetPositionVector().GetX();
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+bool EnvelopeAssociationAlgorithm::AssociationCandidate::Overlaps(const AssociationCandidate &other) const
+{
+    const float thisRange{m_xMax - m_xMin};
+    const float otherRange{other.m_xMax - other.m_xMin};
+    const float overlapStart{std::max(m_xMin, other.m_xMin)};
+    const float overlapFinish{std::min(m_xMax, other.m_xMax)};
+    if (overlapFinish >= overlapStart)
+    {
+        const float overlapSize{overlapFinish - overlapStart};
+        if (overlapSize > std::numeric_limits<float>::epsilon())
+        {
+            // ATTN - Neither range can be zero if we're here, so need to check
+            if ((overlapSize / thisRange > 0.67f) && (overlapSize / otherRange > 0.67f))
+                return true;
+            else
+                return false;
+        }
+        else
+        {   // candidates are isochronous at the same coordinate
+            return true;
+        }
+    }
+    else
+    {
+        return false;
+    }   
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+EnvelopeAssociationAlgorithm::OverlapCandidates::OverlapCandidates(const Pandora &pandora, const AssociationCandidate &candidate1,
+    const AssociationCandidate &candidate2) :
+    m_candidate1(candidate1),
+    m_candidate2(candidate2)
+{
+    const CaloHitVector &hits1{m_candidate1.GetSortedCaloHits()};
+    const CaloHitVector &hits2{m_candidate2.GetSortedCaloHits()};
+
+    const float overlapStart{std::max(candidate1.GetMinX(), candidate2.GetMinX())};
+    const float overlapFinish{std::min(candidate1.GetMaxX(), candidate2.GetMaxX())};
+    // Bins are 0.1 cm wide - ensure 1 bin in case start == finish (isochronous case)
+    const int N{std::max(1, static_cast<int>(std::ceil(10.f * (overlapFinish - overlapStart))))};
+    CaloHitList *pBinnedHits1{new CaloHitList[N]}, *pBinnedHits2{new CaloHitList[N]};
+
+    for (const CaloHit *pCaloHit : hits1)
+    {
+        const float hitX{pCaloHit->GetPositionVector().GetX()};
+        const int bin{static_cast<int>(std::floor(10.f * (hitX - overlapStart)))};
+        if (bin >= 0 && bin < N)
+            pBinnedHits1[bin].emplace_back(pCaloHit);
+        // ATTN - assumes hits are sorted
+        if (bin >= N)
+            break;
+    }
+
+    for (const CaloHit *pCaloHit : hits2)
+    {
+        const float hitX{pCaloHit->GetPositionVector().GetX()};
+        const int bin{static_cast<int>(std::floor(10.f * (hitX - overlapStart)))};
+        if (bin >= 0 && bin < N)
+            pBinnedHits2[bin].emplace_back(pCaloHit);
+        // ATTN - assumes hits are sorted
+        if (bin >= N)
+            break;
+    }
+
+    float chi2sum{0.f};
+    int usedBins{0};
+    CartesianVector dummy(0.f, 0.f, 0.f);
+    for (int i = 0; i < N; ++i)
+    {
+        if (!pBinnedHits1[i].empty() && !pBinnedHits2[i].empty())
+        {
+            float minChi2{std::numeric_limits<float>::max()};
+            for (const CaloHit *pCaloHit1 : pBinnedHits1[i])
+            {
+                for (const CaloHit *pCaloHit2 : pBinnedHits2[i])
+                {
+                    float chi2{0.f};
+                    LArGeometryHelper::MergeTwoPositions3D(pandora, pCaloHit1->GetHitType(), pCaloHit2->GetHitType(),
+                        pCaloHit1->GetPositionVector(), pCaloHit2->GetPositionVector(), dummy, chi2);
+                    if (chi2 < minChi2)
+                        minChi2 = chi2;
+                }
+            }
+            if (minChi2 < std::numeric_limits<float>::max())
+            {
+                chi2sum += minChi2;
+                ++usedBins;
+            }
+        }
+    }
+    m_chi2 = chi2sum / N;
+
+    // Note, may not want to delete at this stage in the future, might defer to destructor
+    delete[] pBinnedHits1;
+    delete[] pBinnedHits2;
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+void EnvelopeAssociationAlgorithm::OverlapCandidates::AddToMergeMap(ClusterMergeMap &clusterMergeMap) const
+{
+    const ClusterList &clusterList1{m_candidate1.GetClusters()};
+    const Cluster *pSeed1{clusterList1.front()};
+    for (const Cluster *pCluster : clusterList1)
+    {
+        if (pCluster != pSeed1 && clusterMergeMap.find(pCluster) == clusterMergeMap.end())
+        {
+            clusterMergeMap[pSeed1].emplace_back(pCluster);
+            clusterMergeMap[pCluster].emplace_back(pSeed1);
+        }
+    }
+    const ClusterList &clusterList2{m_candidate2.GetClusters()};
+    const Cluster *pSeed2{clusterList2.front()};
+    for (const Cluster *pCluster : clusterList2)
+    {
+        if (pCluster != pSeed2 && clusterMergeMap.find(pCluster) == clusterMergeMap.end())
+        {
+            clusterMergeMap[pSeed2].emplace_back(pCluster);
+            clusterMergeMap[pCluster].emplace_back(pSeed2);
+        }
+    }
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+bool EnvelopeAssociationAlgorithm::EnvelopeAssociationAlgorithm::OverlapCandidates::SharesSeed(const OverlapCandidates &other) const
+{
+    const Cluster *pThisSeed1{m_candidate1.GetClusters().front()}, *pThisSeed2{m_candidate2.GetClusters().front()};
+    const Cluster *pOtherSeed1{other.m_candidate1.GetClusters().front()}, *pOtherSeed2{other.m_candidate2.GetClusters().front()};
+    return pThisSeed1 == pOtherSeed1 || pThisSeed1 == pOtherSeed2 || pThisSeed2 == pOtherSeed1 || pThisSeed2 == pOtherSeed2;
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+//------------------------------------------------------------------------------------------------------------------------------------------
 
 EnvelopeAssociationAlgorithm::EnvelopeAssociationAlgorithm() :
     m_minClusterLayers{1},
@@ -47,7 +203,8 @@ void EnvelopeAssociationAlgorithm::GetListOfCleanClusters(const ClusterList *con
 
 void EnvelopeAssociationAlgorithm::PopulateClusterMergeMap(const ClusterVector &clusterVector, ClusterMergeMap &clusterMergeMap) const
 {
-    if (m_runCount > 1)
+//    if (m_runCount > 1)
+    if (m_runCount > 0)
         return;
     if (m_runCount == 0)
         this->AssociateClusters(clusterVector, clusterMergeMap, m_minSeedCaloHits);
@@ -61,44 +218,105 @@ void EnvelopeAssociationAlgorithm::PopulateClusterMergeMap(const ClusterVector &
 void EnvelopeAssociationAlgorithm::AssociateClusters(const pandora::ClusterVector &clusterVector, ClusterMergeMap &clusterMergeMap,
     const unsigned int minSeedCaloHits) const
 {
-    ClusterList seedClusters, targetClusters;
-    for (ClusterVector::const_iterator iter = clusterVector.begin(); iter != clusterVector.end(); ++iter)
-    {
-        const Cluster *const pCluster{*iter};
-        if (pCluster->GetNCaloHits() > minSeedCaloHits)
-            seedClusters.emplace_back(pCluster);
-        else
-            targetClusters.emplace_back(pCluster);
+    // Separate the clusters into their respective views
+    std::map<HitType, ClusterList> viewToClustersMap;
+    for (const Cluster *pCluster : clusterVector)
+        viewToClustersMap[LArClusterHelper::GetClusterHitType(pCluster)].emplace_back(pCluster);
+    // Might want to throw here
+    if (viewToClustersMap.empty())
+        return;
+
+    std::list<HitType> availableViews;
+    for (const auto [ view, list ] : viewToClustersMap)
+    {   (void)list;
+        availableViews.emplace_back(view);
     }
-    for (const Cluster *pSeed : seedClusters)
+    ViewToAssociationCandidatesMap viewToCandidatesMap;
+    for (const auto [ currentView, currentList ] : viewToClustersMap)
     {
-        CartesianPointVector boundingVertices;
-        this->GetBoundingShapes(pSeed, boundingVertices);
-
-        // Find the clusters with a significant fraction of hits (50%) contained by the cone and associate
-        for (const Cluster * pTarget : targetClusters)
+        ClusterList seedClusters, targetClusters;
+        for (const Cluster *pCluster : currentList)
         {
-            if (clusterMergeMap.find(pTarget) != clusterMergeMap.end())
-                continue;
-            if (!this->IsClusterContained(boundingVertices, pTarget))
-                continue;
+            if (pCluster->GetNCaloHits() > minSeedCaloHits)
+                seedClusters.emplace_back(pCluster);
+            else
+                targetClusters.emplace_back(pCluster);
+        }
+        for (const Cluster *pSeed : seedClusters)
+        {
+            Cone cone(this->GetBoundingCone(pSeed));
+            ClusterList containedClusters{pSeed};
+            for (const Cluster * pTarget : targetClusters)
+            {
+                if (!this->IsClusterContained(cone, pTarget))
+                    continue;
+                containedClusters.emplace_back(pTarget);
+            }
+            AssociationCandidate candidate(cone, containedClusters);
+            viewToCandidatesMap[currentView].emplace_back(candidate);
 
-            clusterMergeMap[pSeed].emplace_back(pTarget);
-            clusterMergeMap[pTarget].emplace_back(pSeed);
+/*            PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1.f, 1.f, 1.f));
+            std::string viewStr{currentView == HitType::TPC_VIEW_U ? "u" : currentView == HitType::TPC_VIEW_V ? "v" : "w"};
+            PANDORA_MONITORING_API(VisualizeClusters(this->GetPandora(), &containedClusters, viewStr, RED, false));
+            PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));*/
+
+            /*
+            // Find the clusters with a significant fraction of hits (50%) contained by the cone and associate
+            for (const Cluster * pTarget : targetClusters)
+            {
+                if (clusterMergeMap.find(pTarget) != clusterMergeMap.end())
+                    continue;
+                if (!this->IsClusterContained(boundingVertices, pTarget))
+                    continue;
+
+                clusterMergeMap[pSeed].emplace_back(pTarget);
+                clusterMergeMap[pTarget].emplace_back(pSeed);
+            }
+            */
         }
     }
+
+    // Collect up the overlap candidates - can have competing views at this stage
+    std::list<OverlapCandidates> overlapCandidatesList;
+    for (const AssociationCandidate &candidateW : viewToCandidatesMap[TPC_VIEW_W])
+    {
+        for (const AssociationCandidate &candidateV : viewToCandidatesMap[TPC_VIEW_V])
+        {
+            if (candidateW.Overlaps(candidateV))
+            {
+                OverlapCandidates overlap(this->GetPandora(), candidateW, candidateV);
+                if (overlap.GetChiSquared() < 5e-5)
+                    overlapCandidatesList.emplace_back(overlap);
+            }
+        }
+    }
+    overlapCandidatesList.sort();
+    std::list<OverlapCandidates> mergeList;
+    for (const OverlapCandidates &candidates : overlapCandidatesList)
+    {
+        bool isGood{true};
+        for (const OverlapCandidates &goodCandidates : mergeList)
+        {
+            if (candidates.SharesSeed(goodCandidates))
+            {
+                isGood = false;
+                break;
+            }
+        }
+        if (isGood)
+            mergeList.emplace_back(candidates);
+    }
+    // Flag the best candidates for merging
+    for (const OverlapCandidates &candidates : mergeList)
+        candidates.AddToMergeMap(clusterMergeMap);
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-bool EnvelopeAssociationAlgorithm::IsClusterContained(const CartesianPointVector &boundingVertices, const Cluster *const pCluster) const
+bool EnvelopeAssociationAlgorithm::IsClusterContained(const Cone &cone, const Cluster *const pCluster) const
 {
-    // Vertices of the extended cone
-    const CartesianVector &a(boundingVertices[0]);
-    const CartesianVector &b(boundingVertices[3]);
-    const CartesianVector &c(boundingVertices[4]);
-    CartesianVector ab(b); ab -= a;
-    CartesianVector ac(c); ac -= a;
+    CartesianVector ab(cone.m_b); ab -= cone.m_a;
+    CartesianVector ac(cone.m_c); ac -= cone.m_a;
 
     const OrderedCaloHitList &orderedCaloHitList(pCluster->GetOrderedCaloHitList());
     CaloHitList caloHits;
@@ -106,7 +324,7 @@ bool EnvelopeAssociationAlgorithm::IsClusterContained(const CartesianPointVector
     CaloHitList containedHits, uncontainedHits;
     for (const CaloHit *pCaloHit : caloHits)
     {
-        CartesianVector ap(pCaloHit->GetPositionVector()); ap -= a;
+        CartesianVector ap(pCaloHit->GetPositionVector()); ap -= cone.m_a;
         if (this->IsPointContained(ab, ac, ap))
             containedHits.emplace_back(pCaloHit);
         else
@@ -138,7 +356,7 @@ bool EnvelopeAssociationAlgorithm::IsPointContained(const CartesianVector &ab, c
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-void EnvelopeAssociationAlgorithm::GetBoundingShapes(const Cluster *const pCluster, CartesianPointVector &boundingVertices) const
+EnvelopeAssociationAlgorithm::Cone EnvelopeAssociationAlgorithm::GetBoundingCone(const Cluster *const pCluster) const
 {
     // Retrieve the hits for PCA
     const OrderedCaloHitList &orderedCaloHitList(pCluster->GetOrderedCaloHitList());
@@ -178,13 +396,11 @@ void EnvelopeAssociationAlgorithm::GetBoundingShapes(const Cluster *const pClust
 
     CartesianVector p2(p1);
     CartesianVector p2r(eigenVectors[1]), p2l(0.f, 0.f, 0.f);
-    CartesianVector p3r(eigenVectors[1]), p3l(0.f, 0.f, 0.f);
     if (m_runCount > 0)
     {   // Broader cone surrounding the seed cluster
         p2r *= 3.5f * length * eigenRatio;
         p2l -= p2r;
         p2r += p2; p2l += p2;
-        p3r = p2r; p3l = p2l;
     }
     else
     {
@@ -193,11 +409,6 @@ void EnvelopeAssociationAlgorithm::GetBoundingShapes(const Cluster *const pClust
         p2r *= 2 * length * eigenRatio;
         p2l -= p2r;
         p2r += p2; p2l += p2;
-
-        // Define an interior box within the extended cone
-        p3r *= length * eigenRatio;
-        p3l -= p3r;
-        p3r += p2; p3l += p2;
     }
 
     if (m_visualize && LArClusterHelper::GetClusterHitType(pCluster) == HitType::TPC_VIEW_W)
@@ -207,8 +418,6 @@ void EnvelopeAssociationAlgorithm::GetBoundingShapes(const Cluster *const pClust
         PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &p1l, &p0, "C", BLUE, 3, 1));
         PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &p1r, &p2r, "D", RED, 3, 1));
         PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &p1l, &p2l, "E", RED, 3, 1));
-        PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &p1r, &p3r, "F", GREEN, 3, 1));
-        PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &p1l, &p3l, "G", GREEN, 3, 1));
         PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &p2r, &p2l, "H", RED, 3, 1));
         PANDORA_MONITORING_API(Pause(this->GetPandora()));
     }
@@ -222,19 +431,82 @@ void EnvelopeAssociationAlgorithm::GetBoundingShapes(const Cluster *const pClust
         PANDORA_MONITORING_API(Pause(this->GetPandora()));
     }
 
-    boundingVertices.emplace_back(p0);     // Origin of cone
-    boundingVertices.emplace_back(p1l);    // 'Left' vertex of primary
-    boundingVertices.emplace_back(p1r);    // 'Right' vertex of primary
-    boundingVertices.emplace_back(p2l);    // 'Left' vertex of extended cone
-    boundingVertices.emplace_back(p2r);    // 'Right' vertex of extended cone
-    boundingVertices.emplace_back(p3l);    // 'Left' downstream vertex of extended box
-    boundingVertices.emplace_back(p3r);    // 'Right' downstream vertex of extended box
+    Cone cone(p0, p2l, p2r);    // origin, 'left' vertex, 'right' vertex
+    return cone;
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+StatusCode EnvelopeAssociationAlgorithm::Run()
+{
+    ClusterList allClusters;
+    const ClusterList *pClusterList{nullptr};
+
+    for (const std::string listName : m_inputListNames)
+    {
+        PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_INITIALIZED, !=, PandoraContentApi::GetList(*this, listName,
+            pClusterList));
+        if (pClusterList && !pClusterList->empty())
+        {
+            m_viewToListMap[LArClusterHelper::GetClusterHitType(pClusterList->front())] = listName;
+            for (const Cluster *const pCluster : *pClusterList)
+                allClusters.emplace_back(pCluster);
+        }
+    }
+    if (allClusters.empty())
+    {
+        std::cout << "EnvelopeAssoicationAlgorithm: Error - no clusters found" << std::endl;
+        return STATUS_CODE_NOT_INITIALIZED;
+    }
+
+    while (true)
+    {
+        // Collect the clean clusters in all views and sort them - doesn't matter that views are mixed here
+        ClusterVector unsortedVector, clusterVector;
+        this->GetListOfCleanClusters(&allClusters, unsortedVector);
+        this->GetSortedListOfCleanClusters(unsortedVector, clusterVector);
+
+        ClusterMergeMap clusterMergeMap;
+        this->PopulateClusterMergeMap(clusterVector, clusterMergeMap);
+
+        if (clusterMergeMap.empty())
+            break;
+
+        // Here we care about the views and Need to separate them
+        std::map<HitType, ClusterVector> clusterVectors;
+        std::map<HitType, ClusterMergeMap> clusterMergeMaps;
+        for (const Cluster *pCluster : clusterVector)
+            clusterVectors[LArClusterHelper::GetClusterHitType(pCluster)].emplace_back(pCluster);
+        for (auto [ pSeed, targets ] : clusterMergeMap)
+        {
+            const HitType view{LArClusterHelper::GetClusterHitType(pSeed)};
+            clusterMergeMaps[view][pSeed] = targets;
+        }
+        for (auto [ view, map ] : clusterMergeMaps)
+        {
+            try
+            {
+                // This is needed because the parent class makes assumptions about the list it is working with
+                m_inputClusterListName = m_viewToListMap[view];
+                if (!map.empty())
+                    this->MergeClusters(clusterVectors[view], map);
+            }
+            catch (...)
+            {
+                std::cout << "Boom!" << std::endl;
+            }
+        }
+    }
+
+    return STATUS_CODE_SUCCESS;
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
 StatusCode EnvelopeAssociationAlgorithm::ReadSettings(const TiXmlHandle xmlHandle)
 {
+    PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadVectorOfValues(xmlHandle, "InputListNames", m_inputListNames));
+
     PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "MinClusterLayers",
         m_minClusterLayers));
     PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "MinSeedCaloHits",

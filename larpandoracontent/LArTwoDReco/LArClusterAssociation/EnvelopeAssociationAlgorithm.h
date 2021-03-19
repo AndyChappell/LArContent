@@ -27,6 +27,161 @@ public:
     EnvelopeAssociationAlgorithm();
 
 private:
+    struct Cone
+    {
+        /**
+         *  @brief Constructor
+         *
+         *  @param  a a vertex describing the cone
+         *  @param  b a vertex describing the cone
+         *  @param  c a vertex describing the cone
+         */
+        Cone(const pandora::CartesianVector &a, const pandora::CartesianVector &b, const pandora::CartesianVector &c) :
+            m_a(a),
+            m_b(b),
+            m_c(c)
+        {
+        }
+
+        const pandora::CartesianVector m_a; ///< A vertex of the bounding envelope
+        const pandora::CartesianVector m_b; ///< A vertex of the bounding envelope
+        const pandora::CartesianVector m_c; ///< A vertex of the bounding envelope
+    };
+
+    class AssociationCandidate
+    {
+    public:
+        /**
+         *  @brief  Constructor
+         *
+         *  @param  cone The bounding region for hits
+         *  @param  clusters the clusters contained within the bounding region
+         */
+        AssociationCandidate(const Cone &cone, const pandora::ClusterList &clusters);
+
+        /**
+         *  @brief  Retrieve the list of associated clusters
+         *
+         *  @return The list of assoiciated clusters
+         */
+        const pandora::ClusterList &GetClusters() const
+        {
+            return m_clusters;
+        }
+
+        /**
+         *  @brief  Retrieve the hits for this association candidate
+         *
+         *  @return The hits for the association candidate
+         */
+        const pandora::CaloHitList &GetCaloHits() const
+        {
+            return m_hits;
+        }
+
+        /**
+         *  @brief  Retrieve the sorted hits for this association candidate
+         *
+         *  @return The sorted hits for the association candidate
+         */
+        const pandora::CaloHitVector &GetSortedCaloHits() const
+        {
+            return m_sortedHits;
+        }
+
+        /**
+         *  @brief  Retrieve the minimum x coordinate
+         *
+         *  @return The minimum x coordinate for the candidate
+         */
+        float GetMinX() const
+        {
+            return m_xMin;
+        }
+
+        /**
+         *  @brief  Retrieve the maximum x coordinate
+         *
+         *  @return The maximum x coordinate for the candidate
+         */
+        float GetMaxX() const
+        {
+            return m_xMax;
+        }
+
+        /**
+         *  @brief  Retrieve the hits for this association candidate
+         *
+         *  @return The hits for the association candidate
+         */
+        bool Overlaps(const AssociationCandidate &other) const;
+
+    private:
+        Cone m_cone;                            ///< The bounding envelope
+        pandora::ClusterList m_clusters;        ///< The clusters contained within the bounding envelope
+        pandora::CaloHitList m_hits;            ///< The hits belonging to the contained clusters
+        pandora::CaloHitVector m_sortedHits;    ///< The sorted hits belonging to the contained clusters
+        float m_xMin;                           ///< The minimum x coordinate of the contained hits
+        float m_xMax;                           ///< The maximum x coordinate of the contained hits
+    };
+    typedef std::list<AssociationCandidate> AssociationCandidateList;
+    typedef std::map<pandora::HitType, AssociationCandidateList> ViewToAssociationCandidatesMap;
+    typedef std::map<pandora::HitType, AssociationCandidate> ViewToAssociationCandiateMap;
+
+    class OverlapCandidates
+    {
+    public:
+        /**
+         *  @brief  Constructor
+         *
+         *  @param  pandora the Pandora instance
+         *  @param  candidate1 a candidate set of clusters for merging in one view
+         *  @param  candidate2 a candidate set of clusters for merging in a second view
+         */
+        OverlapCandidates(const pandora::Pandora &pandora, const AssociationCandidate &candidate1, const AssociationCandidate &candidate2);
+
+        /**
+         *  @brief Adds these overlap candidates to the merge map
+         *
+         *  @param  clusterMergeMap the cluster merge map to populate
+         */
+        void AddToMergeMap(ClusterMergeMap &clusterMergeMap) const;
+
+        /**
+         *  @brief Check if this object shares a seed cluster with another OverlapCandidates object
+         *
+         *  @param other the other OverlapCandidates object
+         */
+        bool SharesSeed(const OverlapCandidates &other) const;
+
+        /**
+         *  @brief Retrieve the chi-squared value describing the quality of the match between the two candidates.
+         *
+         *  @return the chi-squared value
+         */
+        float GetChiSquared() const
+        {
+            return m_chi2;
+        }
+
+        /**
+         *  @brief Check if this object has a lower chi-squared value than the other object
+         *
+         *  @param  other the other object against which to compare
+         *  @return true if the chi-squared value is lower, false otherwise
+         */
+        bool operator <(const OverlapCandidates &other) const
+        {
+            return m_chi2 < other.m_chi2;
+        }
+
+    private:
+        AssociationCandidate m_candidate1;      ///< An association candidate in one view
+        AssociationCandidate m_candidate2;      ///< An association candidate in a second view
+        float m_chi2;                           ///< The chi-squared value for the match between views
+    };
+
+    virtual pandora::StatusCode Run();
     pandora::StatusCode ReadSettings(const pandora::TiXmlHandle xmlHandle);
     void GetListOfCleanClusters(const pandora::ClusterList *const pClusterList, pandora::ClusterVector &clusterVector) const;
     void PopulateClusterMergeMap(const pandora::ClusterVector &clusterVector, ClusterMergeMap &clusterMergeMap) const;
@@ -43,12 +198,12 @@ private:
     /**
      *  @brief  Determine whether a target cluster is contained by a bounding region
      *
-     *  @param  boundVertices the bounding vertices
+     *  @param  cone the bounding cone
      *  @param  pCluster the target cluster
      *
      *  @return whether the cluster is contained within the bounding region
      */
-    bool IsClusterContained(const pandora::CartesianPointVector &boundingVertices, const pandora::Cluster *const pCluster) const;
+    bool IsClusterContained(const Cone &cone, const pandora::Cluster *const pCluster) const;
 
     /**
      *  @brief  Determines if a point is contained within a triangle using the Barycentric technique, as described in
@@ -63,17 +218,19 @@ private:
     bool IsPointContained(const pandora::CartesianVector &ab, const pandora::CartesianVector &ac, const pandora::CartesianVector &ap) const;
 
     /**
-     *  @brief  Retrieve the vertices for the bounding envelopes to be used during cluster association
+     *  @brief  Retrieve the cone the bounding envelope to be used during cluster association
      *
      *  @param  pCluster the cluster for which the bounding envelope should be constructed
-     *  @param  boundingVertices the output vector of vertices describing the bounding shapes
+     *  @return the cone describing the bounding region
      */
-    void GetBoundingShapes(const pandora::Cluster *const pCluster, pandora::CartesianPointVector &boundingVertices) const;
+    Cone GetBoundingCone(const pandora::Cluster *const pCluster) const;
 
-    unsigned int m_minClusterLayers;    ///< minimum allowed number of layers for a clean cluster
-    unsigned int m_minSeedCaloHits;     ///< minimum number of calo hits to form a seed for PCA
-    mutable int m_runCount;             ///< the number of times the algorithm has been run
-    bool m_visualize;                   ///< whether or not to visualize the algorithm
+    pandora::StringVector m_inputListNames;     ///< The list of input clusters
+    unsigned int m_minClusterLayers;            ///< minimum allowed number of layers for a clean cluster
+    unsigned int m_minSeedCaloHits;             ///< minimum number of calo hits to form a seed for PCA
+    mutable int m_runCount;                     ///< the number of times the algorithm has been run
+    bool m_visualize;                           ///< whether or not to visualize the algorithm
+    std::map<pandora::HitType, std::string> m_viewToListMap;
 };
 
 } // namespace lar_content
