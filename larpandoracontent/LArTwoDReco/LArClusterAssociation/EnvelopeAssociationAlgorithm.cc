@@ -36,7 +36,8 @@ EnvelopeAssociationAlgorithm::AssociationCandidate::AssociationCandidate(const C
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-bool EnvelopeAssociationAlgorithm::AssociationCandidate::Overlaps(const AssociationCandidate &other) const
+void EnvelopeAssociationAlgorithm::AssociationCandidate::GetOverlapFraction(const AssociationCandidate &other, float &minOverlapFraction,
+    float &maxOverlapFraction) const
 {
     const float thisRange{m_xMax - m_xMin};
     const float otherRange{other.m_xMax - other.m_xMin};
@@ -48,19 +49,28 @@ bool EnvelopeAssociationAlgorithm::AssociationCandidate::Overlaps(const Associat
         if (overlapSize > std::numeric_limits<float>::epsilon())
         {
             // ATTN - Neither range can be zero if we're here, so need to check
-            if ((overlapSize / thisRange > 0.67f) && (overlapSize / otherRange > 0.67f))
-                return true;
-            else
-                return false;
+            const float overlap1{overlapSize / thisRange}, overlap2{overlapSize / otherRange};
+            minOverlapFraction = std::min(overlap1, overlap2);
+            maxOverlapFraction = std::max(overlap1, overlap2);
         }
         else
-        {   // candidates are isochronous at the same coordinate
-            return true;
+        {   // At least one candidate is isochronous
+            if (thisRange < std::numeric_limits<float>::epsilon() && otherRange < std::numeric_limits<float>::epsilon())
+            {   // Both isochronous
+                minOverlapFraction = 1.f;
+                maxOverlapFraction = 1.f;
+            }
+            else
+            {   // One candidate is isochronous
+                minOverlapFraction = 0.f;
+                maxOverlapFraction = 1.f;
+            }
         }
     }
     else
-    {
-        return false;
+    {   // No overlap at all
+        minOverlapFraction = 0.f;
+        maxOverlapFraction = 0.f;
     }   
 }
 
@@ -69,11 +79,13 @@ bool EnvelopeAssociationAlgorithm::AssociationCandidate::Overlaps(const Associat
 
 EnvelopeAssociationAlgorithm::OverlapCandidates::OverlapCandidates(const Pandora &pandora, const AssociationCandidate &candidate1,
     const AssociationCandidate &candidate2) :
-    m_candidate1(candidate1),
-    m_candidate2(candidate2)
+    m_nViews(2),
+    m_candidateClusters1(candidate1.GetClusters()),
+    m_candidateClusters2(candidate2.GetClusters()),
+    m_chi2(std::numeric_limits<float>::max())
 {
-    const CaloHitVector &hits1{m_candidate1.GetSortedCaloHits()};
-    const CaloHitVector &hits2{m_candidate2.GetSortedCaloHits()};
+    const CaloHitVector &hits1{candidate1.GetSortedCaloHits()};
+    const CaloHitVector &hits2{candidate2.GetSortedCaloHits()};
 
     const float overlapStart{std::max(candidate1.GetMinX(), candidate2.GetMinX())};
     const float overlapFinish{std::min(candidate1.GetMaxX(), candidate2.GetMaxX())};
@@ -103,7 +115,7 @@ EnvelopeAssociationAlgorithm::OverlapCandidates::OverlapCandidates(const Pandora
             break;
     }
 
-    float chi2sum{0.f};
+    int goodBins{0};
     int usedBins{0};
     CartesianVector dummy(0.f, 0.f, 0.f);
     for (int i = 0; i < N; ++i)
@@ -124,12 +136,13 @@ EnvelopeAssociationAlgorithm::OverlapCandidates::OverlapCandidates(const Pandora
             }
             if (minChi2 < std::numeric_limits<float>::max())
             {
-                chi2sum += minChi2;
+                if (minChi2 < 0.1f)
+                    ++goodBins;
                 ++usedBins;
             }
         }
     }
-    m_chi2 = chi2sum / N;
+    m_chi2 = usedBins > 0 ? goodBins / static_cast<float>(usedBins) : 0.f;
 
     // Note, may not want to delete at this stage in the future, might defer to destructor
     delete[] pBinnedHits1;
@@ -138,11 +151,104 @@ EnvelopeAssociationAlgorithm::OverlapCandidates::OverlapCandidates(const Pandora
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
+EnvelopeAssociationAlgorithm::OverlapCandidates::OverlapCandidates(const Pandora &pandora, const AssociationCandidate &candidate1,
+    const AssociationCandidate &candidate2, const AssociationCandidate &candidate3) :
+    m_nViews(3),
+    m_candidateClusters1(candidate1.GetClusters()),
+    m_candidateClusters2(candidate2.GetClusters()),
+    m_candidateClusters3(candidate3.GetClusters()),
+    m_chi2(std::numeric_limits<float>::max())
+{
+    const CaloHitVector &hits1{candidate1.GetSortedCaloHits()};
+    const CaloHitVector &hits2{candidate2.GetSortedCaloHits()};
+    const CaloHitVector &hits3{candidate3.GetSortedCaloHits()};
+
+    const float overlapStart{std::max({candidate1.GetMinX(), candidate2.GetMinX(), candidate3.GetMinX()})};
+    const float overlapFinish{std::min({candidate1.GetMaxX(), candidate2.GetMaxX(), candidate3.GetMaxX()})};
+    // Bins are 0.1 cm wide - ensure 1 bin in case start == finish (isochronous case)
+    const int N{std::max(1, static_cast<int>(std::ceil(10.f * (overlapFinish - overlapStart))))};
+    CaloHitList *pBinnedHits1{new CaloHitList[N]}, *pBinnedHits2{new CaloHitList[N]}, *pBinnedHits3{new CaloHitList[N]};
+
+    for (const CaloHit *pCaloHit : hits1)
+    {
+        const float hitX{pCaloHit->GetPositionVector().GetX()};
+        const int bin{static_cast<int>(std::floor(10.f * (hitX - overlapStart)))};
+        if (bin >= 0 && bin < N)
+            pBinnedHits1[bin].emplace_back(pCaloHit);
+        // ATTN - assumes hits are sorted
+        if (bin >= N)
+            break;
+    }
+
+    for (const CaloHit *pCaloHit : hits2)
+    {
+        const float hitX{pCaloHit->GetPositionVector().GetX()};
+        const int bin{static_cast<int>(std::floor(10.f * (hitX - overlapStart)))};
+        if (bin >= 0 && bin < N)
+            pBinnedHits2[bin].emplace_back(pCaloHit);
+        // ATTN - assumes hits are sorted
+        if (bin >= N)
+            break;
+    }
+
+    for (const CaloHit *pCaloHit : hits3)
+    {
+        const float hitX{pCaloHit->GetPositionVector().GetX()};
+        const int bin{static_cast<int>(std::floor(10.f * (hitX - overlapStart)))};
+        if (bin >= 0 && bin < N)
+            pBinnedHits3[bin].emplace_back(pCaloHit);
+        // ATTN - assumes hits are sorted
+        if (bin >= N)
+            break;
+    }
+
+    int goodBins{0};
+    int usedBins{0};
+    CartesianVector dummy(0.f, 0.f, 0.f);
+    for (int i = 0; i < N; ++i)
+    {
+        if (!pBinnedHits1[i].empty() && !pBinnedHits2[i].empty() && !pBinnedHits3[i].empty())
+        {
+            float minChi2{std::numeric_limits<float>::max()};
+            for (const CaloHit *pCaloHit1 : pBinnedHits1[i])
+            {
+                for (const CaloHit *pCaloHit2 : pBinnedHits2[i])
+                {
+                    for (const CaloHit *pCaloHit3 : pBinnedHits3[i])
+                    {
+                        float chi2{0.f};
+                        LArGeometryHelper::MergeThreePositions3D(pandora, pCaloHit1->GetHitType(), pCaloHit2->GetHitType(),
+                            pCaloHit3->GetHitType(), pCaloHit1->GetPositionVector(), pCaloHit2->GetPositionVector(),
+                            pCaloHit3->GetPositionVector(), dummy, chi2);
+                        if (chi2 < minChi2)
+                            minChi2 = chi2;
+                    }
+                }
+            }
+            if (minChi2 < std::numeric_limits<float>::max())
+            {
+                if (minChi2 < 0.1f)
+                    ++goodBins;
+                ++usedBins;
+            }
+        }
+        // Might want to consider and else block with 2 view 3D position determination where 3 views aren't available
+    }
+    m_chi2 = usedBins > 0 ? goodBins / static_cast<float>(usedBins) : 0.f;
+
+    // Note, may not want to delete at this stage in the future, might defer to destructor
+    delete[] pBinnedHits1;
+    delete[] pBinnedHits2;
+    delete[] pBinnedHits3;
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+
 void EnvelopeAssociationAlgorithm::OverlapCandidates::AddToMergeMap(ClusterMergeMap &clusterMergeMap) const
 {
-    const ClusterList &clusterList1{m_candidate1.GetClusters()};
-    const Cluster *pSeed1{clusterList1.front()};
-    for (const Cluster *pCluster : clusterList1)
+    const Cluster *pSeed1{m_candidateClusters1.front()};
+    for (const Cluster *pCluster : m_candidateClusters1)
     {
         if (pCluster != pSeed1 && clusterMergeMap.find(pCluster) == clusterMergeMap.end())
         {
@@ -150,9 +256,8 @@ void EnvelopeAssociationAlgorithm::OverlapCandidates::AddToMergeMap(ClusterMerge
             clusterMergeMap[pCluster].emplace_back(pSeed1);
         }
     }
-    const ClusterList &clusterList2{m_candidate2.GetClusters()};
-    const Cluster *pSeed2{clusterList2.front()};
-    for (const Cluster *pCluster : clusterList2)
+    const Cluster *pSeed2{m_candidateClusters2.front()};
+    for (const Cluster *pCluster : m_candidateClusters2)
     {
         if (pCluster != pSeed2 && clusterMergeMap.find(pCluster) == clusterMergeMap.end())
         {
@@ -160,15 +265,39 @@ void EnvelopeAssociationAlgorithm::OverlapCandidates::AddToMergeMap(ClusterMerge
             clusterMergeMap[pCluster].emplace_back(pSeed2);
         }
     }
+
+    if (m_nViews == 3)
+    {
+        const Cluster *pSeed3{m_candidateClusters3.front()};
+        for (const Cluster *pCluster : m_candidateClusters3)
+        {
+            if (pCluster != pSeed3 && clusterMergeMap.find(pCluster) == clusterMergeMap.end())
+            {
+                clusterMergeMap[pSeed3].emplace_back(pCluster);
+                clusterMergeMap[pCluster].emplace_back(pSeed3);
+            }
+        }
+    }
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-bool EnvelopeAssociationAlgorithm::EnvelopeAssociationAlgorithm::OverlapCandidates::SharesSeed(const OverlapCandidates &other) const
+bool EnvelopeAssociationAlgorithm::OverlapCandidates::SharesSeed(const OverlapCandidates &other) const
 {
-    const Cluster *pThisSeed1{m_candidate1.GetClusters().front()}, *pThisSeed2{m_candidate2.GetClusters().front()};
-    const Cluster *pOtherSeed1{other.m_candidate1.GetClusters().front()}, *pOtherSeed2{other.m_candidate2.GetClusters().front()};
-    return pThisSeed1 == pOtherSeed1 || pThisSeed1 == pOtherSeed2 || pThisSeed2 == pOtherSeed1 || pThisSeed2 == pOtherSeed2;
+    const Cluster *pThisSeed1{m_candidateClusters1.front()}, *pThisSeed2{m_candidateClusters2.front()};
+    const Cluster *pOtherSeed1{other.m_candidateClusters1.front()}, *pOtherSeed2{other.m_candidateClusters2.front()};
+    if (m_nViews == 2)
+    {
+        return pThisSeed1 == pOtherSeed1 || pThisSeed1 == pOtherSeed2 || pThisSeed2 == pOtherSeed1 || pThisSeed2 == pOtherSeed2;
+    }
+    else
+    {
+        const Cluster *pThisSeed3{m_candidateClusters3.front()};
+        const Cluster *pOtherSeed3{other.m_candidateClusters3.front()};
+        return pThisSeed1 == pOtherSeed1 || pThisSeed1 == pOtherSeed2 || pThisSeed1 == pOtherSeed3 ||
+            pThisSeed2 == pOtherSeed1 || pThisSeed2 == pOtherSeed2 || pThisSeed2 == pOtherSeed3 ||
+            pThisSeed3 == pOtherSeed1 || pThisSeed3 == pOtherSeed2 || pThisSeed3 == pOtherSeed3;
+    }
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
@@ -203,8 +332,7 @@ void EnvelopeAssociationAlgorithm::GetListOfCleanClusters(const ClusterList *con
 
 void EnvelopeAssociationAlgorithm::PopulateClusterMergeMap(const ClusterVector &clusterVector, ClusterMergeMap &clusterMergeMap) const
 {
-//    if (m_runCount > 1)
-    if (m_runCount > 0)
+    if (m_runCount > 1)
         return;
     if (m_runCount == 0)
         this->AssociateClusters(clusterVector, clusterMergeMap, m_minSeedCaloHits);
@@ -278,16 +406,53 @@ void EnvelopeAssociationAlgorithm::AssociateClusters(const pandora::ClusterVecto
 
     // Collect up the overlap candidates - can have competing views at this stage
     std::list<OverlapCandidates> overlapCandidatesList;
+    float minOverlapVW{0.f}, maxOverlapVW{0.f};
+    float minOverlapUW{0.f}, maxOverlapUW{0.f};
+    float minOverlapUV{0.f}, maxOverlapUV{0.f};
     for (const AssociationCandidate &candidateW : viewToCandidatesMap[TPC_VIEW_W])
     {
         for (const AssociationCandidate &candidateV : viewToCandidatesMap[TPC_VIEW_V])
         {
-            if (candidateW.Overlaps(candidateV))
+            bool foundThreeViewMatch{false};
+            candidateW.GetOverlapFraction(candidateV, minOverlapVW, maxOverlapVW);
+            for (const AssociationCandidate &candidateU : viewToCandidatesMap[TPC_VIEW_U])
+            {
+                candidateV.GetOverlapFraction(candidateU, minOverlapUV, maxOverlapUV);
+                candidateW.GetOverlapFraction(candidateU, minOverlapUW, maxOverlapUW);
+                const float minOverlap{std::min({minOverlapVW, minOverlapUV, minOverlapUW})};
+                const float maxOverlap{std::max({maxOverlapVW, maxOverlapUV, maxOverlapUW})};
+                bool overlaps{maxOverlap > 0.66f && minOverlap > 0.5f};
+                if (!overlaps && maxOverlap == 1.f)
+                {   // There's at least one isochronous case, all 3 candidates need maxOverlap == 1
+                    overlaps = maxOverlapUV == 1.f && maxOverlapUW == 1.f && maxOverlapVW == 1.f;
+                }
+                if (overlaps)
+                {
+                    OverlapCandidates overlap(this->GetPandora(), candidateW, candidateV, candidateU);
+                    if (overlap.GetChiSquared() > 0.66f)
+                    {
+                        std::cout << "Matched " << overlap.GetChiSquared() << std::endl;
+                        overlapCandidatesList.emplace_back(overlap);
+                        foundThreeViewMatch = true;
+                        PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1.f, 1.f, 1.f));
+                        PANDORA_MONITORING_API(VisualizeClusters(this->GetPandora(), &candidateU.GetClusters(), "1", RED, false));
+                        PANDORA_MONITORING_API(VisualizeClusters(this->GetPandora(), &candidateV.GetClusters(), "2", GREEN, false));
+                        PANDORA_MONITORING_API(VisualizeClusters(this->GetPandora(), &candidateW.GetClusters(), "3", BLUE, false));
+                        PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
+
+                    }
+                }
+            }
+            if (!foundThreeViewMatch)
+            {
+            }
+/*            if (!foundThreeViewMatch && vOverlapsW)
             {
                 OverlapCandidates overlap(this->GetPandora(), candidateW, candidateV);
                 if (overlap.GetChiSquared() < 5e-5)
                     overlapCandidatesList.emplace_back(overlap);
-            }
+                std::cout << "2 view overlap: " << overlap.GetChiSquared() << std::endl;
+            }*/
         }
     }
     overlapCandidatesList.sort();
@@ -409,6 +574,9 @@ EnvelopeAssociationAlgorithm::Cone EnvelopeAssociationAlgorithm::GetBoundingCone
         p2r *= 2 * length * eigenRatio;
         p2l -= p2r;
         p2r += p2; p2l += p2;
+/*        p2r *= 3.5f * length * eigenRatio;
+        p2l -= p2r;
+        p2r += p2; p2l += p2;*/
     }
 
     if (m_visualize && LArClusterHelper::GetClusterHitType(pCluster) == HitType::TPC_VIEW_W)
@@ -495,6 +663,25 @@ StatusCode EnvelopeAssociationAlgorithm::Run()
             {
                 std::cout << "Boom!" << std::endl;
             }
+        }
+
+        // Repopulate the cluster list
+        allClusters.clear();
+        for (const std::string listName : m_inputListNames)
+        {
+            PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_INITIALIZED, !=, PandoraContentApi::GetList(*this, listName,
+                pClusterList));
+            if (pClusterList && !pClusterList->empty())
+            {
+                m_viewToListMap[LArClusterHelper::GetClusterHitType(pClusterList->front())] = listName;
+                for (const Cluster *const pCluster : *pClusterList)
+                    allClusters.emplace_back(pCluster);
+            }
+        }
+        if (allClusters.empty())
+        {
+            std::cout << "EnvelopeAssoicationAlgorithm: Error - no clusters found" << std::endl;
+            return STATUS_CODE_NOT_INITIALIZED;
         }
     }
 

@@ -110,11 +110,16 @@ private:
         }
 
         /**
-         *  @brief  Retrieve the hits for this association candidate
+         *  @brief  Retrieve the minimum and maximum overlap fractions between this association candidate and another.
+         *          A candidate whose x-span is completely contained within the middle one-third of the x-span of another candidate would
+         *          have an overlap fraction of 1 (i.e. it is completely contained), but the other candidate would see it shares only one
+         *          third of its span with the other candidate and thus have an overlap fraction of 0.33.
          *
-         *  @return The hits for the association candidate
+         *  @param  other the candidate against which overlap should be calculated
+         *  @param  minOverlapFraction the output minimum overlap fraction
+         *  @param  maxOverlapFraction the output maximum overlap fraction
          */
-        bool Overlaps(const AssociationCandidate &other) const;
+        void GetOverlapFraction(const AssociationCandidate &other, float &minOverlapFraction, float &maxOverlapFraction) const;
 
     private:
         Cone m_cone;                            ///< The bounding envelope
@@ -141,6 +146,17 @@ private:
         OverlapCandidates(const pandora::Pandora &pandora, const AssociationCandidate &candidate1, const AssociationCandidate &candidate2);
 
         /**
+         *  @brief  Constructor
+         *
+         *  @param  pandora the Pandora instance
+         *  @param  candidate1 a candidate set of clusters for merging in one view
+         *  @param  candidate2 a candidate set of clusters for merging in a second view
+         *  @param  candidate3 a candidate set of clusters for merging in a third view
+         */
+        OverlapCandidates(const pandora::Pandora &pandora, const AssociationCandidate &candidate1, const AssociationCandidate &candidate2,
+            const AssociationCandidate &candidate3);
+
+        /**
          *  @brief Adds these overlap candidates to the merge map
          *
          *  @param  clusterMergeMap the cluster merge map to populate
@@ -164,21 +180,29 @@ private:
             return m_chi2;
         }
 
+        // ATTN: Current 3 v 2 view handling is too favourable to the three view case, need to understand the 3 v 2 view implications and apply
+        // some kind of weighting that favours the 3 view case when things are close, but not if the 3 view match is junk
         /**
-         *  @brief Check if this object has a lower chi-squared value than the other object
+         *  @brief Check if this object has a lower chi-squared value than the other object. If one candidate has more views than the other,
+         *         favour that candidate.
          *
          *  @param  other the other object against which to compare
          *  @return true if the chi-squared value is lower, false otherwise
          */
         bool operator <(const OverlapCandidates &other) const
         {
-            return m_chi2 < other.m_chi2;
+            if (m_nViews == other.m_nViews)
+                return m_chi2 > other.m_chi2;
+            else
+                return m_nViews > other.m_nViews;
         }
 
     private:
-        AssociationCandidate m_candidate1;      ///< An association candidate in one view
-        AssociationCandidate m_candidate2;      ///< An association candidate in a second view
-        float m_chi2;                           ///< The chi-squared value for the match between views
+        int m_nViews;                               ///< The number of views considered
+        pandora::ClusterList m_candidateClusters1;  ///< An association candidate in one view
+        pandora::ClusterList m_candidateClusters2;  ///< An association candidate in a second view
+        pandora::ClusterList m_candidateClusters3;  ///< An association candidate in a third view
+        float m_chi2;                               ///< The chi-squared value for the match between views
     };
 
     virtual pandora::StatusCode Run();
