@@ -197,7 +197,7 @@ private:
                 return m_nViews > other.m_nViews;
         }
 
-    private:
+    public:
         int m_nViews;                               ///< The number of views considered
         pandora::ClusterList m_candidateClusters1;  ///< An association candidate in one view
         pandora::ClusterList m_candidateClusters2;  ///< An association candidate in a second view

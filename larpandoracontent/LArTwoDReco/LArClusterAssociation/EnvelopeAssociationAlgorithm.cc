@@ -136,6 +136,7 @@ EnvelopeAssociationAlgorithm::OverlapCandidates::OverlapCandidates(const Pandora
             }
             if (minChi2 < std::numeric_limits<float>::max())
             {
+                std::cout << i << " of " << N << ": " << minChi2 << std::endl;
                 if (minChi2 < 0.1f)
                     ++goodBins;
                 ++usedBins;
@@ -382,25 +383,6 @@ void EnvelopeAssociationAlgorithm::AssociateClusters(const pandora::ClusterVecto
             }
             AssociationCandidate candidate(cone, containedClusters);
             viewToCandidatesMap[currentView].emplace_back(candidate);
-
-/*            PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1.f, 1.f, 1.f));
-            std::string viewStr{currentView == HitType::TPC_VIEW_U ? "u" : currentView == HitType::TPC_VIEW_V ? "v" : "w"};
-            PANDORA_MONITORING_API(VisualizeClusters(this->GetPandora(), &containedClusters, viewStr, RED, false));
-            PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));*/
-
-            /*
-            // Find the clusters with a significant fraction of hits (50%) contained by the cone and associate
-            for (const Cluster * pTarget : targetClusters)
-            {
-                if (clusterMergeMap.find(pTarget) != clusterMergeMap.end())
-                    continue;
-                if (!this->IsClusterContained(boundingVertices, pTarget))
-                    continue;
-
-                clusterMergeMap[pSeed].emplace_back(pTarget);
-                clusterMergeMap[pTarget].emplace_back(pSeed);
-            }
-            */
         }
     }
 
@@ -413,7 +395,6 @@ void EnvelopeAssociationAlgorithm::AssociateClusters(const pandora::ClusterVecto
     {
         for (const AssociationCandidate &candidateV : viewToCandidatesMap[TPC_VIEW_V])
         {
-            bool foundThreeViewMatch{false};
             candidateW.GetOverlapFraction(candidateV, minOverlapVW, maxOverlapVW);
             for (const AssociationCandidate &candidateU : viewToCandidatesMap[TPC_VIEW_U])
             {
@@ -433,28 +414,41 @@ void EnvelopeAssociationAlgorithm::AssociateClusters(const pandora::ClusterVecto
                     {
                         std::cout << "Matched " << overlap.GetChiSquared() << std::endl;
                         overlapCandidatesList.emplace_back(overlap);
-                        foundThreeViewMatch = true;
-                        PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1.f, 1.f, 1.f));
+/*                        PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1.f, 1.f, 1.f));
                         PANDORA_MONITORING_API(VisualizeClusters(this->GetPandora(), &candidateU.GetClusters(), "1", RED, false));
                         PANDORA_MONITORING_API(VisualizeClusters(this->GetPandora(), &candidateV.GetClusters(), "2", GREEN, false));
                         PANDORA_MONITORING_API(VisualizeClusters(this->GetPandora(), &candidateW.GetClusters(), "3", BLUE, false));
-                        PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
-
+                        PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));*/
                     }
                 }
             }
-            if (!foundThreeViewMatch)
-            {
-            }
-/*            if (!foundThreeViewMatch && vOverlapsW)
-            {
-                OverlapCandidates overlap(this->GetPandora(), candidateW, candidateV);
-                if (overlap.GetChiSquared() < 5e-5)
-                    overlapCandidatesList.emplace_back(overlap);
-                std::cout << "2 view overlap: " << overlap.GetChiSquared() << std::endl;
-            }*/
         }
     }
+
+    // Try two view matches
+    for (const AssociationCandidate &candidateW : viewToCandidatesMap[TPC_VIEW_W])
+    {
+        for (const AssociationCandidate &candidateV : viewToCandidatesMap[TPC_VIEW_V])
+        {
+            float minOverlap{0.f}, maxOverlap{0.f};
+            candidateW.GetOverlapFraction(candidateV, minOverlap, maxOverlap);
+            const bool overlaps{(maxOverlap > 0.66f && minOverlap > 0.5f) || maxOverlap == 1.f};
+            if (overlaps)
+            {
+                OverlapCandidates overlap(this->GetPandora(), candidateW, candidateV);
+                if (overlap.GetChiSquared() > 0.66f)
+                {
+                    std::cout << "Matched two view " << overlap.GetChiSquared() << std::endl;
+                    overlapCandidatesList.emplace_back(overlap);
+/*                    PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1.f, 1.f, 1.f));
+                    PANDORA_MONITORING_API(VisualizeClusters(this->GetPandora(), &candidateV.GetClusters(), "V", GREEN, false));
+                    PANDORA_MONITORING_API(VisualizeClusters(this->GetPandora(), &candidateW.GetClusters(), "W", BLUE, false));
+                    PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));*/
+                }
+            }
+        }
+    }
+
     overlapCandidatesList.sort();
     std::list<OverlapCandidates> mergeList;
     for (const OverlapCandidates &candidates : overlapCandidatesList)
@@ -469,7 +463,14 @@ void EnvelopeAssociationAlgorithm::AssociateClusters(const pandora::ClusterVecto
             }
         }
         if (isGood)
+        {
             mergeList.emplace_back(candidates);
+            PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1.f, 1.f, 1.f));
+            PANDORA_MONITORING_API(VisualizeClusters(this->GetPandora(), &candidates.m_candidateClusters1, "1", RED, false));
+            PANDORA_MONITORING_API(VisualizeClusters(this->GetPandora(), &candidates.m_candidateClusters2, "2", GREEN, false));
+            PANDORA_MONITORING_API(VisualizeClusters(this->GetPandora(), &candidates.m_candidateClusters3, "3", BLUE, false));
+            PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
+        }
     }
     // Flag the best candidates for merging
     for (const OverlapCandidates &candidates : mergeList)
