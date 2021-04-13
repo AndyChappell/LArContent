@@ -147,6 +147,7 @@
 #include "larpandoracontent/LArTrackShowerId/MvaPfoCharacterisationAlgorithm.h"
 #include "larpandoracontent/LArTrackShowerId/TrackShowerIdFeatureTool.h"
 
+#include "larpandoracontent/LArTwoDReco/LArClusterAssociation/ConeAssociationAlgorithm.h"
 #include "larpandoracontent/LArTwoDReco/LArClusterAssociation/CrossGapsAssociationAlgorithm.h"
 #include "larpandoracontent/LArTwoDReco/LArClusterAssociation/CrossGapsExtensionAlgorithm.h"
 #include "larpandoracontent/LArTwoDReco/LArClusterAssociation/EnvelopeAssociationAlgorithm.h"
@@ -259,6 +260,7 @@
     d("LArShowerGrowing",                       ShowerGrowingAlgorithm)                                                         \
     d("LArBdtPfoCharacterisation",              BdtPfoCharacterisationAlgorithm)                                                \
     d("LArSvmPfoCharacterisation",              SvmPfoCharacterisationAlgorithm)                                                \
+    d("LArConeAssociation",                     ConeAssociationAlgorithm)                                                       \
     d("LArCrossGapsAssociation",                CrossGapsAssociationAlgorithm)                                                  \
     d("LArCrossGapsExtension",                  CrossGapsExtensionAlgorithm)                                                    \
     d("LArEnvelopeAssociation",                 EnvelopeAssociationAlgorithm)                                                   \
