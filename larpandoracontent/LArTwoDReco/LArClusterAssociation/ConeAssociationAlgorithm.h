@@ -81,7 +81,7 @@ private:
          *
          *  @param  lhs the first object to compare
          *  @param  rhs the second object to compare
-         *  @return true if the lhs number of hits is less than the rhs, false if the rhs is greater, otherwise true if lhs chi-squared
+         *  @return true if the lhs number of hits is greater than the rhs, false if the rhs is greater, otherwise true if lhs chi-squared
          *          value is lower than rhs, false otherwise
          */
         static bool Sort(const ViewCluster *lhs, const ViewCluster *rhs)
@@ -89,6 +89,26 @@ private:
             if (lhs->m_minHitsInOverlapRegion > rhs->m_minHitsInOverlapRegion)
                 return true;
             else if (lhs->m_minHitsInOverlapRegion == rhs->m_minHitsInOverlapRegion)
+                return lhs->m_chi2 < rhs->m_chi2;
+            else
+                return false;
+        }
+
+        /**
+         *  @brief Sort ViewClusters based on size of overlap and chi-squared value.
+         *         The primary comparison is between the maximum number of hits from a view in the overlap region, but if these values are
+         *         equal, the chi-squared values are compared.
+         *
+         *  @param  lhs the first object to compare
+         *  @param  rhs the second object to compare
+         *  @return true if the lhs number of hits is greater than the rhs, false if the rhs is greater, otherwise true if lhs chi-squared
+         *          value is lower than rhs, false otherwise
+         */
+        static bool SortMax(const ViewCluster *lhs, const ViewCluster *rhs)
+        {
+            if (lhs->m_maxHitsInOverlapRegion > rhs->m_maxHitsInOverlapRegion)
+                return true;
+            else if (lhs->m_maxHitsInOverlapRegion == rhs->m_maxHitsInOverlapRegion)
                 return lhs->m_chi2 < rhs->m_chi2;
             else
                 return false;
@@ -124,10 +144,12 @@ private:
         const float m_overlapFinish;
         const float m_overlapSize;
         int m_minHitsInOverlapRegion;
+        int m_maxHitsInOverlapRegion;
     };
     typedef std::map<const pandora::Cluster *, float> ClusterExtremumMap;
     typedef std::map<const pandora::Cluster *, pandora::CaloHitVector> ClusterHitsMap;
     typedef std::vector<const ViewCluster *> ViewClusterVector;
+    typedef std::vector<pandora::HitType> HitTypeVector;
 
     virtual pandora::StatusCode Run();
     pandora::StatusCode ReadSettings(const pandora::TiXmlHandle xmlHandle);
@@ -178,6 +200,28 @@ private:
      *  @param  clusterMergeMap The output cluster merge map
      */
     void ConsolidateClusters(ViewClusterVector &viewClusterVector, ClusterMergeMap &clusterMergeMap) const;
+
+    /**
+     *  @brief  Takes the set of potential inter-view cluster associations and builds PCA-based cones to determine which other clusters
+     *          might be associated with the current triplet.
+     *
+     *  @param  viewClusterVector The input vector of ViewClusters
+     *  @param  clusterMergeMap The output cluster merge map
+     */
+    void GrowClusters(ViewClusterVector &viewClusterVector, ClusterMergeMap &clusterMergeMap) const;
+
+    /**
+     *  @brief  Computes the principal axis of a a cluster.
+     *
+     *  @param  pCluster The cluster for which the axis is to be computed
+     *  @param  p0 The output start coordinate of the axis
+     *  @param  p1 The output finish cooridinate of the axis
+     *  @param  transverse The transverse axis direction
+     *  @param  length The output length of the axis
+     *  @param  ratio The output ratio of the 2 principal eigen values to provide a transverse scale relative to the principal axis
+     */
+    void GetConeParameters(const pandora::Cluster *pCluster, pandora::CartesianVector &start, pandora::CartesianVector &finish,
+        pandora::CartesianVector &transverse, float &length, float &ratio) const;
 
     pandora::StringVector m_inputListNames;     ///< The list of input clusters
     unsigned int m_minClusterLayers;            ///< minimum allowed number of layers for a clean cluster

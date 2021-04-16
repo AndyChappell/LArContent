@@ -25,7 +25,8 @@ ConeAssociationAlgorithm::ViewCluster::ViewCluster(const Cluster *pClusterU, con
     m_overlapStart{overlapStart},
     m_overlapFinish{overlapFinish},
     m_overlapSize{overlapFinish - overlapStart},
-    m_minHitsInOverlapRegion{std::numeric_limits<int>::max()}
+    m_minHitsInOverlapRegion{std::numeric_limits<int>::max()},
+    m_maxHitsInOverlapRegion{0}
 {
     m_clusters.emplace_back(pClusterU);
     m_clusters.emplace_back(pClusterV);
@@ -46,6 +47,8 @@ ConeAssociationAlgorithm::ViewCluster::ViewCluster(const Cluster *pClusterU, con
         }
         if (nHits < m_minHitsInOverlapRegion)
             m_minHitsInOverlapRegion = nHits;
+        if (nHits > m_maxHitsInOverlapRegion)
+            m_maxHitsInOverlapRegion = nHits;
     }
 }
 
@@ -124,25 +127,37 @@ void ConeAssociationAlgorithm::PopulateClusterMergeMap(const ClusterVector &clus
 {
     if (m_runCount > 1)
         return;
-    if (m_runCount == 0)
+    // Separate the clusters into their respective views
+    ClusterList clusterListU, clusterListV, clusterListW;
+    for (const Cluster *pCluster : clusterVector)
     {
-        // Separate the clusters into their respective views
-        ClusterList clusterListU, clusterListV, clusterListW;
-        for (const Cluster *pCluster : clusterVector)
-        {
-            HitType view{LArClusterHelper::GetClusterHitType(pCluster)};
-            if (view == TPC_VIEW_U)
-                clusterListU.emplace_back(pCluster);
-            else if (view == TPC_VIEW_V)
-                clusterListV.emplace_back(pCluster);
-            else if (view == TPC_VIEW_W)
-                clusterListW.emplace_back(pCluster);
-        }
+        HitType view{LArClusterHelper::GetClusterHitType(pCluster)};
+        if (view == TPC_VIEW_U)
+            clusterListU.emplace_back(pCluster);
+        else if (view == TPC_VIEW_V)
+            clusterListV.emplace_back(pCluster);
+        else if (view == TPC_VIEW_W)
+            clusterListW.emplace_back(pCluster);
+    }
+
+    if (m_runCount == 0)
+    {   // Iteration 1 uses x-overlap information to consolidate clusters ahead of PCA step
         if (!(clusterListU.empty() || clusterListV.empty() || clusterListW.empty()))
         {
             ViewClusterVector viewClusterVector;
             this->AssociateClusters(clusterListU, clusterListV, clusterListW, viewClusterVector);
             this->ConsolidateClusters(viewClusterVector, clusterMergeMap);
+            for (const ViewCluster *pViewCluster : viewClusterVector)
+                delete pViewCluster;
+        }
+    }
+    else if (m_runCount == 1)
+    {   // Iteration 2 builds PCA cones to grow clusters
+        if (!(clusterListU.empty() || clusterListV.empty() || clusterListW.empty()))
+        {
+            ViewClusterVector viewClusterVector;
+            this->AssociateClusters(clusterListU, clusterListV, clusterListW, viewClusterVector);
+            this->GrowClusters(viewClusterVector, clusterMergeMap);
             for (const ViewCluster *pViewCluster : viewClusterVector)
                 delete pViewCluster;
         }
@@ -172,6 +187,17 @@ void ConeAssociationAlgorithm::AssociateClusters(const ClusterList &clusterListU
                 const CaloHitVector &hitsU{clusterHitsMap[pClusterU]};
                 const float overlapStart{std::max({clusterXminMap[pClusterU], clusterXminMap[pClusterV], clusterXminMap[pClusterW]})};
                 const float overlapFinish{std::min({clusterXmaxMap[pClusterU], clusterXmaxMap[pClusterV], clusterXmaxMap[pClusterW]})};
+                const float overlapSize{overlapFinish - overlapStart};
+                // Threshold check reduces the amount of clustering, but avoids some of the ridiculous merges
+                int clustersPassingThreshold{0};
+                if ((0.5f * (clusterXmaxMap[pClusterU] - clusterXminMap[pClusterU])) <= overlapSize)
+                    ++clustersPassingThreshold;
+                if ((0.5f * (clusterXmaxMap[pClusterV] - clusterXminMap[pClusterV])) <= overlapSize)
+                    ++clustersPassingThreshold;
+                if ((0.5f * (clusterXmaxMap[pClusterW] - clusterXminMap[pClusterW])) <= overlapSize)
+                    ++clustersPassingThreshold;
+                if (clustersPassingThreshold < 2)
+                    continue;
                 float meanChi2{this->AssessHitOverlap(hitsU, hitsV, hitsW, overlapStart, overlapFinish)};
                 if (meanChi2 < 0.1f)
                 {
@@ -383,6 +409,388 @@ void ConeAssociationAlgorithm::ConsolidateClusters(ViewClusterVector &viewCluste
             }
         }
     }
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+void ConeAssociationAlgorithm::GrowClusters(ViewClusterVector &viewClusterVector, ClusterMergeMap &clusterMergeMap) const
+{
+    PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1.f, 1.f, 1.f));
+    
+    std::sort(viewClusterVector.begin(), viewClusterVector.end(), ViewCluster::SortMax);
+    ClusterExtremumMap clusterXminMap, clusterXmaxMap;
+    ClusterHitsMap clusterHitsMap;
+    for (const ViewCluster *viewCluster : viewClusterVector)
+        for (const Cluster *pCluster : viewCluster->GetClusterList())
+            this->PopulateClusterMaps(pCluster, clusterHitsMap, clusterXminMap, clusterXmaxMap);
+
+    for (auto iter1 = viewClusterVector.begin(); iter1 != viewClusterVector.end(); ++iter1)
+    {
+        const ViewCluster viewCluster(*(*iter1));
+        // Build a 3D PCA-based cone around this candidate set of clusters and see if it can be grown
+        // Note, here it's much more important that the relative quality of the cluster association is
+        // considered, as there will be conflicting cones, and we should only pick the best
+        // Likely to be a multi-iteration process
+        (void)clusterMergeMap;
+
+        // Identify the two views with the most hits
+        const Cluster *pClusterU{viewCluster.GetCluster(TPC_VIEW_U)};
+        const Cluster *pClusterV{viewCluster.GetCluster(TPC_VIEW_V)};
+        const Cluster *pClusterW{viewCluster.GetCluster(TPC_VIEW_W)};
+        CaloHitList caloHitsU, caloHitsV, caloHitsW;
+        OrderedCaloHitList orderedCaloHitList(pClusterU->GetOrderedCaloHitList());
+        orderedCaloHitList.FillCaloHitList(caloHitsU);
+        orderedCaloHitList = pClusterV->GetOrderedCaloHitList();
+        orderedCaloHitList.FillCaloHitList(caloHitsV);
+        orderedCaloHitList = pClusterW->GetOrderedCaloHitList();
+        orderedCaloHitList.FillCaloHitList(caloHitsW);
+        HitTypeVector views;
+        if (caloHitsU.size() > caloHitsV.size())
+        {
+            views.emplace_back(TPC_VIEW_U);
+            if (caloHitsV.size() > caloHitsW.size())
+                views.emplace_back(TPC_VIEW_V);
+            else
+                views.emplace_back(TPC_VIEW_W);
+        }
+        else if (caloHitsU.size() > caloHitsW.size())
+        {
+            views.emplace_back(TPC_VIEW_U);
+            views.emplace_back(TPC_VIEW_V);   
+        }
+        else
+        {
+            views.emplace_back(TPC_VIEW_V);
+            views.emplace_back(TPC_VIEW_W);
+        }
+
+        // Retrieve the hits for PCA
+        // Aim here is to get the PCA axes of the two 'best' views, consoldate them onto the same x range, project the end points
+        // into the third view, then use the broadest transverse range to define the cone in 3D, before projecting back into the three
+        // views. Check this makes sense, then see about mopping up clusters falling in this cone and some extensions of it
+
+        const Cluster *pCluster1{viewCluster.GetCluster(views[0])};
+        CartesianVector pca1Start(0.f, 0.f, 0.f), pca1Finish(0.f, 0.f, 0.f), pca1Transverse(0.f, 0.f, 0.f);
+        float length1{0.f}, ratio1{1.f};
+        this->GetConeParameters(pCluster1, pca1Start, pca1Finish, pca1Transverse, length1, ratio1);
+        const Cluster *pCluster2{viewCluster.GetCluster(views[1])};
+        CartesianVector pca2Start(0.f, 0.f, 0.f), pca2Finish(0.f, 0.f, 0.f), pca2Transverse(0.f, 0.f, 0.f);
+        float length2{0.f}, ratio2{1.f};
+        this->GetConeParameters(pCluster2, pca2Start, pca2Finish, pca2Transverse, length2, ratio2);
+        // Get the remaining view cluster for later comparison purposes
+        const Cluster *pClusterX{viewCluster.GetCluster(views[0] != TPC_VIEW_U ? TPC_VIEW_U : views[1] == TPC_VIEW_V ? TPC_VIEW_W : TPC_VIEW_V)};
+        CartesianVector pcaXStart(0.f, 0.f, 0.f), pcaXFinish(0.f, 0.f, 0.f), pcaXTransverse(0.f, 0.f, 0.f);
+        float lengthX{0.f}, ratioX{1.f};
+        this->GetConeParameters(pClusterX, pcaXStart, pcaXFinish, pcaXTransverse, lengthX, ratioX);
+
+        CartesianVector aStart(pca1Start), aFinish(pca1Finish), bStart(pca2Start), bFinish(pca2Finish);
+
+        // Ensure PCA axes have same x starting point
+        const float minX{std::min({pca1Start.GetX(), pca1Finish.GetX(), pca2Start.GetX(), pca2Finish.GetX()})};
+        const float maxX{std::max({pca1Start.GetX(), pca1Finish.GetX(), pca2Start.GetX(), pca2Finish.GetX()})};
+
+        if (pca1Start.GetX() <= pca1Finish.GetX())
+        {   // PCA axis 1 moves along +x from start to finish
+            const float m{pca1Finish.GetX() != pca1Start.GetX() ? (pca1Finish.GetZ() - pca1Start.GetZ()) / (pca1Finish.GetX() - pca1Start.GetX()) : 0.f};
+            const float startZp{pca1Start.GetZ() + m * (minX - pca1Start.GetX())};
+            pca1Start.SetValues(minX, 0.f, startZp);
+            const float finishZp{pca1Finish.GetZ() + m * (maxX - pca1Finish.GetX())};
+            pca1Finish.SetValues(maxX, 0.f, finishZp);
+        }
+        else
+        {   // PCA axis 1 moves along -x from start to finish
+            const float m{pca1Finish.GetX() != pca1Start.GetX() ? (pca1Finish.GetZ() - pca1Start.GetZ()) / (pca1Finish.GetX() - pca1Start.GetX()) : 0.f};
+            const float startZp{pca1Start.GetZ() + m * (maxX - pca1Start.GetX())};
+            pca1Start.SetValues(maxX, 0.f, startZp);
+            const float finishZp{pca1Finish.GetZ() + m * (minX - pca1Finish.GetX())};
+            pca1Finish.SetValues(minX, 0.f, finishZp);
+        }
+        if (pca2Start.GetX() <= pca2Finish.GetX())
+        {   // PCA axis 2 moves along +x from start to finish
+            const float m{pca2Finish.GetX() != pca2Start.GetX() ? (pca2Finish.GetZ() - pca2Start.GetZ()) / (pca2Finish.GetX() - pca2Start.GetX()) : 0.f};
+            const float startZp{pca2Start.GetZ() + m * (minX - pca2Start.GetX())};
+            pca2Start.SetValues(minX, 0.f, startZp);
+            const float finishZp{pca2Finish.GetZ() + m * (maxX - pca2Finish.GetX())};
+            pca2Finish.SetValues(maxX, 0.f, finishZp);
+        }
+        else
+        {   // PCA axis 2 moves along -x from start to finish
+            const float m{pca2Finish.GetX() != pca2Start.GetX() ? (pca2Finish.GetZ() - pca2Start.GetZ()) / (pca2Finish.GetX() - pca2Start.GetX()) : 0.f};
+            const float startZp{pca2Start.GetZ() + m * (maxX - pca2Start.GetX())};
+            pca2Start.SetValues(maxX, 0.f, startZp);
+            const float finishZp{pca2Finish.GetZ() + m * (minX - pca2Finish.GetX())};
+            pca2Finish.SetValues(minX, 0.f, finishZp);
+        }
+
+        std::cout << "Start 1: (" << pca1Start.GetX() << "," << pca1Start.GetZ() << ") 2: (" << pca2Start.GetX() << "," << pca2Start.GetZ() <<
+            ")" << std::endl;
+        std::cout << "Finish 1: (" << pca1Finish.GetX() << "," << pca1Finish.GetZ() << ") 2: (" << pca2Finish.GetX() << "," << pca2Finish.GetZ() <<
+            ")" << std::endl;
+
+        PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &pca1Start, &pca1Finish, "1", ORANGE, 3, 1));
+        PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &pca2Start, &pca2Finish, "2", MAGENTA, 3, 1));
+
+        if (pca1Start.GetX() != pca1Finish.GetX() && pca2Start.GetX() != pca2Finish.GetX())
+        {   // Neither axis is isochronous, endpoints can be matched on x alone
+            if (pca1Start.GetX() == pca2Start.GetX())
+            {   // Matching start to start and finish to finish
+                if (views[0] == TPC_VIEW_U)
+                {
+                    if (views[1] == TPC_VIEW_V)
+                    {   // UV inputs
+                        const float us{pca1Start.GetZ()}, vs{pca2Start.GetZ()};
+                        const float ws{static_cast<float>(PandoraContentApi::GetPlugins(*this)->GetLArTransformationPlugin()->UVtoW(us, vs))};
+                        CartesianVector pca3Start(pca1Start.GetX(), 0.f, ws);
+                        const float uf{pca1Finish.GetZ()}, vf{pca2Finish.GetZ()};
+                        const float wf{static_cast<float>(PandoraContentApi::GetPlugins(*this)->GetLArTransformationPlugin()->UVtoW(uf, vf))};
+                        CartesianVector pca3Finish(pca1Finish.GetX(), 0.f, wf);
+                        //CartesianVector pca3DStart(0.f, 0.f, 0.f);
+                        //float chi2{std::numeric_limits::max()}
+                        //LArGeometryHelper::MergeThreePositions3D(pandora, TPC_VIEW_U, TPC_VIEW_V, TPC_VIEW_W, pca1Start, pca2Start, pca3Start,
+                        //    pca3DStart, chi2);
+                        //std::cout << "Proj W chi2: " << chi2 << std::endl;
+                        PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &pca3Start, &pca3Finish, "ProjW", BLACK, 3, 1));
+
+                        CartesianVector axis1(pca3Finish); axis1 -= pca3Start;
+                        CartesianVector axis2(pcaXFinish); axis2 -= pcaXStart;
+                        const float cosOpenAngle{std::abs(axis1.GetCosOpeningAngle(axis2))};
+                        std::cout << "cosOpenAngle: " << cosOpenAngle << std::endl;
+                        if (cosOpenAngle > 0.98f)
+                        {
+                            std::cout << "Worth pursuing" << std::endl;
+                        }
+                    }
+                    else
+                    {   // UW inputs
+                        const float us{pca1Start.GetZ()}, ws{pca2Start.GetZ()};
+                        const float vs{static_cast<float>(PandoraContentApi::GetPlugins(*this)->GetLArTransformationPlugin()->WUtoV(ws, us))};
+                        CartesianVector pca3Start(pca1Start.GetX(), 0.f, vs);
+                        const float uf{pca1Finish.GetZ()}, wf{pca2Finish.GetZ()};
+                        const float vf{static_cast<float>(PandoraContentApi::GetPlugins(*this)->GetLArTransformationPlugin()->WUtoV(wf, uf))};
+                        CartesianVector pca3Finish(pca1Finish.GetX(), 0.f, vf);
+                        PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &pca3Start, &pca3Finish, "ProjV", BLACK, 3, 1));
+
+                        CartesianVector axis1(pca3Finish); axis1 -= pca3Start;
+                        CartesianVector axis2(pcaXFinish); axis2 -= pcaXStart;
+                        const float cosOpenAngle{std::abs(axis1.GetCosOpeningAngle(axis2))};
+                        std::cout << "cosOpenAngle: " << cosOpenAngle << std::endl;
+                        if (cosOpenAngle > 0.98f)
+                        {
+                            std::cout << "Worth pursuing" << std::endl;
+                        }
+                    }
+                }
+                else
+                {   // VW inputs
+                    const float vs{pca1Start.GetZ()}, ws{pca2Start.GetZ()};
+                    const float us{static_cast<float>(PandoraContentApi::GetPlugins(*this)->GetLArTransformationPlugin()->VWtoU(vs, ws))};
+                    CartesianVector pca3Start(pca1Start.GetX(), 0.f, us);
+                    const float vf{pca1Finish.GetZ()}, wf{pca2Finish.GetZ()};
+                    const float uf{static_cast<float>(PandoraContentApi::GetPlugins(*this)->GetLArTransformationPlugin()->VWtoU(vf, wf))};
+                    CartesianVector pca3Finish(pca1Finish.GetX(), 0.f, uf);
+                    PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &pca3Start, &pca3Finish, "ProjU", BLACK, 3, 1));
+
+                    CartesianVector axis1(pca3Finish); axis1 -= pca3Start;
+                    CartesianVector axis2(pcaXFinish); axis2 -= pcaXStart;
+                    const float cosOpenAngle{std::abs(axis1.GetCosOpeningAngle(axis2))};
+                    std::cout << "cosOpenAngle: " << cosOpenAngle << std::endl;
+                    if (cosOpenAngle > 0.98f)
+                    {
+                        std::cout << "Worth pursuing" << std::endl;
+                    }
+                }
+            }
+            else
+            {   // Matching start1 to finish2 and start2 to finish1
+                if (views[0] == TPC_VIEW_U)
+                {
+                    if (views[1] == TPC_VIEW_V)
+                    {   // UV inputs
+                        const float us{pca1Start.GetZ()}, vs{pca2Finish.GetZ()};
+                        const float ws{static_cast<float>(PandoraContentApi::GetPlugins(*this)->GetLArTransformationPlugin()->UVtoW(us, vs))};
+                        CartesianVector pca3Start(pca1Start.GetX(), 0.f, ws);
+                        const float uf{pca1Finish.GetZ()}, vf{pca2Start.GetZ()};
+                        const float wf{static_cast<float>(PandoraContentApi::GetPlugins(*this)->GetLArTransformationPlugin()->UVtoW(uf, vf))};
+                        CartesianVector pca3Finish(pca1Finish.GetX(), 0.f, wf);
+                        //CartesianVector pca3DStart(0.f, 0.f, 0.f);
+                        //float chi2{std::numeric_limits::max()}
+                        //LArGeometryHelper::MergeThreePositions3D(pandora, TPC_VIEW_U, TPC_VIEW_V, TPC_VIEW_W, pca1Start, pca2Start, pca3Start,
+                        //    pca3DStart, chi2);
+                        //std::cout << "Proj W chi2: " << chi2 << std::endl;
+                        PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &pca3Start, &pca3Finish, "ProjW", BLACK, 3, 1));
+
+                        CartesianVector axis1(pca3Finish); axis1 -= pca3Start;
+                        CartesianVector axis2(pcaXFinish); axis2 -= pcaXStart;
+                        const float cosOpenAngle{std::abs(axis1.GetCosOpeningAngle(axis2))};
+                        std::cout << "cosOpenAngle: " << cosOpenAngle << std::endl;
+                        if (cosOpenAngle > 0.98f)
+                        {
+                            std::cout << "Worth pursuing" << std::endl;
+                        }
+                    }
+                    else
+                    {   // UW inputs
+                        const float us{pca1Start.GetZ()}, ws{pca2Finish.GetZ()};
+                        const float vs{static_cast<float>(PandoraContentApi::GetPlugins(*this)->GetLArTransformationPlugin()->WUtoV(ws, us))};
+                        CartesianVector pca3Start(pca1Start.GetX(), 0.f, vs);
+                        const float uf{pca1Finish.GetZ()}, wf{pca2Start.GetZ()};
+                        const float vf{static_cast<float>(PandoraContentApi::GetPlugins(*this)->GetLArTransformationPlugin()->WUtoV(wf, uf))};
+                        CartesianVector pca3Finish(pca1Finish.GetX(), 0.f, vf);
+                        PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &pca3Start, &pca3Finish, "ProjV", BLACK, 3, 1));
+
+                        CartesianVector axis1(pca3Finish); axis1 -= pca3Start;
+                        CartesianVector axis2(pcaXFinish); axis2 -= pcaXStart;
+                        const float cosOpenAngle{std::abs(axis1.GetCosOpeningAngle(axis2))};
+                        std::cout << "cosOpenAngle: " << cosOpenAngle << std::endl;
+                        if (cosOpenAngle > 0.98f)
+                        {
+                            std::cout << "Worth pursuing" << std::endl;
+                        }
+                    }
+                }
+                else
+                {   // VW inputs
+                    const float vs{pca1Start.GetZ()}, ws{pca2Finish.GetZ()};
+                    const float us{static_cast<float>(PandoraContentApi::GetPlugins(*this)->GetLArTransformationPlugin()->VWtoU(vs, ws))};
+                    CartesianVector pca3Start(pca1Start.GetX(), 0.f, us);
+                    const float vf{pca1Finish.GetZ()}, wf{pca2Start.GetZ()};
+                    const float uf{static_cast<float>(PandoraContentApi::GetPlugins(*this)->GetLArTransformationPlugin()->VWtoU(vf, wf))};
+                    CartesianVector pca3Finish(pca1Finish.GetX(), 0.f, uf);
+                    PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &pca3Start, &pca3Finish, "ProjU", BLACK, 3, 1));
+
+                    CartesianVector axis1(pca3Finish); axis1 -= pca3Start;
+                    CartesianVector axis2(pcaXFinish); axis2 -= pcaXStart;
+                    const float cosOpenAngle{std::abs(axis1.GetCosOpeningAngle(axis2))};
+                    std::cout << "cosOpenAngle: " << cosOpenAngle << std::endl;
+                    if (cosOpenAngle > 0.98f)
+                    {
+                        std::cout << "Worth pursuing" << std::endl;
+                    }
+                }
+            }
+        }
+        else
+        {   // At least one axis is isochronous, need to check all possible endpoint matches
+            std::cout << "Isochronous case" << std::endl;
+        }
+
+
+        // Axes have been correctly extended at this point, next need to take the end points (first match based on x, if isochronous pick the best
+        // projection chi2 to move forward) and project into the remaining view. Might want to apply transverse coords here and then generate 3D hits
+        // from the vertices of the cone, before projecting the 3D points back into the 3 views and finding clusters that are mostly contained and 
+        // also produce good 3D points if they were to be merged
+
+        // Define a cone that (approximately) envelopes the cluster
+/*        CartesianVector pca1Start(0.f, 0.f, 0.f), pca1Finish(0.f, 0.f, 0.f), p1r(0.f, 0.f, 0.f), p1l(0.f, 0.f, 0.f), transverse(0.f, 0.f, 0.f);
+
+        p1r *= length * ratio;
+        p1l -= p1r;
+        p1r += p1; p1l += p1;
+
+        for (HitType view : {TPC_VIEW_U, TPC_VIEW_V, TPC_VIEW_W})
+        {
+            const Cluster *pCluster{viewCluster.GetCluster(view)};
+            // Project the extremal hits of the cluster onto the principal axis
+            CartesianVector p0(0.f, 0.f, 0.f), p1(0.f, 0.f, 0.f), p1r(0.f, 0.f, 0.f), p1l(0.f, 0.f, 0.f), transverse(0.f, 0.f, 0.f);
+            float length{0.f}, ratio{1.f};
+            this->GetConeParameters(pCluster, p0, p1, transverse, length, ratio);
+            // Define a cone that (approximately) envelopes the cluster
+            p1r *= length * ratio;
+            p1l -= p1r;
+            p1r += p1; p1l += p1;
+
+            //if (m_visualize && LArClusterHelper::GetClusterHitType(pCluster) == HitType::TPC_VIEW_W)
+            {
+                Color color{view == TPC_VIEW_W ? BLUE : view == TPC_VIEW_V ? GREEN : RED};
+                CaloHitList &caloHits{view == TPC_VIEW_W ? caloHitsW : view == TPC_VIEW_V ? caloHitsV : caloHitsU};
+                PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &caloHits, std::to_string(view), GRAY));
+                PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &p0, &p1r, "A", color, 3, 1));
+                PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &p1r, &p1l, "B", color, 3, 1));
+                PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &p1l, &p0, "C", color, 3, 1));
+            }
+        }*/
+        PANDORA_MONITORING_API(Pause(this->GetPandora()));
+
+
+        /*
+        CartesianVector p2(p1);
+        CartesianVector p2r(eigenVectors[1]), p2l(0.f, 0.f, 0.f);
+        if (m_runCount > 0)
+        {   // Broader cone surrounding the seed cluster
+            p2r *= 3.5f * length * eigenRatio;
+            p2l -= p2r;
+            p2r += p2; p2l += p2;
+        }
+        else
+        {
+            // Define an extended cone beyond the end of the seed cluster
+            p2 += dl;
+            p2r *= 2 * length * eigenRatio;
+            p2l -= p2r;
+            p2r += p2; p2l += p2;
+        }
+
+        if (m_visualize && LArClusterHelper::GetClusterHitType(pCluster) == HitType::TPC_VIEW_W)
+        {
+            PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &p0, &p1r, "A", BLUE, 3, 1));
+            PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &p1r, &p1l, "B", BLUE, 3, 1));
+            PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &p1l, &p0, "C", BLUE, 3, 1));
+            PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &p1r, &p2r, "D", RED, 3, 1));
+            PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &p1l, &p2l, "E", RED, 3, 1));
+            PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &p2r, &p2l, "H", RED, 3, 1));
+            PANDORA_MONITORING_API(Pause(this->GetPandora()));
+        }
+
+        if (m_visualize && LArClusterHelper::GetClusterHitType(pCluster) == HitType::TPC_VIEW_W)
+        {
+            PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &caloHits, "Seed", BLUE));
+            PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &p0, &p2l, "AB", BLACK, 3, 1));
+            PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &p0, &p2r, "AC", BLACK, 3, 1));
+            PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &p2l, &p2r, "BC", BLACK, 3, 1));
+            PANDORA_MONITORING_API(Pause(this->GetPandora()));
+        }*/
+
+
+
+
+
+
+    }
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+void ConeAssociationAlgorithm::GetConeParameters(const Cluster *pCluster, CartesianVector &p0, CartesianVector &p1,
+    CartesianVector &transverse, float &length, float &ratio) const
+{
+    const OrderedCaloHitList &orderedCaloHitList(pCluster->GetOrderedCaloHitList());
+    CaloHitList caloHits;
+    orderedCaloHitList.FillCaloHitList(caloHits);
+
+    // Get the eigen vectors for this cluster
+    CartesianVector centroid(0.f, 0.f, 0.f);
+    LArPcaHelper::EigenValues eigenValues(0.f, 0.f, 0.f);
+    LArPcaHelper::EigenVectors eigenVectors;
+    LArPcaHelper::RunPca(caloHits, centroid, eigenValues, eigenVectors);
+
+    // Project the extremal hits of the cluster onto the principal axis
+    LArClusterHelper::GetExtremalCoordinates(pCluster, p0, p1);
+    p0 -= centroid;
+    p1 -= centroid;
+    const CartesianVector &principalAxis(eigenVectors[0]);
+    const float vMagSquared{principalAxis.GetMagnitudeSquared()};
+    const float normDot0p{p0.GetDotProduct(principalAxis) / vMagSquared};
+    const float normDot1p{p1.GetDotProduct(principalAxis) / vMagSquared};
+    p0.SetValues(normDot0p * principalAxis.GetX() + centroid.GetX(), normDot0p * principalAxis.GetY() + centroid.GetY(),
+        normDot0p * principalAxis.GetZ() + centroid.GetZ());
+    p1.SetValues(normDot1p * principalAxis.GetX() + centroid.GetX(), normDot1p * principalAxis.GetY() + centroid.GetY(),
+        normDot1p * principalAxis.GetZ() + centroid.GetZ());
+
+    // Get the length of the cluster along the principal axis
+    CartesianVector dl(p1); dl -= p0;
+    length = dl.GetMagnitude();
+    ratio = std::sqrt(eigenValues.GetY() / eigenValues.GetX());
+    transverse = eigenVectors[1];
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
