@@ -752,6 +752,21 @@ bool LArClusterHelper::SortByPosition(const Cluster *const pLhs, const Cluster *
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
+bool LArClusterHelper::SortByMinXPosition(const Cluster *const pLhs, const Cluster *const pRhs)
+{
+    float xMinLhs{0.f}, xMinRhs, dummy{0.f};
+    pLhs->GetClusterSpanX(xMinLhs, dummy);
+    pRhs->GetClusterSpanX(xMinRhs, dummy);
+    const float dx{xMinRhs - xMinLhs};
+
+    if (std::fabs(dx) > std::numeric_limits<float>::epsilon())
+        return dx > std::numeric_limits<float>::epsilon();
+    else
+        return SortByPosition(pLhs, pRhs);
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
 bool LArClusterHelper::SortByPulseHeight(const Cluster *const pLhs, const Cluster *const pRhs)
 {
     return (pLhs->GetHadronicEnergy() > pRhs->GetHadronicEnergy());

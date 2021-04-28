@@ -340,6 +340,14 @@ public:
     static bool SortByPosition(const pandora::Cluster *const pLhs, const pandora::Cluster *const pRhs);
 
     /**
+     *  @brief  Sort clusters by their position (use minimum x, followed by Z, followed by Y), then pulse-height
+     *
+     *  @param  pLhs address of first cluster
+     *  @param  pRhs address of second cluster
+     */
+    static bool SortByMinXPosition(const pandora::Cluster *const pLhs, const pandora::Cluster *const pRhs);
+
+    /**
      *  @brief  Sort clusters by pulse-height
      *
      *  @param  pLhs address of first cluster

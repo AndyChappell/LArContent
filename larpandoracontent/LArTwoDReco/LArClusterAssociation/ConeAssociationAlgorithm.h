@@ -32,6 +32,113 @@ public:
     virtual ~ConeAssociationAlgorithm();
 
 private:
+    /**
+     *  @brief  The Cone class describes a 2D envelope around a cluster or set of clusters
+     */
+    class Cone
+    {
+    public:
+        /**
+         *  @brief Constructor
+         *
+         *  @param  a a vertex describing the cone
+         *  @param  b a vertex describing the cone
+         *  @param  c a vertex describing the cone
+         */
+        Cone(const pandora::CartesianVector &a, const pandora::CartesianVector &b, const pandora::CartesianVector &c) :
+            m_a(a),
+            m_b(b),
+            m_c(c)
+        {
+        }
+
+        /**
+         *  @brief  Determine whether a target cluster is contained by this cone
+         *
+         *  @param  pCluster the target cluster
+         *
+         *  @return whether the cluster is contained within the bounding region
+         */
+        bool IsClusterContained(const pandora::Cluster *const pCluster, const pandora::Algorithm *alg) const;
+
+    private:
+        /**
+         *  @brief  Determines if a point is contained within a triangle using the Barycentric technique, as described in
+         *          Real-Time Collision Detection, C. Ericson (Morgan Kaufmann, 2005).
+         *
+         *  @param  ab the vector describing the triangle edge ab
+         *  @param  ac the vector describing the traingle edge ac
+         *  @param  ap the vector describing the displacement of the point p from the point a
+         *
+         *  @return true if the point is contained within the triangle, false otherwise
+         */
+        bool IsPointContained(const pandora::CartesianVector &ab, const pandora::CartesianVector &ac, const pandora::CartesianVector &ap) const;
+
+        const pandora::CartesianVector m_a; ///< A vertex of the bounding envelope
+        const pandora::CartesianVector m_b; ///< A vertex of the bounding envelope
+        const pandora::CartesianVector m_c; ///< A vertex of the bounding envelope
+    };
+
+    /**
+     *  @brief  The MatchingTriplet class assesses whether sets of clusters in different views might form a viable 3D cluster
+     */
+    class MatchingTriplet
+    {
+    public:
+        /**
+         *  @brief  Constructor
+         *
+         *  @param  pAlgorithm The ConeAssociationAlgorithm
+         *  @param  clusterListU The set of clusters to consider for merging in the U view
+         *  @param  clusterListV The set of clusters to consider for merging in the V view
+         *  @param  clusterListW The set of clusters to consider for merging in the W view
+         *  @param  clusterMergeMap The merge map to populate with good merge candidates
+         */
+        MatchingTriplet(const ConeAssociationAlgorithm *const pAlgorithm, const pandora::ClusterList &clusterListU,
+            const pandora::ClusterList &clusterListV, const pandora::ClusterList &clusterListW, ClusterMergeMap &clusterMergeMap);
+
+    private:
+        /**
+         *  @brief Calculate the quality of cluster matching across views and populate a cluster merge map with good candidates
+         *
+         *  @param clusterMergeMap The merge map to populate with good merge candidates
+         */
+        void AssessMatchQuality(ClusterMergeMap &clusterMergeMap);
+
+        /**
+         *  @brief Find the indices of the hits within a given x-span. Note, this function expects a sorted hit vector. 
+         *
+         *  @param hits The vector of calo hits to search
+         *  @param xMin The minimum x-position
+         *  @param xMax The maximum x-position
+         *  @param minIdx The output index of the first hit in the specified range.
+         *  @param maxIdx The maximum index of the last hit in the specified range.
+         *  @return Whether or not hits were found in the range.
+         */
+        bool FindHitsInXRange(const pandora::CaloHitVector &hits, const float xMin, const float xMax, int &minIdx, int &maxIdx) const;
+
+        /**
+         *  @brief Performs a binary search for a hit at a given x coordinate (within a given tolerance)
+         *
+         *  @param hits The vector of calo hits to search
+         *  @param x The value to search for
+         *  @param p The pivot index (initialise to zero)
+         *  @param r The right-hand index (initialise to the maximum index)
+         *  @param tolerance The tolerance to allow in the search
+         *  @return The index of the hit, or -1 if not found
+         */
+        int BinarySearch(const pandora::CaloHitVector &hits, const float x, const int p, const int r, const float tolerance = 0.f) const;
+
+        const ConeAssociationAlgorithm *const m_pAlgorithm; ///< The ConeAssociatioAlgorithm object
+        pandora::ClusterVector m_clustersU; ///< The vector of contained clusters in the U view
+        pandora::ClusterVector m_clustersV; ///< The vector of contained clusters in the V view
+        pandora::ClusterVector m_clustersW; ///< The vector of contained clusters in the W view
+        pandora::ClusterList m_matchedClustersU; ///< The list of matched clusters in the U view
+        pandora::ClusterList m_matchedClustersV; ///< The list of matched clusters in the V view
+        pandora::ClusterList m_matchedClustersW; ///< The list of matched clusters in the W view
+        float m_chi2; ///< The chi-squared value for this match
+    };
+
     class ViewCluster
     {
     public:
@@ -223,11 +330,29 @@ private:
     void GetConeParameters(const pandora::Cluster *pCluster, pandora::CartesianVector &start, pandora::CartesianVector &finish,
         pandora::CartesianVector &transverse, float &length, float &ratio) const;
 
+    /**
+     *  @brief  Make a cone about PCA axes
+     *
+     *  @param  start The start coordinate of the principal axis
+     *  @param  finish The finish cooridinate of the principal axis
+     *  @param  transverse The unit vector representing the secondary axis
+     *  @param  ratio The ratio of the eigenvalues for the PCA axes
+     *  @param  origin The output origin of the cone
+     *  @param  vertex1 An output end vertex of the cone
+     *  @param  vertex2 An output end vertex of the cone
+     */
+    void MakeCone(const pandora::CartesianVector &start, const pandora::CartesianVector &finish, const pandora::CartesianVector &transverse,
+        const float ratio, pandora::CartesianVector &origin, pandora::CartesianVector &vertex1, pandora::CartesianVector &vertex2) const;
+
     pandora::StringVector m_inputListNames;     ///< The list of input clusters
     unsigned int m_minClusterLayers;            ///< minimum allowed number of layers for a clean cluster
     mutable int m_runCount;                     ///< the number of times the algorithm has been run
     bool m_visualize;                           ///< whether or not to visualize the algorithm
-    std::map<pandora::HitType, std::string> m_viewToListMap;
+    std::map<pandora::HitType, std::string> m_viewToListMap;    ///< A mapping from a view to the associated cluster list name
+    pandora::ClusterList m_clustersU;           ///< The clusters in the U view
+    pandora::ClusterList m_clustersV;           ///< The clusters in the V view
+    pandora::ClusterList m_clustersW;           ///< The clusters in the W view
+    ClusterHitsMap m_clusterToSortedHitsMap;    ///< A map from clusters to their sorted hits
 };
 
 } // namespace lar_content
