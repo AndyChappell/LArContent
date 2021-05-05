@@ -323,6 +323,18 @@ int ConeAssociationAlgorithm::MatchingTriplet::BinarySearch(const CaloHitVector 
 //------------------------------------------------------------------------------------------------------------------------------------------
 //------------------------------------------------------------------------------------------------------------------------------------------
 
+ConeAssociationAlgorithm::OverlapGroup::OverlapGroup(const Cluster *pCluster1, const Cluster *pCluster2, const float overlapStart,
+    const float overlapFinish) :
+    m_overlapStart{overlapStart},
+    m_overlapFinish{overlapFinish}
+{
+    m_clusters.emplace_back(pCluster1);
+    m_clusters.emplace_back(pCluster2);
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+//------------------------------------------------------------------------------------------------------------------------------------------
+
 ConeAssociationAlgorithm::ViewCluster::ViewCluster(const Cluster *pClusterU, const Cluster *pClusterV, const Cluster *pClusterW,
     const float chi2, const float overlapStart, const float overlapFinish) :
     m_chi2{chi2},
@@ -427,57 +439,326 @@ void ConeAssociationAlgorithm::GetListOfCleanClusters(const ClusterList *const p
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
+void ConeAssociationAlgorithm::GetListOfSeedClusters(const ClusterVector &pClusterVector, ClusterVector &seedVector,
+    ClusterVector &remnantVector) const
+{
+    for (const Cluster *const pCluster : pClusterVector)
+    {
+        if (pCluster->GetNCaloHits() < 10)
+            remnantVector.emplace_back(pCluster);
+        else
+            seedVector.emplace_back(pCluster);
+    }
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
 void ConeAssociationAlgorithm::PopulateClusterMergeMap(const ClusterVector &clusterVector, ClusterMergeMap &clusterMergeMap) const
 {
-    if (m_runCount > 2)
-        return;
+    ClusterVector seedClusters, remnantClusters;
+    this->GetListOfSeedClusters(clusterVector, seedClusters, remnantClusters);
     // Separate the clusters into their respective views
     ClusterList clusterListU, clusterListV, clusterListW;
-    for (const Cluster *pCluster : clusterVector)
+    for (const Cluster *pCluster : seedClusters)
     {
-        HitType view{LArClusterHelper::GetClusterHitType(pCluster)};
-        if (view == TPC_VIEW_U)
-            clusterListU.emplace_back(pCluster);
-        else if (view == TPC_VIEW_V)
-            clusterListV.emplace_back(pCluster);
-        else if (view == TPC_VIEW_W)
-            clusterListW.emplace_back(pCluster);
-    }
-
-    if (m_runCount == 0)
-    {   // Iteration 1 uses x-overlap information to consolidate clusters ahead of PCA step
-        if (!(clusterListU.empty() || clusterListV.empty() || clusterListW.empty()))
+        switch (LArClusterHelper::GetClusterHitType(pCluster))
         {
-            ViewClusterVector viewClusterVector;
-            this->AssociateClusters(clusterListU, clusterListV, clusterListW, viewClusterVector);
-            this->ConsolidateClusters(viewClusterVector, clusterMergeMap);
-            for (const ViewCluster *pViewCluster : viewClusterVector)
-                delete pViewCluster;
-        }
-    }
-    else if (m_runCount == 1 || m_runCount == 2)
-    {   // Iteration 2 builds PCA cones to grow clusters
-        if (!(clusterListU.empty() || clusterListV.empty() || clusterListW.empty()))
-        {
-            ViewClusterVector viewClusterVector;
-            this->AssociateClusters(clusterListU, clusterListV, clusterListW, viewClusterVector);
-            this->GrowClusters(viewClusterVector, clusterMergeMap);
-            for (const ViewCluster *pViewCluster : viewClusterVector)
-                delete pViewCluster;
+            case TPC_VIEW_U:
+                clusterListU.emplace_back(pCluster);
+                break;
+            case TPC_VIEW_V:
+                clusterListV.emplace_back(pCluster);
+                break;
+            case TPC_VIEW_W:
+                clusterListW.emplace_back(pCluster);
+                break;
+            default:
+                break;
         }
     }
 
+    std::cout << "Seed clusters: " << clusterListU.size() << " " << clusterListV.size() << " " << clusterListW.size() << std::endl;
+    std::cout << "Remnant clusters: " << remnantClusters.size() << std::endl;
+
+    std::list<OverlapGroup> overlapGroupVector;
+    for (const Cluster *const pClusterU : clusterListU)
+    {
+        float xMinU{0.f}, xMaxU{0.f};
+        pClusterU->GetClusterSpanX(xMinU, xMaxU);
+        const float uSpan{xMaxU - xMinU};
+        for (const Cluster *const pClusterV : clusterListV)
+        {
+            float xMinV{0.f}, xMaxV{0.f};
+            pClusterV->GetClusterSpanX(xMinV, xMaxV);
+            const float vSpan{xMaxV - xMinV};
+            const float xMin{std::max(xMinU, xMinV)}, xMax{std::min(xMaxU, xMaxV)};
+            const float span{xMax - xMin};
+            if (xMin >= xMax)
+                continue;
+            if (uSpan < std::numeric_limits<float>::epsilon() && vSpan < std::numeric_limits<float>::epsilon())
+            {   // Both isochronous, group them
+                overlapGroupVector.emplace_back(OverlapGroup(pClusterU, pClusterV, xMin, xMax));
+            }
+            else if (uSpan > std::numeric_limits<float>::epsilon() && (span / uSpan > 0.5f) &&
+                vSpan > std::numeric_limits<float>::epsilon() && (span / vSpan > 0.5f))
+            {   // Overlap region is at least half the span of each cluster, group them
+                overlapGroupVector.emplace_back(OverlapGroup(pClusterU, pClusterV, xMin, xMax));
+            }
+        }
+
+        for (const Cluster *const pClusterW : clusterListW)
+        {
+            float xMinW{0.f}, xMaxW{0.f};
+            pClusterW->GetClusterSpanX(xMinW, xMaxW);
+            const float wSpan{xMaxW - xMinW};
+            const float xMin{std::max(xMinU, xMinW)}, xMax{std::min(xMaxU, xMaxW)};
+            const float span{xMax - xMin};
+            if (xMin >= xMax)
+                continue;
+            if (uSpan < std::numeric_limits<float>::epsilon() && wSpan < std::numeric_limits<float>::epsilon())
+            {   // Both isochronous, group them
+                overlapGroupVector.emplace_back(OverlapGroup(pClusterU, pClusterW, xMin, xMax));
+            }
+            else if (uSpan > std::numeric_limits<float>::epsilon() && (span / uSpan > 0.5f) &&
+                wSpan > std::numeric_limits<float>::epsilon() && (span / wSpan > 0.5f))
+            {   // Overlap region is at least half the span of each cluster, group them
+                overlapGroupVector.emplace_back(OverlapGroup(pClusterU, pClusterW, xMin, xMax));
+            }
+        }
+    }
+
+    for (const Cluster *const pClusterV : clusterListV)
+    {
+        float xMinV{0.f}, xMaxV{0.f};
+        pClusterV->GetClusterSpanX(xMinV, xMaxV);
+        const float vSpan{xMaxV - xMinV};
+
+        for (const Cluster *const pClusterW : clusterListW)
+        {
+            float xMinW{0.f}, xMaxW{0.f};
+            pClusterW->GetClusterSpanX(xMinW, xMaxW);
+            const float wSpan{xMaxW - xMinW};
+            const float xMin{std::max(xMinV, xMinW)}, xMax{std::min(xMaxV, xMaxW)};
+            const float span{xMax - xMin};
+            if (xMin >= xMax)
+                continue;
+            if (vSpan < std::numeric_limits<float>::epsilon() && wSpan < std::numeric_limits<float>::epsilon())
+            {   // Both isochronous, group them
+                overlapGroupVector.emplace_back(OverlapGroup(pClusterV, pClusterW, xMin, xMax));
+            }
+            else if (vSpan > std::numeric_limits<float>::epsilon() && (span / vSpan > 0.5f) &&
+                wSpan > std::numeric_limits<float>::epsilon() && (span / wSpan > 0.5f))
+            {   // Overlap region is at least half the span of each cluster, group them
+                overlapGroupVector.emplace_back(OverlapGroup(pClusterV, pClusterW, xMin, xMax));
+            }
+        }
+    }
+
+    //PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1.f, 1.f, 1.f));
+    for (OverlapGroup &group : overlapGroupVector)
+    {
+        const Cluster *const pCluster1{group.GetCluster1()};
+        const Cluster *const pCluster2{group.GetCluster2()};
+        CartesianVector start1(0.f, 0.f, 0.f), finish1(0.f, 0.f, 0.f), transverse1(0.f, 0.f, 0.f);
+        float length1{0.f}, ratio1{0.f};
+        this->GetConeParameters(pCluster1, start1, finish1, transverse1, length1, ratio1);
+        CartesianVector start2(0.f, 0.f, 0.f), finish2(0.f, 0.f, 0.f), transverse2(0.f, 0.f, 0.f);
+        float length2{0.f}, ratio2{0.f};
+        this->GetConeParameters(pCluster2, start2, finish2, transverse2, length2, ratio2);
+
+        // Make sure start is low x (or low z if x is equal)
+        if (start1.GetX() > finish1.GetX())
+        {
+            std::swap(start1, finish1);
+        }
+        else if (start1.GetX() == finish1.GetX())
+        {   // Check z and swap if start is downstream of finish
+            if (start1.GetZ() > finish1.GetZ())
+                std::swap(start1, finish1);
+        }
+        if (start2.GetX() > finish2.GetX())
+        {
+            std::swap(start2, finish2);
+        }
+        else if (start2.GetX() == finish2.GetX())
+        {
+            if (start2.GetZ() > finish2.GetZ())
+                std::swap(start2, finish2);
+        }
+
+        //PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &start1, &finish1, "U", RED, 3, 1));
+        //PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &start2, &finish2, "V", GREEN, 3, 1));
+
+        // Can then try the cone in both directions and see what produces the best outcome
+        // Start with a longitudinal cone, then try transverse
+        CartesianVector start3(0.f, 0.f, 0.f), finish3(0.f, 0.f, 0.f);
+        std::vector<HitType> views({TPC_VIEW_U, TPC_VIEW_V, TPC_VIEW_W});
+        views.erase(std::find(views.begin(), views.end(), LArClusterHelper::GetClusterHitType(pCluster1)));
+        views.erase(std::find(views.begin(), views.end(), LArClusterHelper::GetClusterHitType(pCluster2)));
+
+        const HitType projView{views.front()};
+        std::cout << "View: " << projView << std::endl;
+        switch (projView)
+        {
+            case TPC_VIEW_U:
+            {
+                this->AdjustEndPoints(start1, finish1, start2, finish2);
+                auto transform{PandoraContentApi::GetPlugins(*this)->GetLArTransformationPlugin()};
+                const float z0_3{static_cast<float>(transform->VWtoU(start1.GetZ(), start2.GetZ()))},
+                    z1_3{static_cast<float>(transform->VWtoU(finish1.GetZ(), finish2.GetZ()))};
+                start3.SetValues(start1.GetX(), 0.f, z0_3);
+                finish3.SetValues(finish1.GetX(), 0.f, z1_3);
+                CartesianVector axis3(finish3); axis3 -= start3;
+
+                // Create the cones in the three views
+                CartesianVector origin1(0.f, 0.f, 0.f), vertex1A(0.f, 0.f, 0.f), vertex1B(0.f, 0.f, 0.f);
+                this->MakeCone(start1, finish1, transverse1, ratio1, origin1, vertex1A, vertex1B);
+                Cone cone1(origin1, vertex1A, vertex1B);
+                CartesianVector origin2(0.f, 0.f, 0.f), vertex2A(0.f, 0.f, 0.f), vertex2B(0.f, 0.f, 0.f);
+                this->MakeCone(start2, finish2, transverse2, ratio2, origin2, vertex2A, vertex2B);
+                Cone cone2(origin2, vertex2A, vertex2B);
+                CartesianVector origin3(0.f, 0.f, 0.f), vertex3A(0.f, 0.f, 0.f), vertex3B(0.f, 0.f, 0.f);
+                CartesianVector transverse3(-axis3.GetZ(), 0.f, axis3.GetX());
+                transverse3 = transverse3.GetUnitVector();
+                this->MakeCone(start3, finish3, transverse3, ratio1 < ratio2 ? ratio1 : ratio2, origin3, vertex3A, vertex3B);
+                Cone cone3(origin3, vertex3A, vertex3B);
+
+                this->UpdateClusterMergeMap(cone3, cone1, cone2, clusterMergeMap);
+
+                break;
+            }
+            case TPC_VIEW_V:
+            {
+                this->AdjustEndPoints(start1, finish1, start2, finish2);
+                auto transform{PandoraContentApi::GetPlugins(*this)->GetLArTransformationPlugin()};
+                const float z0_3{static_cast<float>(transform->WUtoV(start2.GetZ(), start1.GetZ()))},
+                    z1_3{static_cast<float>(transform->WUtoV(finish2.GetZ(), finish1.GetZ()))};
+                start3.SetValues(start1.GetX(), 0.f, z0_3);
+                finish3.SetValues(finish1.GetX(), 0.f, z1_3);
+                CartesianVector axis3(finish3); axis3 -= start3;
+
+                // Create the cones in the three views
+                CartesianVector origin1(0.f, 0.f, 0.f), vertex1A(0.f, 0.f, 0.f), vertex1B(0.f, 0.f, 0.f);
+                this->MakeCone(start1, finish1, transverse1, ratio1, origin1, vertex1A, vertex1B);
+                Cone cone1(origin1, vertex1A, vertex1B);
+                CartesianVector origin2(0.f, 0.f, 0.f), vertex2A(0.f, 0.f, 0.f), vertex2B(0.f, 0.f, 0.f);
+                this->MakeCone(start2, finish2, transverse2, ratio2, origin2, vertex2A, vertex2B);
+                Cone cone2(origin2, vertex2A, vertex2B);
+                CartesianVector origin3(0.f, 0.f, 0.f), vertex3A(0.f, 0.f, 0.f), vertex3B(0.f, 0.f, 0.f);
+                CartesianVector transverse3(-axis3.GetZ(), 0.f, axis3.GetX());
+                transverse3 = transverse3.GetUnitVector();
+                this->MakeCone(start3, finish3, transverse3, ratio1 < ratio2 ? ratio1 : ratio2, origin3, vertex3A, vertex3B);
+                Cone cone3(origin3, vertex3A, vertex3B);
+
+                this->UpdateClusterMergeMap(cone1, cone3, cone2, clusterMergeMap);
+
+                break;
+            }
+            case TPC_VIEW_W:
+            {
+                this->AdjustEndPoints(start1, finish1, start2, finish2);
+                auto transform{PandoraContentApi::GetPlugins(*this)->GetLArTransformationPlugin()};
+                const float z0_3{static_cast<float>(transform->UVtoW(start1.GetZ(), start2.GetZ()))},
+                    z1_3{static_cast<float>(transform->UVtoW(finish1.GetZ(), finish2.GetZ()))};
+                start3.SetValues(start1.GetX(), 0.f, z0_3);
+                finish3.SetValues(finish1.GetX(), 0.f, z1_3);
+                CartesianVector axis3(finish3); axis3 -= start3;
+
+                // Create the cones in the three views
+                CartesianVector origin1(0.f, 0.f, 0.f), vertex1A(0.f, 0.f, 0.f), vertex1B(0.f, 0.f, 0.f);
+                this->MakeCone(start1, finish1, transverse1, ratio1, origin1, vertex1A, vertex1B);
+                Cone cone1(origin1, vertex1A, vertex1B);
+                CartesianVector origin2(0.f, 0.f, 0.f), vertex2A(0.f, 0.f, 0.f), vertex2B(0.f, 0.f, 0.f);
+                this->MakeCone(start2, finish2, transverse2, ratio2, origin2, vertex2A, vertex2B);
+                Cone cone2(origin2, vertex2A, vertex2B);
+                CartesianVector origin3(0.f, 0.f, 0.f), vertex3A(0.f, 0.f, 0.f), vertex3B(0.f, 0.f, 0.f);
+                CartesianVector transverse3(-axis3.GetZ(), 0.f, axis3.GetX());
+                transverse3 = transverse3.GetUnitVector();
+                this->MakeCone(start3, finish3, transverse3, ratio1 < ratio2 ? ratio1 : ratio2, origin3, vertex3A, vertex3B);
+                Cone cone3(origin3, vertex3A, vertex3B);
+
+                this->UpdateClusterMergeMap(cone1, cone2, cone3, clusterMergeMap);
+
+                //PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &start3, &finish3, "W", BLUE, 3, 1));
+                //PANDORA_MONITORING_API(Pause(this->GetPandora()));
+                break;
+            }
+            default:
+                break;
+        }
+    }
+
+    switch (m_runCount)
+    {
+        case 0:
+        {
+            break;
+        }
+        default:
+        {
+            break;
+        }
+    }
     ++m_runCount;
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-void ConeAssociationAlgorithm::AssociateClusters(const ClusterList &clusterListU, const ClusterList &clusterListV,
-    const ClusterList &clusterListW, ViewClusterVector &viewClusterVector) const
+void ConeAssociationAlgorithm::AdjustEndPoints(CartesianVector &start1, CartesianVector &finish1, CartesianVector &start2,
+    CartesianVector &finish2) const
 {
-    ClusterExtremumMap clusterXminMap, clusterXmaxMap;
-    ClusterHitsMap clusterHitsMap;
-    for (const ClusterList &clusterList : {clusterListU, clusterListV, clusterListW})
+    const float x0{std::max(start1.GetX(), start2.GetX())}, x1{std::min(finish1.GetX(), finish2.GetX())};
+    float z0_1{start1.GetZ()}, z0_2{start2.GetZ()}, z1_1{finish1.GetZ()}, z1_2{finish2.GetZ()};
+    const float dx1{finish1.GetX() - start1.GetX()};
+    const float dx2{finish2.GetX() - start2.GetX()};
+    float m1{0.f}, m2{0.f};
+    if (dx1 != 0.f)
+    {   // ATTN: Avoiding precisely the isochronous case, where we don't want to alter the end points
+        m1 = (finish1.GetZ() - start1.GetZ()) / dx1;
+        z0_1 += m1 * (x0 - start1.GetX());
+        z1_1 += m1 * (x1 - finish1.GetX());
+    }
+    if (dx2 != 0.f)
+    {   // ATTN: Avoiding precisely the isochronous case, where we don't want to alter the end points
+        m2 = (finish2.GetZ() - start2.GetZ()) / dx2;
+        z0_2 += m2 * (x0 - start2.GetX());
+        z1_2 += m2 * (x1 - finish1.GetX());
+    }
+    start1.SetValues(x0, 0.f, z0_1); finish1.SetValues(x1, 0.f, z1_1);
+    start2.SetValues(x0, 0.f, z0_2); finish2.SetValues(x1, 0.f, z1_2);
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+void ConeAssociationAlgorithm::UpdateClusterMergeMap(const Cone &coneU, const Cone &coneV, const Cone &coneW,
+    ClusterMergeMap &clusterMergeMap) const
+{
+    ClusterList containedU;
+    for (const Cluster *pCluster : m_clustersU)
+        if (coneU.IsClusterContained(pCluster, this))
+            containedU.emplace_back(pCluster);
+
+    ClusterList containedV;
+    for (const Cluster *pCluster : m_clustersV)
+        if (coneV.IsClusterContained(pCluster, this))
+            containedV.emplace_back(pCluster);
+
+    ClusterList containedW;
+    for (const Cluster *pCluster : m_clustersW)
+        if (coneW.IsClusterContained(pCluster, this))
+            containedW.emplace_back(pCluster);
+
+    MatchingTriplet triplet(this, containedU, containedV, containedW, clusterMergeMap);
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+void ConeAssociationAlgorithm::AssociateClusters(const ClusterList &clusterListU, const ClusterList &clusterListV,
+const ClusterList &clusterListW, ViewClusterVector &viewClusterVector) const
+{
+ClusterExtremumMap clusterXminMap, clusterXmaxMap;
+ClusterHitsMap clusterHitsMap;
+for (const ClusterList &clusterList : {clusterListU, clusterListV, clusterListW})
         for (const Cluster *pCluster : clusterList)
             this->PopulateClusterMaps(pCluster, clusterHitsMap, clusterXminMap, clusterXmaxMap);
 
@@ -1141,7 +1422,7 @@ void ConeAssociationAlgorithm::MakeCone(const CartesianVector &start, const Cart
     const float length{dl.GetMagnitude()};
     CartesianVector pcaExt(finish);
 
-    if (m_runCount == 1)
+    if (m_runCount == 0)
     {   // Build an extended cone, projected 50% beyond the end of the axis
         dl *= 0.5f;
         pcaExt += dl;
@@ -1161,6 +1442,7 @@ void ConeAssociationAlgorithm::MakeCone(const CartesianVector &start, const Cart
 
 StatusCode ConeAssociationAlgorithm::Run()
 {
+    m_runCount = 0;
     ClusterList allClusters;
     const ClusterList *pClusterList{nullptr};
 
@@ -1181,6 +1463,7 @@ StatusCode ConeAssociationAlgorithm::Run()
         return STATUS_CODE_NOT_INITIALIZED;
     }
 
+    int repeat{0};
     while (true)
     {
         m_clusterToSortedHitsMap.clear();
@@ -1209,10 +1492,23 @@ StatusCode ConeAssociationAlgorithm::Run()
         this->GetSortedListOfCleanClusters(unsortedVector, clusterVector);
 
         ClusterMergeMap clusterMergeMap;
-        this->PopulateClusterMergeMap(clusterVector, clusterMergeMap);
 
-        if (clusterMergeMap.empty())
+        std::cout << "Pre #: " << m_runCount << " Repeat: " << repeat << std::endl;
+        this->PopulateClusterMergeMap(clusterVector, clusterMergeMap);
+        std::cout << "Post #: " << m_runCount << " Merged: " << !clusterMergeMap.empty() << " Repeat: " << repeat <<  std::endl;
+
+        if (clusterMergeMap.empty() && m_runCount > 0)
             break;
+
+        if (repeat < 3 && m_runCount > 1)
+        {
+            ++repeat;
+            m_runCount = 0;
+        }
+        else if (repeat == 3 && m_runCount > 1)
+        {
+            break;
+        }
 
         // Here we care about the views and Need to separate them
         std::map<HitType, ClusterVector> clusterVectors;

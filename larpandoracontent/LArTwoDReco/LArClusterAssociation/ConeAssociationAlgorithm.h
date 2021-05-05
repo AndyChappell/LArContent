@@ -139,6 +139,47 @@ private:
         float m_chi2; ///< The chi-squared value for this match
     };
 
+    class OverlapGroup
+    {
+    public:
+        /**
+         *  @brief  Constructs an object that relates clusters from different views that are considered to be candidates for having come
+         *          from a common particle.
+         *
+         *  @param  pCluster1 A cluster one view
+         *  @param  pCluster2 A cluster from a different view
+         *  @param  overlapStart The low x-cooridnate for the common overlap region
+         *  @param  overlapFinish The high x-coordinate for the common overlap region
+         */
+        OverlapGroup(const pandora::Cluster *pCluster1, const pandora::Cluster *pCluster2, const float overlapStart,
+            const float overlapFinish);
+
+        /**
+         *  @brief  Retrieve the first cluster in this group
+         *
+         *  @return The first cluster in the group
+         */
+        const pandora::Cluster *GetCluster1() const
+        {
+            return m_clusters.front();
+        }
+
+        /**
+         *  @brief  Retrieve the second cluster in this group
+         *
+         *  @return The second cluster in the group
+         */
+        const pandora::Cluster *GetCluster2() const
+        {
+            return m_clusters.back();
+        }
+
+    private:
+        pandora::ClusterList m_clusters;
+        const float m_overlapStart;
+        const float m_overlapFinish;
+    };
+
     class ViewCluster
     {
     public:
@@ -262,6 +303,37 @@ private:
     pandora::StatusCode ReadSettings(const pandora::TiXmlHandle xmlHandle);
     void GetListOfCleanClusters(const pandora::ClusterList *const pClusterList, pandora::ClusterVector &clusterVector) const;
     void PopulateClusterMergeMap(const pandora::ClusterVector &clusterVector, ClusterMergeMap &clusterMergeMap) const;
+
+    /**
+     *  @brief  Retrieve a list of clusters suitable to use as seeds clusters for shower growing
+     *
+     *  @param  start1 The start position of the first axis
+     *  @param  finish1 The finish position of the first axis
+     *  @param  start2 The start position of the second axis
+     *  @param  finish2 The finish position of the second axis
+     */
+    void AdjustEndPoints(pandora::CartesianVector &start1, pandora::CartesianVector &finish1, pandora::CartesianVector &start2,
+        pandora::CartesianVector &finish2) const;
+
+    /**
+     *  @brief  Retrieve a list of clusters suitable to use as seeds clusters for shower growing
+     *
+     *  @param  coneU The cone describing the envelope around the U view
+     *  @param  coneV The cone describing the envelope around the V view
+     *  @param  coneW The cone describing the envelope around the W view
+     *  @param  clusterMergeMap The cluster merge map to update
+     */
+    void UpdateClusterMergeMap(const Cone &coneU, const Cone &coneV, const Cone &coneW, ClusterMergeMap &clusterMergeMap) const;
+
+    /**
+     *  @brief  Retrieve a list of clusters suitable to use as seeds clusters for shower growing
+     *
+     *  @param  pClusterVector The input vector of clean clusters
+     *  @param  seedVector The output vector of seed clusters
+     *  @param  remnantVector The output vector of non-seed clusters
+     */
+    void GetListOfSeedClusters(const pandora::ClusterVector &pClusterVector, pandora::ClusterVector &seedVector,
+        pandora::ClusterVector &remnantVector) const;
 
     /**
      *  @brief  Identifies clusters that can be matched across three views
