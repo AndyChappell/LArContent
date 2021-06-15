@@ -10,6 +10,8 @@
 
 #include "larpandoracontent/LArMonitoring/ShowerCaloMonitoringAlgorithm.h"
 
+#include <memory>
+
 using namespace pandora;
 
 namespace lar_content
@@ -29,7 +31,10 @@ ShowerCaloMonitoringAlgorithm::~ShowerCaloMonitoringAlgorithm()
 
 StatusCode ShowerCaloMonitoringAlgorithm::Run()
 {
-    PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1.f, 1.f, 1.f));
+    if (m_visualize)
+    {
+        PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1.f, 1.f, 1.f));
+    }
 
     LArMCParticleHelper::MCContributionMap targetMCParticleToHitsMap;
     const CaloHitList *pCaloHitList(nullptr);
@@ -60,51 +65,51 @@ StatusCode ShowerCaloMonitoringAlgorithm::Run()
             const CartesianVector &axisW{(finishW - startW).GetUnitVector()};
 
             unsigned int nHitsU{0}, nHitsV{0}, nHitsW{0};
-            CaloHitList wHits;
+            ProjCaloHitPtrList projCaloHitListU, projCaloHitListV, projCaloHitListW;
             for (const CaloHit *pCaloHit : caloHits)
             {
-                const CartesianVector &position{pCaloHit->GetPositionVector()};
                 switch (pCaloHit->GetHitType())
                 {
                     case TPC_VIEW_U:
                     {
                         ++nHitsU;
-                        const CartesianVector &rel{position - startU};
-                        const float dot{rel.GetDotProduct(axisU)};
-                        CartesianVector proj(axisU);
-                        proj *= dot;
-                        proj += startU;
+                        this->ProjectHit(pCaloHit, startU, axisU, projCaloHitListU);
                         break;
                     }
                     case TPC_VIEW_V:
                     {
                         ++nHitsV;
-                        const CartesianVector &rel{position - startV};
-                        const float dot{rel.GetDotProduct(axisV)};
-                        CartesianVector proj(axisV);
-                        proj *= dot;
-                        proj += startV;
+                        this->ProjectHit(pCaloHit, startV, axisV, projCaloHitListV);
                         break;
                     }
                     case TPC_VIEW_W:
                     {
-                        wHits.emplace_back(pCaloHit);
                         ++nHitsW;
-                        const CartesianVector &rel{position - startW};
-                        const float dot{rel.GetDotProduct(axisW)};
-                        CartesianVector proj(axisW);
-                        proj *= dot;
-                        proj += startW;
-                        PandoraMonitoringApi::AddMarkerToVisualization(this->GetPandora(), &proj, "Hit", BLACK, 1);
+                        this->ProjectHit(pCaloHit, startW, axisW, projCaloHitListW);
                         break;
                     }
                     default:
                         break;
                 }
             }
-            PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &wHits, "W", RED));
+            std::sort(projCaloHitListW.begin(), projCaloHitListW.end(),
+                [](const ProjCaloHitPtr pLhs, const ProjCaloHitPtr pRhs) { return pLhs->first < pRhs->first; });
+            if (m_visualize && !projCaloHitListW.empty())
+            {
+                const CartesianVector &start(projCaloHitListW.front()->second->GetPositionVector());
+                const CartesianVector &finish(projCaloHitListW.back()->second->GetPositionVector());
+                PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &start, &finish, "Projection", BLUE, 1, 1));
+
+                CaloHitList wHits;
+                for (const ProjCaloHitPtr pProjCaloHit : projCaloHitListW)
+                    wHits.emplace_back(pProjCaloHit->second);
+                PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &wHits, "W", RED));
+            }
         }
-        PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
+        if (m_visualize)
+        {
+            PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
+        }
     }
 
     return STATUS_CODE_SUCCESS;
@@ -124,6 +129,16 @@ void ShowerCaloMonitoringAlgorithm::MakeSelection(
     parameters.m_foldBackHierarchy = false;
 
     LArMCParticleHelper::SelectReconstructableMCParticles(pMCList, pCaloHitList, parameters, LArMCParticleHelper::IsBeamNeutrinoFinalState, mcMap);
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+void ShowerCaloMonitoringAlgorithm::ProjectHit(
+    const CaloHit *pCaloHit, const CartesianVector &origin, const CartesianVector &axis, ProjCaloHitPtrList &projCaloHitList)
+{
+    const CartesianVector &rel{pCaloHit->GetPositionVector() - origin};
+    const float dot{rel.GetDotProduct(axis)};
+    projCaloHitList.emplace_back(ProjCaloHitPtr(new ProjCaloHit(dot, pCaloHit)));
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------

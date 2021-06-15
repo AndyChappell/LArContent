@@ -12,6 +12,8 @@
 
 #include "larpandoracontent/LArHelpers/LArMCParticleHelper.h"
 
+#include <memory>
+
 namespace lar_content
 {
 
@@ -32,11 +34,18 @@ public:
     ~ShowerCaloMonitoringAlgorithm();
 
 private:
+    typedef std::pair<const float, const pandora::CaloHit *> ProjCaloHit;
+    typedef std::shared_ptr<ProjCaloHit> ProjCaloHitPtr;
+    typedef std::vector<ProjCaloHitPtr> ProjCaloHitPtrList;
+
     pandora::StatusCode Run();
     pandora::StatusCode ReadSettings(const pandora::TiXmlHandle xmlHandle);
 
     void MakeSelection(const pandora::MCParticleList *pMCList, const pandora::CaloHitList *pCaloHitList,
         LArMCParticleHelper::MCContributionMap &mcMap) const;
+
+    void ProjectHit(const pandora::CaloHit *pCaloHit, const pandora::CartesianVector &origin, const pandora::CartesianVector &axis,
+        ProjCaloHitPtrList &projCaloHitList);
 
     std::string m_caloHitListName; ///< Name of input calo hit list
     bool m_visualize;              ///< Whether or not to visualize MC particles
