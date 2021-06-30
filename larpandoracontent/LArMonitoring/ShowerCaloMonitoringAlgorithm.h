@@ -48,7 +48,10 @@ private:
         ProjCaloHitPtrList &projCaloHitList);
 
     std::string m_caloHitListName; ///< Name of input calo hit list
+    std::string m_fileName;        ///< Name of the output ROOT file
+    std::string m_treeName;        ///< Name of the output ROOT tree
     bool m_visualize;              ///< Whether or not to visualize MC particles
+    bool m_writeTree;              ///< Whether or not to produce a ROOT file
 };
 
 } // namespace lar_content

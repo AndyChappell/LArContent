@@ -17,7 +17,7 @@ using namespace pandora;
 namespace lar_content
 {
 
-ShowerCaloMonitoringAlgorithm::ShowerCaloMonitoringAlgorithm() : m_visualize(false)
+ShowerCaloMonitoringAlgorithm::ShowerCaloMonitoringAlgorithm() : m_visualize(false), m_writeTree(false)
 {
 }
 
@@ -25,6 +25,17 @@ ShowerCaloMonitoringAlgorithm::ShowerCaloMonitoringAlgorithm() : m_visualize(fal
 
 ShowerCaloMonitoringAlgorithm::~ShowerCaloMonitoringAlgorithm()
 {
+    if (m_writeTree)
+    {
+        try
+        {
+            PANDORA_MONITORING_API(SaveTree(this->GetPandora(), m_treeName, m_fileName, "RECREATE"));
+        }
+        catch (StatusCodeException e)
+        {
+            std::cout << "ShowerCaloMonitoringAlgorithm: Unable to write to ROOT tree" << std::endl;
+        }
+    }
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
@@ -46,12 +57,15 @@ StatusCode ShowerCaloMonitoringAlgorithm::Run()
     const LArTransformationPlugin *transform{this->GetPandora().GetPlugins()->GetLArTransformationPlugin()};
     for (auto [pMCParticle, caloHits] : targetMCParticleToHitsMap)
     {
-        if (!(pMCParticle->GetParticleId() == PHOTON || std::abs(pMCParticle->GetParticleId()) == E_MINUS))
+        const int pdg{std::abs(pMCParticle->GetParticleId())};
+        const int tier{LArMCParticleHelper::GetHierarchyTier(pMCParticle)};
+        if (!(pdg == PHOTON || pdg == E_MINUS))
         {
             continue;
         }
         else
         {
+            std::cout << "E(MC): " << pMCParticle->GetEnergy() << std::endl;
             const CartesianVector &vertex(pMCParticle->GetVertex());
             const CartesianVector &endpoint(pMCParticle->GetEndpoint());
             const CartesianVector startU(vertex.GetX(), 0.f, static_cast<float>(transform->YZtoU(vertex.GetY(), vertex.GetZ())));
@@ -102,8 +116,54 @@ StatusCode ShowerCaloMonitoringAlgorithm::Run()
 
                 CaloHitList wHits;
                 for (const ProjCaloHitPtr pProjCaloHit : projCaloHitListW)
+                {
+                    std::cout << "Pos: " << pProjCaloHit->first << " ADC: " << pProjCaloHit->second->GetElectromagneticEnergy() << std::endl;
                     wHits.emplace_back(pProjCaloHit->second);
+                }
                 PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &wHits, "W", RED));
+            }
+            if (m_writeTree)
+            {
+                float mip{0.f}, em{0.f}, had{0.f};
+                FloatVector projPositionVectorU, adcVectorU;
+                for (const ProjCaloHitPtr pProjCaloHit : projCaloHitListU)
+                {
+                    projPositionVectorU.emplace_back(pProjCaloHit->first);
+                    adcVectorU.emplace_back(pProjCaloHit->second->GetElectromagneticEnergy());
+                    mip += pProjCaloHit->second->GetMipEquivalentEnergy();
+                    em += pProjCaloHit->second->GetElectromagneticEnergy();
+                    had += pProjCaloHit->second->GetHadronicEnergy();
+                }
+                FloatVector projPositionVectorV, adcVectorV;
+                for (const ProjCaloHitPtr pProjCaloHit : projCaloHitListV)
+                {
+                    projPositionVectorV.emplace_back(pProjCaloHit->first);
+                    adcVectorV.emplace_back(pProjCaloHit->second->GetElectromagneticEnergy());
+                    mip += pProjCaloHit->second->GetMipEquivalentEnergy();
+                    em += pProjCaloHit->second->GetElectromagneticEnergy();
+                    had += pProjCaloHit->second->GetHadronicEnergy();
+                }
+                FloatVector projPositionVectorW, adcVectorW;
+                for (const ProjCaloHitPtr pProjCaloHit : projCaloHitListW)
+                {
+                    projPositionVectorW.emplace_back(pProjCaloHit->first);
+                    adcVectorW.emplace_back(pProjCaloHit->second->GetElectromagneticEnergy());
+                    mip += pProjCaloHit->second->GetMipEquivalentEnergy();
+                    em += pProjCaloHit->second->GetElectromagneticEnergy();
+                    had += pProjCaloHit->second->GetHadronicEnergy();
+                }
+
+                std::cout << "#EM: " << em << " #Had: " << had << " #MIP: " << mip << std::endl;
+
+                PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treeName.c_str(), "pdg", pdg));
+                PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treeName.c_str(), "tier", tier));
+                PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treeName.c_str(), "projectedPositionsU", &projPositionVectorU));
+                PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treeName.c_str(), "energiesU", &adcVectorU));
+                PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treeName.c_str(), "projectedPositionsV", &projPositionVectorV));
+                PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treeName.c_str(), "energiesV", &adcVectorV));
+                PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treeName.c_str(), "projectedPositionsW", &projPositionVectorW));
+                PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treeName.c_str(), "energiesW", &adcVectorW));
+                PANDORA_MONITORING_API(FillTree(this->GetPandora(), m_treeName.c_str()));
             }
         }
         if (m_visualize)
@@ -148,7 +208,16 @@ StatusCode ShowerCaloMonitoringAlgorithm::ReadSettings(const TiXmlHandle xmlHand
     PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "CaloHitListName", m_caloHitListName));
     if (m_caloHitListName.empty())
         m_caloHitListName = "CaloHitList2D";
+    
     PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "Visualize", m_visualize));
+
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "WriteTree", m_writeTree));
+    if (m_writeTree)
+    {
+        PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadValue(xmlHandle, "TreeName", m_treeName));
+        PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadValue(xmlHandle, "FileName", m_fileName));
+    }
+
 
     return STATUS_CODE_SUCCESS;
 }
