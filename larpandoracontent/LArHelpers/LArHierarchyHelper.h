@@ -182,6 +182,8 @@ public:
             int m_pdg;                                 ///< The PDG code of the leading MC particle for this node
         };
 
+        typedef std::map<const pandora::MCParticle *, pandora::CaloHitList> MCToRecoHitsMap;
+
         /**
          *  @brief  Default constructor
          */
@@ -261,11 +263,18 @@ public:
          */
         bool IsTestBeamHierarchy() const;
 
+        /**
+         *  @brief  Retrieve the map of MC particles to calo hits
+         *
+         *  @return The map of MC particles to calo hits
+         */
+        const MCToRecoHitsMap &GetMCToRecoHitsMap() const;
+
     private:
         NodeVector m_rootNodes;                    ///< The leading nodes (e.g. primary particles, cosmic rays, ...)
         ReconstructabilityCriteria m_recoCriteria; ///< The criteria used to determine if the node is reconstructable
         const pandora::MCParticle *m_pNeutrino;    ///< The incident neutrino, if it exists
-        std::map<const pandora::MCParticle *, pandora::CaloHitList> m_mcToHitsMap; ///< The map between MC particles and calo hits
+        MCToRecoHitsMap m_mcToHitsMap;             ///< The map between MC particles and calo hits
     };
 
     /**
@@ -545,12 +554,20 @@ public:
         MatchInfo(const QualityCuts &qualityCuts);
 
         /**
-         *  @brief  Match the nodes in the MC and reco hierarchies.
+         *  @brief  Match the nodes in the MC and reco hierarchies where primary charged pions are involved.
          *
          *  @param  mcHierarchy The MC hierarchy
          *  @param  recoHierarchy The reco hierarchy
          */
         void Match(const MCHierarchy &mcHierarchy, const RecoHierarchy &recoHierarchy);
+
+        /**
+         *  @brief  Match the nodes in the MC and reco hierarchies.
+         *
+         *  @param  mcHierarchy The MC hierarchy
+         *  @param  recoHierarchy The reco hierarchy
+         */
+        void PionMatch(const MCHierarchy &mcHierarchy, const RecoHierarchy &recoHierarchy);
 
         /**
          *  @brief  Retrieve the vector of good matches (will contain either zero or one matches)

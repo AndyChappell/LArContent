@@ -217,6 +217,13 @@ void LArHierarchyHelper::MCHierarchy::GetFlattenedNodes(NodeVector &nodeVector) 
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
+const LArHierarchyHelper::MCHierarchy::MCToRecoHitsMap &LArHierarchyHelper::MCHierarchy::GetMCToRecoHitsMap() const
+{
+    return m_mcToHitsMap;
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
 const std::string LArHierarchyHelper::MCHierarchy::ToString() const
 {
     std::string str;
@@ -884,6 +891,165 @@ void LArHierarchyHelper::MatchInfo::Match(const MCHierarchy &mcHierarchy, const 
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
+void LArHierarchyHelper::MatchInfo::PionMatch(const MCHierarchy &mcHierarchy, const RecoHierarchy &recoHierarchy)
+{
+    MCHierarchy::NodeVector mcNodes;
+    mcHierarchy.GetFlattenedNodes(mcNodes);
+    RecoHierarchy::NodeVector recoNodes;
+    recoHierarchy.GetFlattenedNodes(recoNodes);
+
+    std::sort(mcNodes.begin(), mcNodes.end(),
+        [](const MCHierarchy::Node *lhs, const MCHierarchy::Node *rhs) { return lhs->GetCaloHits().size() > rhs->GetCaloHits().size(); });
+    std::sort(recoNodes.begin(), recoNodes.end(),
+        [](const RecoHierarchy::Node *lhs, const RecoHierarchy::Node *rhs) { return lhs->GetCaloHits().size() > rhs->GetCaloHits().size(); });
+
+    std::map<const MCHierarchy::Node *, MCMatches> mcToMatchMap;
+    for (const RecoHierarchy::Node *pRecoNode : recoNodes)
+    {
+        const CaloHitList &recoHits{pRecoNode->GetCaloHits()};
+        const MCHierarchy::Node *pBestNode{nullptr};
+        size_t bestSharedHits{0};
+        for (const MCHierarchy::Node *pMCNode : mcNodes)
+        {
+            if (!pMCNode->IsReconstructable())
+                continue;
+            const CaloHitList &mcHits{pMCNode->GetCaloHits()};
+            CaloHitVector intersection;
+            std::set_intersection(mcHits.begin(), mcHits.end(), recoHits.begin(), recoHits.end(), std::back_inserter(intersection));
+
+            if (!intersection.empty())
+            {
+                const size_t sharedHits{intersection.size()};
+                if (sharedHits > bestSharedHits)
+                {
+                    bestSharedHits = sharedHits;
+                    pBestNode = pMCNode;
+                }
+            }
+        }
+        if (pBestNode && std::abs(pBestNode->GetParticleId()) == 211)
+        {   // Matched to charged pion, standard processing
+            auto iter{mcToMatchMap.find(pBestNode)};
+            if (iter != mcToMatchMap.end())
+            {
+                MCMatches &match(iter->second);
+                match.AddRecoMatch(pRecoNode, static_cast<int>(bestSharedHits));
+            }
+            else
+            {
+                MCMatches match(pBestNode);
+                match.AddRecoMatch(pRecoNode, static_cast<int>(bestSharedHits));
+                mcToMatchMap.insert(std::make_pair(pBestNode, match));
+            }
+        }
+        else if (pBestNode)
+        {   // Matched, but not to pion, check if a primary pion is contained
+            bool containsPion{false};
+            for (const MCHierarchy::Node *pMCNode : mcNodes)
+            {
+                if (!pMCNode->IsReconstructable())
+                    continue;
+                for (const MCParticle *pMCParticle : pMCNode->GetMCParticles())
+                {
+                    if (std::abs(pMCParticle->GetParticleId()) != 211)
+                        continue;
+                    if (LArMCParticleHelper::GetHierarchyTier(pMCParticle) != 1)
+                        continue;
+                    const LArHierarchyHelper::MCHierarchy::MCToRecoHitsMap &mcToRecoHitsMap(mcHierarchy.GetMCToRecoHitsMap());
+                    if (mcToRecoHitsMap.find(pMCParticle) == mcToRecoHitsMap.end())
+                        continue;
+                    const CaloHitList &mcHits{mcToRecoHitsMap.at(pMCParticle)};
+                    CaloHitVector intersection;
+                    std::set_intersection(mcHits.begin(), mcHits.end(), recoHits.begin(), recoHits.end(), std::back_inserter(intersection));
+
+                    if (!intersection.empty())
+                    {
+                        if (intersection.size() > (0.5f * mcHits.size()))
+                        {
+                            containsPion = true;
+                            break;
+                        }
+                    }
+                }
+                if (containsPion)
+                    break;
+            }
+            if (containsPion)
+            {   // Pion has been merged into another particle, want to see this
+                auto iter{mcToMatchMap.find(pBestNode)};
+                if (iter != mcToMatchMap.end())
+                {
+                    MCMatches &match(iter->second);
+                    match.AddRecoMatch(pRecoNode, static_cast<int>(bestSharedHits));
+                }
+                else
+                {
+                    MCMatches match(pBestNode);
+                    match.AddRecoMatch(pRecoNode, static_cast<int>(bestSharedHits));
+                    mcToMatchMap.insert(std::make_pair(pBestNode, match));
+                }
+            }
+            else
+            {   // No pion, we don't care, throw it out
+                m_unmatchedReco.emplace_back(pRecoNode);
+            }
+        }
+        else
+        {
+            m_unmatchedReco.emplace_back(pRecoNode);
+        }
+    }
+
+    for (auto [pMCNode, matches] : mcToMatchMap)
+    {
+        const RecoHierarchy::NodeVector &nodeVector{matches.GetRecoMatches()};
+        if (nodeVector.size() == 1)
+        {
+            const RecoHierarchy::Node *pRecoNode{nodeVector.front()};
+            const float purity{matches.GetPurity(pRecoNode)};
+            const float completeness{matches.GetCompleteness(pRecoNode)};
+            if (purity >= m_qualityCuts.m_minPurity && completeness > m_qualityCuts.m_minCompleteness)
+                m_goodMatches.emplace_back(matches);
+            else
+                m_subThresholdMatches.emplace_back(matches);
+        }
+        else
+        {
+            MCMatches aboveThresholdMatches(pMCNode), belowThresholdMatches(pMCNode);
+            for (const RecoHierarchy::Node *pRecoNode : nodeVector)
+            {
+                const float purity{matches.GetPurity(pRecoNode)};
+                const float completeness{matches.GetCompleteness(pRecoNode)};
+                if (purity >= m_qualityCuts.m_minPurity && completeness > m_qualityCuts.m_minCompleteness)
+                    aboveThresholdMatches.AddRecoMatch(pRecoNode, matches.GetSharedHits(pRecoNode));
+                else
+                    belowThresholdMatches.AddRecoMatch(pRecoNode, matches.GetSharedHits(pRecoNode));
+            }
+            const size_t nAboveThresholdMatches{aboveThresholdMatches.GetNRecoMatches()};
+            if (nAboveThresholdMatches == 1)
+                m_goodMatches.emplace_back(aboveThresholdMatches);
+            else if (nAboveThresholdMatches > 1)
+                m_aboveThresholdMatches.emplace_back(aboveThresholdMatches);
+            if (belowThresholdMatches.GetNRecoMatches() > 0)
+                m_subThresholdMatches.emplace_back(belowThresholdMatches);
+        }
+    }
+
+    const auto predicate = [](const MCMatches &lhs, const MCMatches &rhs) {
+        return lhs.GetMC()->GetCaloHits().size() > rhs.GetMC()->GetCaloHits().size();
+    };
+    std::sort(m_goodMatches.begin(), m_goodMatches.end(), predicate);
+    std::sort(m_subThresholdMatches.begin(), m_subThresholdMatches.end(), predicate);
+
+    for (const MCHierarchy::Node *pMCNode : mcNodes)
+    {
+        if (pMCNode->IsReconstructable() && mcToMatchMap.find(pMCNode) == mcToMatchMap.end())
+            m_unmatchedMC.emplace_back(pMCNode);
+    }
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
 unsigned int LArHierarchyHelper::MatchInfo::GetNMCNodes() const
 {
     std::set<const MCHierarchy::Node *> mcNodeSet;
@@ -1155,7 +1321,7 @@ void LArHierarchyHelper::FillRecoHierarchy(const PfoList &pfoList, const bool fo
 
 void LArHierarchyHelper::MatchHierarchies(const MCHierarchy &mcHierarchy, const RecoHierarchy &recoHierarchy, MatchInfo &matchInfo)
 {
-    matchInfo.Match(mcHierarchy, recoHierarchy);
+    matchInfo.PionMatch(mcHierarchy, recoHierarchy);
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
