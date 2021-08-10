@@ -927,70 +927,33 @@ void LArHierarchyHelper::MatchInfo::PionMatch(const MCHierarchy &mcHierarchy, co
                 }
             }
         }
-        if (pBestNode && std::abs(pBestNode->GetParticleId()) == 211)
-        {   // Matched to charged pion, standard processing
+        if (pBestNode)
+        {
+            bool isPrimaryPion{false};
+            for (const CaloHit *pCaloHit : recoHits)
+            {
+                const MCParticle *pMCParticle{MCParticleHelper::GetMainMCParticle(pCaloHit)};
+                if (std::abs(pMCParticle->GetParticleId()) == 211 && LArMCParticleHelper::GetHierarchyTier(pMCParticle) == 1)
+                {
+                    isPrimaryPion = true;
+                    break;
+                }
+            }
+
             auto iter{mcToMatchMap.find(pBestNode)};
-            if (iter != mcToMatchMap.end())
+            if (iter != mcToMatchMap.end() && isPrimaryPion)
             {
                 MCMatches &match(iter->second);
                 match.AddRecoMatch(pRecoNode, static_cast<int>(bestSharedHits));
             }
-            else
+            else if (isPrimaryPion)
             {
                 MCMatches match(pBestNode);
                 match.AddRecoMatch(pRecoNode, static_cast<int>(bestSharedHits));
                 mcToMatchMap.insert(std::make_pair(pBestNode, match));
             }
-        }
-        else if (pBestNode)
-        {   // Matched, but not to pion, check if a primary pion is contained
-            bool containsPion{false};
-            for (const MCHierarchy::Node *pMCNode : mcNodes)
-            {
-                if (!pMCNode->IsReconstructable())
-                    continue;
-                for (const MCParticle *pMCParticle : pMCNode->GetMCParticles())
-                {
-                    if (std::abs(pMCParticle->GetParticleId()) != 211)
-                        continue;
-                    if (LArMCParticleHelper::GetHierarchyTier(pMCParticle) != 1)
-                        continue;
-                    const LArHierarchyHelper::MCHierarchy::MCToRecoHitsMap &mcToRecoHitsMap(mcHierarchy.GetMCToRecoHitsMap());
-                    if (mcToRecoHitsMap.find(pMCParticle) == mcToRecoHitsMap.end())
-                        continue;
-                    const CaloHitList &mcHits{mcToRecoHitsMap.at(pMCParticle)};
-                    CaloHitVector intersection;
-                    std::set_intersection(mcHits.begin(), mcHits.end(), recoHits.begin(), recoHits.end(), std::back_inserter(intersection));
-
-                    if (!intersection.empty())
-                    {
-                        if (intersection.size() > (0.5f * mcHits.size()))
-                        {
-                            containsPion = true;
-                            break;
-                        }
-                    }
-                }
-                if (containsPion)
-                    break;
-            }
-            if (containsPion)
-            {   // Pion has been merged into another particle, want to see this
-                auto iter{mcToMatchMap.find(pBestNode)};
-                if (iter != mcToMatchMap.end())
-                {
-                    MCMatches &match(iter->second);
-                    match.AddRecoMatch(pRecoNode, static_cast<int>(bestSharedHits));
-                }
-                else
-                {
-                    MCMatches match(pBestNode);
-                    match.AddRecoMatch(pRecoNode, static_cast<int>(bestSharedHits));
-                    mcToMatchMap.insert(std::make_pair(pBestNode, match));
-                }
-            }
             else
-            {   // No pion, we don't care, throw it out
+            {
                 m_unmatchedReco.emplace_back(pRecoNode);
             }
         }
