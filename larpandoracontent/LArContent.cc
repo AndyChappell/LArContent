@@ -33,6 +33,7 @@
 #include "larpandoracontent/LArControlFlow/BdtBeamParticleIdTool.h"
 #include "larpandoracontent/LArControlFlow/BeamParticleIdTool.h"
 #include "larpandoracontent/LArControlFlow/CosmicRayTaggingTool.h"
+#include "larpandoracontent/LArControlFlow/HitWritingAlgorithm.h"
 #include "larpandoracontent/LArControlFlow/MasterAlgorithm.h"
 #include "larpandoracontent/LArControlFlow/NeutrinoIdTool.h"
 #include "larpandoracontent/LArControlFlow/PostProcessingAlgorithm.h"
@@ -231,6 +232,7 @@
     d("LArCheatingVertexCreation",              CheatingVertexCreationAlgorithm)                                                \
     d("LArCheatingVertexSelection",             CheatingVertexSelectionAlgorithm)                                               \
     d("LArPcaShowerParticleBuilding",           PcaShowerParticleBuildingAlgorithm)                                             \
+    d("LArHitWriting",                          HitWritingAlgorithm)                                                            \
     d("LArMaster",                              MasterAlgorithm)                                                                \
     d("LArPostProcessing",                      PostProcessingAlgorithm)                                                        \
     d("LArPreProcessing",                       PreProcessingAlgorithm)                                                         \
