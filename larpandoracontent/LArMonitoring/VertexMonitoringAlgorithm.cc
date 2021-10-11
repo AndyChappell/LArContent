@@ -19,10 +19,7 @@ using namespace pandora;
 namespace lar_content
 {
 
-VertexMonitoringAlgorithm::VertexMonitoringAlgorithm() :
-    m_transparencyThresholdE{-1.f},
-    m_energyScaleThresholdE{1.f},
-    m_scalingFactor{1.f}
+VertexMonitoringAlgorithm::VertexMonitoringAlgorithm() : m_transparencyThresholdE{-1.f}, m_energyScaleThresholdE{1.f}, m_scalingFactor{1.f}
 {
 }
 
@@ -54,7 +51,7 @@ StatusCode VertexMonitoringAlgorithm::VisualizeVertices() const
     PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetCurrentList(*this, pMCParticleList));
     const PfoList *pPfoList{nullptr};
     PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetCurrentList(*this, pPfoList));
-   
+
     LArMCParticleHelper::MCContributionMap mcToHitsMap;
     MCParticleVector primaries;
     LArMCParticleHelper::GetPrimaryMCParticleList(pMCParticleList, primaries);
@@ -115,4 +112,3 @@ StatusCode VertexMonitoringAlgorithm::ReadSettings(const TiXmlHandle xmlHandle)
 }
 
 } // namespace lar_content
-
