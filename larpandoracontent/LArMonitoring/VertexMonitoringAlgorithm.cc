@@ -59,10 +59,15 @@ StatusCode VertexMonitoringAlgorithm::VisualizeVertices() const
     const ParticleFlowObject *pRecoNeutrino{nullptr};
     if (!primaries.empty())
     {
-        const MCParticle *primary{primaries.front()};
-        const MCParticleList &parents{primary->GetParentList()};
-        if (parents.size() == 1 && LArMCParticleHelper::IsNeutrino(parents.front()))
-            pTrueNeutrino = parents.front();
+        for (const MCParticle *primary : primaries)
+        {
+            const MCParticleList &parents{primary->GetParentList()};
+            if (parents.size() == 1 && LArMCParticleHelper::IsNeutrino(parents.front()))
+            {
+                pTrueNeutrino = parents.front();
+                break;
+            }
+        }
     }
 
     for (const ParticleFlowObject *pPfo : *pPfoList)
@@ -86,6 +91,9 @@ StatusCode VertexMonitoringAlgorithm::VisualizeVertices() const
         const CartesianVector ru(recoVertex.GetX(), 0.f, static_cast<float>(transform->YZtoU(recoVertex.GetY(), recoVertex.GetZ())));
         const CartesianVector rv(recoVertex.GetX(), 0.f, static_cast<float>(transform->YZtoV(recoVertex.GetY(), recoVertex.GetZ())));
         const CartesianVector rw(recoVertex.GetX(), 0.f, static_cast<float>(transform->YZtoW(recoVertex.GetY(), recoVertex.GetZ())));
+
+        const float dr{(ru - tu).GetMagnitude()};
+        std::cout << "dr: " << dr << std::endl;
 
         PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &tu, "U true vertex", BLUE, 2));
         PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &tv, "V true vertex", BLUE, 2));

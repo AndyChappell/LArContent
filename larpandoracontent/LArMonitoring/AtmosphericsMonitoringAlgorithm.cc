@@ -50,27 +50,62 @@ StatusCode AtmosphericsMonitoringAlgorithm::Run()
 
 StatusCode AtmosphericsMonitoringAlgorithm::ConstructRootTree() const
 {
+    const CaloHitList *pCaloHitList{nullptr};
+    PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetList(*this, "CaloHitList2D", pCaloHitList));
     const MCParticleList *pMCParticleList{nullptr};
     PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetCurrentList(*this, pMCParticleList));
+    const PfoList *pPfoList{nullptr};
+    PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetCurrentList(*this, pPfoList));
 
     LArMCParticleHelper::MCContributionMap mcToHitsMap;
     MCParticleVector primaries;
     LArMCParticleHelper::GetPrimaryMCParticleList(pMCParticleList, primaries);
     const MCParticle *pTrueNeutrino{nullptr};
+    const ParticleFlowObject *pRecoNeutrino{nullptr};
     if (!primaries.empty())
     {
-        const MCParticle *primary{primaries.front()};
-        const MCParticleList &parents{primary->GetParentList()};
-        if (parents.size() == 1 && LArMCParticleHelper::IsNeutrino(parents.front()))
-            pTrueNeutrino = parents.front();
+        for (const MCParticle *primary : primaries)
+        {
+            const MCParticleList &parents{primary->GetParentList()};
+            if (parents.size() == 1 && LArMCParticleHelper::IsNeutrino(parents.front()))
+            {
+                pTrueNeutrino = parents.front();
+                break;
+            }
+        }
     }
 
-    if (pTrueNeutrino)
+    for (const ParticleFlowObject *pPfo : *pPfoList)
+    {
+        if (LArPfoHelper::IsNeutrino(pPfo))
+        {
+            pRecoNeutrino = pPfo;
+            break;
+        }
+    }
+    if (pTrueNeutrino && pRecoNeutrino)
     {
         const int flavour{pTrueNeutrino->GetParticleId()};
         const float energy{pTrueNeutrino->GetEnergy()};
+        const int nhits{static_cast<int>(pCaloHitList->size())};
+
+        const LArTransformationPlugin *transform{this->GetPandora().GetPlugins()->GetLArTransformationPlugin()};
+        const CartesianVector &trueVertex{pTrueNeutrino->GetVertex()};
+        const CartesianVector tu(trueVertex.GetX(), 0.f, static_cast<float>(transform->YZtoU(trueVertex.GetY(), trueVertex.GetZ())));
+        const CartesianVector tv(trueVertex.GetX(), 0.f, static_cast<float>(transform->YZtoV(trueVertex.GetY(), trueVertex.GetZ())));
+        const CartesianVector tw(trueVertex.GetX(), 0.f, static_cast<float>(transform->YZtoW(trueVertex.GetY(), trueVertex.GetZ())));
+
+        const CartesianVector &recoVertex{LArPfoHelper::GetVertex(pRecoNeutrino)->GetPosition()};
+        const CartesianVector ru(recoVertex.GetX(), 0.f, static_cast<float>(transform->YZtoU(recoVertex.GetY(), recoVertex.GetZ())));
+        const CartesianVector rv(recoVertex.GetX(), 0.f, static_cast<float>(transform->YZtoV(recoVertex.GetY(), recoVertex.GetZ())));
+        const CartesianVector rw(recoVertex.GetX(), 0.f, static_cast<float>(transform->YZtoW(recoVertex.GetY(), recoVertex.GetZ())));
+
+        const float dr{(ru - tu).GetMagnitude()};
+
         PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_outputTreeName, "flavour", flavour));
         PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_outputTreeName, "energy", energy));
+        PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_outputTreeName, "nhits", nhits));
+        PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_outputTreeName, "vtx_dr", dr));
         PANDORA_MONITORING_API(FillTree(this->GetPandora(), m_outputTreeName));
     }
 
