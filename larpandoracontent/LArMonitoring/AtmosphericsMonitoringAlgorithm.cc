@@ -91,9 +91,11 @@ StatusCode AtmosphericsMonitoringAlgorithm::ConstructRootTree() const
 
         const LArTransformationPlugin *transform{this->GetPandora().GetPlugins()->GetLArTransformationPlugin()};
         const CartesianVector &trueVertex{pTrueNeutrino->GetVertex()};
+        const CartesianVector &trueDirection{pTrueNeutrino->GetMomentum().GetUnitVector()};
         const CartesianVector tu(trueVertex.GetX(), 0.f, static_cast<float>(transform->YZtoU(trueVertex.GetY(), trueVertex.GetZ())));
         const CartesianVector tv(trueVertex.GetX(), 0.f, static_cast<float>(transform->YZtoV(trueVertex.GetY(), trueVertex.GetZ())));
         const CartesianVector tw(trueVertex.GetX(), 0.f, static_cast<float>(transform->YZtoW(trueVertex.GetY(), trueVertex.GetZ())));
+        const float dirX{trueDirection.GetX()}, dirY{trueDirection.GetY()}, dirZ{trueDirection.GetZ()};
 
         const CartesianVector &recoVertex{LArPfoHelper::GetVertex(pRecoNeutrino)->GetPosition()};
         const CartesianVector ru(recoVertex.GetX(), 0.f, static_cast<float>(transform->YZtoU(recoVertex.GetY(), recoVertex.GetZ())));
@@ -106,6 +108,10 @@ StatusCode AtmosphericsMonitoringAlgorithm::ConstructRootTree() const
         PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_outputTreeName, "energy", energy));
         PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_outputTreeName, "nhits", nhits));
         PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_outputTreeName, "vtx_dr", dr));
+        PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_outputTreeName, "dir_x", dirX));
+        PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_outputTreeName, "dir_y", dirY));
+        PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_outputTreeName, "dir_z", dirZ));
+
         PANDORA_MONITORING_API(FillTree(this->GetPandora(), m_outputTreeName));
     }
 
