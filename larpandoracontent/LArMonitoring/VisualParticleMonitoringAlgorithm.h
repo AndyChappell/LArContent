@@ -52,6 +52,24 @@ private:
     void VisualizeMCByPdgCode(const LArMCParticleHelper::MCContributionMap &mcMap) const;
 
     /**
+     *  @brief  Visualize the MC particles according to their generating process.
+     *
+     *  This function groups hits with common generating processes per view.
+     *
+     *  @param  mcMap The map from MC particles to calo hits
+     **/
+    void VisualizeMCByProcess(const LArMCParticleHelper::MCContributionMap &mcMap) const;
+
+    /**
+     *  @brief  Visualize the MC particles according to their generating process.
+     *
+     *  This function groups hits with common generating processes per view.
+     *
+     *  @param  caloHitList The calo hit list
+     **/
+    void VisualizeMCNetworkClass(const pandora::CaloHitList &caloHitList) const;
+
+    /**
      *  @brief  Visualize the PFO particles independently (not colour-coded by PID).
      *
      *  This function visualises each PFO.
@@ -93,6 +111,7 @@ private:
     std::string m_caloHitListName;  ///< Name of input calo hit list
     std::string m_pfoListName;      ///< Name of input PFO list
     bool m_visualizeMC;             ///< Whether or not to visualize MC particles
+    bool m_visualizeProcess;        ///< Whether or not to visualize MC processes
     bool m_visualizePfo;            ///< Whether or not to visualize PFOs
     bool m_groupMCByPdg;            ///< Whether or not to group MC particles by particle id
     bool m_showPfoByPid;            ///< Whether or not to colour PFOs by particle id

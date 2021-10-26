@@ -21,6 +21,7 @@ namespace lar_content
 
 VisualParticleMonitoringAlgorithm::VisualParticleMonitoringAlgorithm() :
     m_visualizeMC(false),
+    m_visualizeProcess(false),
     m_visualizePfo(false),
     m_groupMCByPdg(false),
     m_showPfoByPid(false),
@@ -44,9 +45,10 @@ StatusCode VisualParticleMonitoringAlgorithm::Run()
 {
 #ifdef MONITORING
     LArMCParticleHelper::MCContributionMap targetMCParticleToHitsMap;
+    const CaloHitList *pCaloHitList(nullptr);
+
     if (m_visualizeMC || m_showPfoMatchedMC)
     {
-        const CaloHitList *pCaloHitList(nullptr);
         PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetList(*this, m_caloHitListName, pCaloHitList));
         const MCParticleList *pMCParticleList(nullptr);
         PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetCurrentList(*this, pMCParticleList));
@@ -57,6 +59,8 @@ StatusCode VisualParticleMonitoringAlgorithm::Run()
     {
         if (m_groupMCByPdg)
             this->VisualizeMCByPdgCode(targetMCParticleToHitsMap);
+        else if (m_visualizeProcess)
+            this->VisualizeMCNetworkClass(*pCaloHitList);
         else
             this->VisualizeIndependentMC(targetMCParticleToHitsMap);
     }
@@ -219,6 +223,222 @@ void VisualParticleMonitoringAlgorithm::VisualizeMCByPdgCode(const LArMCParticle
 
     PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
 }
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+void VisualParticleMonitoringAlgorithm::VisualizeMCByProcess(const LArMCParticleHelper::MCContributionMap &mcMap) const
+{
+    const std::map<std::string, Color> colors = {
+        {"inelastic", MAGENTA}, {"elastic", GREEN}, {"decay", ORANGE}, {"capt_nucl_ioni", RED}, {"primary", BLACK}, {"brem_pair", BLUE}, {"other", GRAY}};
+
+    std::map<std::string, CaloHitList> uHits, vHits, wHits;
+    for (const auto [key, value] : colors)
+    {
+        (void)value; // GCC 7 support, 8+ doesn't need this
+        uHits[key] = CaloHitList();
+        vHits[key] = CaloHitList();
+        wHits[key] = CaloHitList();
+    }
+
+    for (const auto [pMC, pCaloHits] : mcMap)
+    {
+        for (const CaloHit *pCaloHit : pCaloHits)
+        {
+            const HitType view{pCaloHit->GetHitType()};
+
+            try
+            {
+                std::string key{"other"};
+                if (LArMCParticleHelper::IsPrimaryProcess(pMC))
+                    key = "primary";
+                else if (LArMCParticleHelper::IsBremsstrahlung(pMC) || LArMCParticleHelper::IsPairProduction(pMC))
+                    key = "brem_pair";
+                else if (LArMCParticleHelper::IsCapture(pMC) || LArMCParticleHelper::IsNuclear(pMC) || LArMCParticleHelper::IsIonisation(pMC))
+                    key = "capt_nucl_ioni";
+                else if (LArMCParticleHelper::IsDecay(pMC))
+                    key = "decay";
+                else if (LArMCParticleHelper::IsElasticScatter(pMC))
+                    key = "elastic";
+                else if (LArMCParticleHelper::IsInelasticScatter(pMC))
+                    key = "inelastic";
+
+                if (view == HitType::TPC_VIEW_U)
+                    uHits[key].emplace_back(pCaloHit);
+                else if (view == HitType::TPC_VIEW_V)
+                    vHits[key].emplace_back(pCaloHit);
+                else
+                    wHits[key].emplace_back(pCaloHit);
+            }
+            catch (const StatusCodeException &)
+            {
+                continue;
+            }
+        }
+    }
+
+    PANDORA_MONITORING_API(
+        SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, m_transparencyThresholdE, m_energyScaleThresholdE, m_scalingFactor));
+
+    for (const auto [key, value] : colors)
+    {
+        if (!uHits[key].empty())
+            PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &uHits[key], "u_" + key, value));
+    }
+
+    for (const auto [key, value] : colors)
+    {
+        if (!vHits[key].empty())
+            PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &vHits[key], "v_" + key, value));
+    }
+
+    for (const auto [key, value] : colors)
+    {
+        if (!wHits[key].empty())
+            PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &wHits[key], "w_" + key, value));
+    }
+
+    PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+void VisualParticleMonitoringAlgorithm::VisualizeMCNetworkClass(const CaloHitList &caloHitList) const
+{
+    const std::map<std::string, Color> colors = {
+        {"michel", MAGENTA}, {"diffuse", ORANGE}, {"shower", RED}, {"track", BLUE}, {"other", GRAY}};
+
+    std::map<std::string, CaloHitList> uHits, vHits, wHits;
+    for (const auto [key, value] : colors)
+    {
+        (void)value; // GCC 7 support, 8+ doesn't need this
+        uHits[key] = CaloHitList();
+        vHits[key] = CaloHitList();
+        wHits[key] = CaloHitList();
+    }
+    std::map<const MCParticle *, CaloHitList> mcCaloMap;
+    std::string key{"other"};
+    std::set<MCProcess> processes;
+
+    for (const CaloHit *pCaloHit : caloHitList)
+    {
+        key = "other";
+        const HitType view{pCaloHit->GetHitType()};
+
+        try
+        {
+            const LArMCParticle *const pMC{dynamic_cast<const LArMCParticle *>(MCParticleHelper::GetMainMCParticle(pCaloHit))};
+            if (!pMC)
+                continue;
+
+            const int pdg{std::abs(pMC->GetParticleId())};
+
+            if (LArMCParticleHelper::IsCapture(pMC) || LArMCParticleHelper::IsNuclear(pMC) || LArMCParticleHelper::IsIonisation(pMC))
+            {
+                key = "diffuse";
+            }
+            else if (LArMCParticleHelper::IsInelasticScatter(pMC))
+            {
+                if (mcCaloMap.find(pMC) == mcCaloMap.end())
+                {
+                    mcCaloMap[pMC] = CaloHitList();
+                    mcCaloMap[pMC].emplace_back(pCaloHit);
+                }
+                else
+                {
+                    mcCaloMap[pMC].emplace_back(pCaloHit);
+                }
+                continue;
+            }
+            else if (pdg == PHOTON)
+            {
+                key = "shower";
+                processes.insert(pMC->GetProcess());
+            }
+            else if (pdg == E_MINUS)
+            {
+                if (LArMCParticleHelper::IsDecay(pMC) && std::abs(pMC->GetParentList().front()->GetParticleId()) == MU_MINUS)
+                    key = "michel";
+                else
+                    key = "shower";
+            }
+            else
+            {
+                key = "track";
+            }
+
+            if (view == HitType::TPC_VIEW_U)
+                uHits[key].emplace_back(pCaloHit);
+            else if (view == HitType::TPC_VIEW_V)
+                vHits[key].emplace_back(pCaloHit);
+            else
+                wHits[key].emplace_back(pCaloHit);
+        }
+        catch (const StatusCodeException &)
+        {
+            continue;
+        }
+    }
+
+    for (const auto [pMC, caloHits] : mcCaloMap)
+    {
+        const int pdg{std::abs(pMC->GetParticleId())};
+
+        if (caloHits.size() >= 15)
+        {
+            if (pdg == PHOTON || pdg == E_MINUS)
+            {
+                key = "diffuse";
+                if (pdg == PHOTON)
+                    processes.insert(dynamic_cast<const LArMCParticle *>(pMC)->GetProcess());
+            }
+            else
+            {
+                key = "track";
+            }
+        }
+        else
+            key = "diffuse";
+
+        for (const CaloHit *pCaloHit : caloHits)
+        {
+            const HitType view{pCaloHit->GetHitType()};
+            if (view == HitType::TPC_VIEW_U)
+                uHits[key].emplace_back(pCaloHit);
+            else if (view == HitType::TPC_VIEW_V)
+                vHits[key].emplace_back(pCaloHit);
+            else
+                wHits[key].emplace_back(pCaloHit);
+        }
+    }
+
+    for (const MCProcess proc : processes)
+        std::cout << proc << " ";
+    std::cout << std::endl;
+
+    PANDORA_MONITORING_API(
+        SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, m_transparencyThresholdE, m_energyScaleThresholdE, m_scalingFactor));
+
+    for (const auto [k, value] : colors)
+    {
+        if (!uHits[k].empty())
+            PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &uHits[k], "u_" + k, value));
+    }
+
+    for (const auto [k, value] : colors)
+    {
+        if (!vHits[k].empty())
+            PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &vHits[k], "v_" + k, value));
+    }
+
+    for (const auto [k, value] : colors)
+    {
+        if (!wHits[k].empty())
+            PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &wHits[k], "w_" + k, value));
+    }
+
+    PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
+}
+
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
@@ -425,6 +645,7 @@ StatusCode VisualParticleMonitoringAlgorithm::ReadSettings(const TiXmlHandle xml
     if (m_pfoListName.empty())
         m_pfoListName = "RecreatedPfos";
     PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "VisualizeMC", m_visualizeMC));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "VisualizeProcess", m_visualizeProcess));
     PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "VisualizePFO", m_visualizePfo));
     PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "GroupMCByPDG", m_groupMCByPdg));
     PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "ShowPFOByPID", m_showPfoByPid));
