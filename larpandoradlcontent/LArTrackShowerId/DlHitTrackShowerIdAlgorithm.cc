@@ -59,7 +59,7 @@ StatusCode DlHitTrackShowerIdAlgorithm::Run()
 
 StatusCode DlHitTrackShowerIdAlgorithm::Train()
 {
-    const int SHOWER{1}, TRACK{2};
+    const int SHOWER{1}, TRACK{2}, MICHEL{3}, DIFFUSE{4};
     for (const std::string listName : m_caloHitListNames)
     {
         const CaloHitList *pCaloHitList(nullptr);
@@ -81,48 +81,73 @@ StatusCode DlHitTrackShowerIdAlgorithm::Train()
         else if (view == TPC_VIEW_W)
             trainingOutputFileName += "_CaloHitListW.csv";
 
-        LArMCParticleHelper::PrimaryParameters parameters;
-        // Only care about reconstructability with respect to the current view, so skip good view check
-        parameters.m_minHitsForGoodView = 0;
-        // Turn off max photo propagation for now, only care about killing off daughters of neutrons
-        parameters.m_maxPhotonPropagation = std::numeric_limits<float>::max();
-        LArMCParticleHelper::MCContributionMap targetMCParticleToHitsMap;
-        LArMCParticleHelper::SelectReconstructableMCParticles(
-            pMCParticleList, pCaloHitList, parameters, LArMCParticleHelper::IsBeamNeutrinoFinalState, targetMCParticleToHitsMap);
-
-        LArMvaHelper::MvaFeatureVector featureVector;
+        std::map<const pandora::MCParticle *, pandora::CaloHitList> mcToHitsMap;
         for (const CaloHit *pCaloHit : *pCaloHitList)
         {
-            int tag{TRACK};
-            float inputEnergy{0.f};
-
             try
             {
-                const MCParticle *const pMCParticle(MCParticleHelper::GetMainMCParticle(pCaloHit));
-                // Throw away non-reconstructable hits
-                if (targetMCParticleToHitsMap.find(pMCParticle) == targetMCParticleToHitsMap.end())
-                    continue;
-                if (LArMCParticleHelper::IsDescendentOf(pMCParticle, 2112))
-                    continue;
-                inputEnergy = pCaloHit->GetInputEnergy();
-                if (inputEnergy < 0.f)
-                    continue;
-
-                const int pdg{std::abs(pMCParticle->GetParticleId())};
-                if (pdg == 11 || pdg == 22)
-                    tag = SHOWER;
-                else
-                    tag = TRACK;
+                const MCParticle *pMCParticle{MCParticleHelper::GetMainMCParticle(pCaloHit)};
+                mcToHitsMap[pMCParticle].emplace_back(pCaloHit);
             }
             catch (const StatusCodeException &)
             {
+            }
+        }
+
+        LArMvaHelper::MvaFeatureVector featureVector;
+        for (const auto [ pMCParticle, mcCaloHitList ] : mcToHitsMap)
+        {
+            int tag{TRACK};
+            const LArMCParticle *const pMC{dynamic_cast<const LArMCParticle *>(pMCParticle)};
+            if (!pMC)
                 continue;
+
+            const int pdg{std::abs(pMC->GetParticleId())};
+
+            if (LArMCParticleHelper::IsCapture(pMC) || LArMCParticleHelper::IsNuclear(pMC) || LArMCParticleHelper::IsIonisation(pMC))
+            {
+                tag = DIFFUSE;
+            }
+            else if (LArMCParticleHelper::IsInelasticScatter(pMC))
+            {
+                if (mcCaloHitList.size() >= 5)
+                {
+                    if (pdg == PHOTON || pdg == E_MINUS)
+                        tag = DIFFUSE;
+                    else
+                        tag = TRACK;
+                }
+                else
+                {
+                    tag = DIFFUSE;
+                }
+            }
+            else if (pdg == PHOTON)
+            {
+                tag = SHOWER;
+            }
+            else if (pdg == E_MINUS)
+            {
+                if (LArMCParticleHelper::IsDecay(pMC) && std::abs(pMC->GetParentList().front()->GetParticleId()) == MU_MINUS)
+                    tag = MICHEL;
+                else
+                    tag = SHOWER;
+            }
+            else
+            {
+                tag = TRACK;
             }
 
-            featureVector.push_back(static_cast<double>(pCaloHit->GetPositionVector().GetX()));
-            featureVector.push_back(static_cast<double>(pCaloHit->GetPositionVector().GetZ()));
-            featureVector.push_back(static_cast<double>(tag));
-            featureVector.push_back(static_cast<double>(inputEnergy));
+            for (const CaloHit *pCaloHit : mcCaloHitList)
+            {
+                const float inputEnergy{pCaloHit->GetInputEnergy()};
+                if (inputEnergy < 0.f)
+                    continue;
+                featureVector.push_back(static_cast<double>(pCaloHit->GetPositionVector().GetX()));
+                featureVector.push_back(static_cast<double>(pCaloHit->GetPositionVector().GetZ()));
+                featureVector.push_back(static_cast<double>(tag));
+                featureVector.push_back(static_cast<double>(inputEnergy));
+            }
         }
         // Add number of hits to end of vector than rotate (more efficient than direct insert at front)
         featureVector.push_back(static_cast<double>(featureVector.size() / 4));
