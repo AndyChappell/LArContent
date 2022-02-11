@@ -10,6 +10,7 @@
 
 #include "larpandoracontent/LArHelpers/LArClusterHelper.h"
 #include "larpandoracontent/LArHelpers/LArMCParticleHelper.h"
+#include "larpandoracontent/LArHelpers/LArMvaHelper.h"
 #include "larpandoracontent/LArHelpers/LArPointingClusterHelper.h"
 
 #include "larpandoracontent/LArObjects/LArMCParticle.h"
@@ -22,18 +23,16 @@ using namespace pandora;
 namespace lar_content
 {
 
-HitTruthTaggingAlgorithm::HitTruthTaggingAlgorithm() : m_minTrackRatio{0.5f}
+enum HitTruthTaggingAlgorithm::Tag : int { SHOWER = 1, TRACK, MICHEL, DIFFUSE };
+
+HitTruthTaggingAlgorithm::HitTruthTaggingAlgorithm() : m_minTrackRatio{0.5f}, m_visualize{false}, m_writeFeatures{true}
 {
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-void HitTruthTaggingAlgorithm::TagMuonClusters() const
+void HitTruthTaggingAlgorithm::TagMuonClusters(CaloHitList &trackHitList, CaloHitList &showerHitList, CaloHitList &diffuseHitList) const
 {
-    PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1.f, 1.f, 1.f));
-    CaloHitList trackHitList, showerHitList, diffuseHitList;
-
-    const int SHOWER{1}, TRACK{2}, DIFFUSE{4};
     for (std::string clusterListName : m_muonClusterListNames)
     {
         const ClusterList *pClusterList{nullptr};
@@ -181,24 +180,21 @@ void HitTruthTaggingAlgorithm::TagMuonClusters() const
                             tag = SHOWER;
                         }
                     }
-                    if (pCaloHit->GetHitType() == TPC_VIEW_W)
+                    for (const CaloHit *const pHit : caloHitList)
                     {
-                        for (const CaloHit *const pHit : caloHitList)
+                        switch (tag)
                         {
-                            switch (tag)
-                            {
-                                case TRACK:
-                                    trackHitList.emplace_back(pHit);
-                                    break;
-                                case SHOWER:
-                                    showerHitList.emplace_back(pHit);
-                                    break;
-                                case DIFFUSE:
-                                    diffuseHitList.emplace_back(pHit);
-                                    break;
-                                default:
-                                    break;
-                            }
+                            case TRACK:
+                                trackHitList.emplace_back(pHit);
+                                break;
+                            case SHOWER:
+                                showerHitList.emplace_back(pHit);
+                                break;
+                            case DIFFUSE:
+                                diffuseHitList.emplace_back(pHit);
+                                break;
+                            default:
+                                break;
                         }
                     }
                 }
@@ -208,21 +204,13 @@ void HitTruthTaggingAlgorithm::TagMuonClusters() const
             }
         }
     }
-    PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &trackHitList, "Track Hits", BLUE));
-    PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &showerHitList, "Shower Hits", RED));
-    PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &diffuseHitList, "Diffuse Hits", MAGENTA));
-
-    PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-void HitTruthTaggingAlgorithm::TagNonMuonClusters() const
+void HitTruthTaggingAlgorithm::TagNonMuonClusters(CaloHitList &trackHitList, CaloHitList &showerHitList, CaloHitList &michelHitList,
+    CaloHitList &diffuseHitList) const
 {
-    PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1.f, 1.f, 1.f));
-    CaloHitList trackHitList, showerHitList, michelHitList, diffuseHitList;
-
-    const int SHOWER{1}, TRACK{2}, MICHEL{3}, DIFFUSE{4};
     for (std::string clusterListName : m_nonMuonClusterListNames)
     {
         const ClusterList *pClusterList{nullptr};
@@ -281,27 +269,24 @@ void HitTruthTaggingAlgorithm::TagNonMuonClusters() const
                     {
                         tag = TRACK;
                     }
-                    if (pCaloHit->GetHitType() == TPC_VIEW_W)
+                    for (const CaloHit *const pHit : caloHitList)
                     {
-                        for (const CaloHit *const pHit : caloHitList)
+                        switch (tag)
                         {
-                            switch (tag)
-                            {
-                                case TRACK:
-                                    trackHitList.emplace_back(pHit);
-                                    break;
-                                case SHOWER:
-                                    showerHitList.emplace_back(pHit);
-                                    break;
-                                case MICHEL:
-                                    michelHitList.emplace_back(pHit);
-                                    break;
-                                case DIFFUSE:
-                                    diffuseHitList.emplace_back(pHit);
-                                    break;
-                                default:
-                                    break;
-                            }
+                            case TRACK:
+                                trackHitList.emplace_back(pHit);
+                                break;
+                            case SHOWER:
+                                showerHitList.emplace_back(pHit);
+                                break;
+                            case MICHEL:
+                                michelHitList.emplace_back(pHit);
+                                break;
+                            case DIFFUSE:
+                                diffuseHitList.emplace_back(pHit);
+                                break;
+                            default:
+                                break;
                         }
                     }
                 }
@@ -311,11 +296,152 @@ void HitTruthTaggingAlgorithm::TagNonMuonClusters() const
             }
         }
     }
+}
 
-    PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &trackHitList, "Track Hits", BLUE));
-    PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &showerHitList, "Shower Hits", RED));
-    PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &michelHitList, "Michel Hits", BLUE));
-    PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &diffuseHitList, "Diffuse Hits", MAGENTA));
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+void HitTruthTaggingAlgorithm::OutputTruthTagging(const CaloHitList &trackHitList, const CaloHitList &showerHitList,
+    const CaloHitList &michelHitList, const CaloHitList &diffuseHitList) const
+{
+    LArMvaHelper::MvaFeatureVector featureVectorU, featureVectorV, featureVectorW;
+
+    for (const CaloHit *pCaloHit : trackHitList)
+    {
+        LArMvaHelper::MvaFeatureVector *pFeatureVector{nullptr};
+        switch (pCaloHit->GetHitType())
+        {
+            case TPC_VIEW_U:
+                pFeatureVector = &featureVectorU;
+                break;
+            case TPC_VIEW_V:
+                pFeatureVector = &featureVectorV;
+                break;
+            case TPC_VIEW_W:
+                pFeatureVector = &featureVectorW;
+                break;
+            default:
+                continue;
+        }
+
+        pFeatureVector->emplace_back(static_cast<double>(pCaloHit->GetPositionVector().GetX()));
+        pFeatureVector->emplace_back(static_cast<double>(pCaloHit->GetPositionVector().GetZ()));
+        pFeatureVector->emplace_back(static_cast<double>(TRACK));
+        pFeatureVector->emplace_back(static_cast<double>(pCaloHit->GetInputEnergy()));
+    }
+
+    for (const CaloHit *pCaloHit : showerHitList)
+    {
+        LArMvaHelper::MvaFeatureVector *pFeatureVector{nullptr};
+        switch (pCaloHit->GetHitType())
+        {
+            case TPC_VIEW_U:
+                pFeatureVector = &featureVectorU;
+                break;
+            case TPC_VIEW_V:
+                pFeatureVector = &featureVectorV;
+                break;
+            case TPC_VIEW_W:
+                pFeatureVector = &featureVectorW;
+                break;
+            default:
+                continue;
+        }
+
+        pFeatureVector->emplace_back(static_cast<double>(pCaloHit->GetPositionVector().GetX()));
+        pFeatureVector->emplace_back(static_cast<double>(pCaloHit->GetPositionVector().GetZ()));
+        pFeatureVector->emplace_back(static_cast<double>(SHOWER));
+        pFeatureVector->emplace_back(static_cast<double>(pCaloHit->GetInputEnergy()));
+    }
+
+    for (const CaloHit *pCaloHit : michelHitList)
+    {
+        LArMvaHelper::MvaFeatureVector *pFeatureVector{nullptr};
+        switch (pCaloHit->GetHitType())
+        {
+            case TPC_VIEW_U:
+                pFeatureVector = &featureVectorU;
+                break;
+            case TPC_VIEW_V:
+                pFeatureVector = &featureVectorV;
+                break;
+            case TPC_VIEW_W:
+                pFeatureVector = &featureVectorW;
+                break;
+            default:
+                continue;
+        }
+
+        pFeatureVector->emplace_back(static_cast<double>(pCaloHit->GetPositionVector().GetX()));
+        pFeatureVector->emplace_back(static_cast<double>(pCaloHit->GetPositionVector().GetZ()));
+        pFeatureVector->emplace_back(static_cast<double>(MICHEL));
+        pFeatureVector->emplace_back(static_cast<double>(pCaloHit->GetInputEnergy()));
+    }
+
+    for (const CaloHit *pCaloHit : diffuseHitList)
+    {
+        LArMvaHelper::MvaFeatureVector *pFeatureVector{nullptr};
+        switch (pCaloHit->GetHitType())
+        {
+            case TPC_VIEW_U:
+                pFeatureVector = &featureVectorU;
+                break;
+            case TPC_VIEW_V:
+                pFeatureVector = &featureVectorV;
+                break;
+            case TPC_VIEW_W:
+                pFeatureVector = &featureVectorW;
+                break;
+            default:
+                continue;
+        }
+
+        pFeatureVector->emplace_back(static_cast<double>(pCaloHit->GetPositionVector().GetX()));
+        pFeatureVector->emplace_back(static_cast<double>(pCaloHit->GetPositionVector().GetZ()));
+        pFeatureVector->emplace_back(static_cast<double>(DIFFUSE));
+        pFeatureVector->emplace_back(static_cast<double>(pCaloHit->GetInputEnergy()));
+    }
+
+    // Add number of hits to end of vector than rotate (more efficient than direct insert at front)
+    featureVectorU.push_back(static_cast<double>(featureVectorU.size() / 4));
+    std::rotate(featureVectorU.rbegin(), featureVectorU.rbegin() + 1, featureVectorU.rend());
+    featureVectorV.push_back(static_cast<double>(featureVectorV.size() / 4));
+    std::rotate(featureVectorV.rbegin(), featureVectorV.rbegin() + 1, featureVectorV.rend());
+    featureVectorW.push_back(static_cast<double>(featureVectorW.size() / 4));
+    std::rotate(featureVectorW.rbegin(), featureVectorW.rbegin() + 1, featureVectorW.rend());
+
+    PANDORA_THROW_RESULT_IF(pandora::STATUS_CODE_SUCCESS, !=, LArMvaHelper::ProduceTrainingExample(m_outputFileName + "U.csv", true, featureVectorU));
+    PANDORA_THROW_RESULT_IF(pandora::STATUS_CODE_SUCCESS, !=, LArMvaHelper::ProduceTrainingExample(m_outputFileName + "V.csv", true, featureVectorV));
+    PANDORA_THROW_RESULT_IF(pandora::STATUS_CODE_SUCCESS, !=, LArMvaHelper::ProduceTrainingExample(m_outputFileName + "W.csv", true, featureVectorW));
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+void HitTruthTaggingAlgorithm::VisualizeTruthTagging(const CaloHitList &trackHitList, const CaloHitList &showerHitList,
+    const CaloHitList &michelHitList, const CaloHitList &diffuseHitList) const
+{
+    PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1.f, 1.f, 1.f));
+
+    CaloHitList trackHitListW, showerHitListW, michelHitListW, diffuseHitListW;
+    for (const CaloHit *pCaloHit : trackHitList)
+        if (pCaloHit->GetHitType() == TPC_VIEW_W)
+            trackHitListW.emplace_back(pCaloHit);
+
+    for (const CaloHit *pCaloHit : showerHitList)
+        if (pCaloHit->GetHitType() == TPC_VIEW_W)
+            showerHitListW.emplace_back(pCaloHit);
+    
+    for (const CaloHit *pCaloHit : michelHitList)
+        if (pCaloHit->GetHitType() == TPC_VIEW_W)
+            michelHitListW.emplace_back(pCaloHit);
+
+    for (const CaloHit *pCaloHit : diffuseHitList)
+        if (pCaloHit->GetHitType() == TPC_VIEW_W)
+            diffuseHitListW.emplace_back(pCaloHit);
+
+    PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &trackHitListW, "Track Hits", BLUE));
+    PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &showerHitListW, "Shower Hits", RED));
+    PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &michelHitListW, "Michel Hits", BLUE));
+    PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &diffuseHitListW, "Diffuse Hits", MAGENTA));
 
     PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
 }
@@ -324,8 +450,15 @@ void HitTruthTaggingAlgorithm::TagNonMuonClusters() const
 
 StatusCode HitTruthTaggingAlgorithm::Run()
 {
-    this->TagNonMuonClusters();
-    this->TagMuonClusters();
+    CaloHitList trackHitList, showerHitList, michelHitList, diffuseHitList;
+
+    this->TagNonMuonClusters(trackHitList, showerHitList, michelHitList, diffuseHitList);
+    this->TagMuonClusters(trackHitList, showerHitList, diffuseHitList);
+
+    if (m_visualize)
+        this->VisualizeTruthTagging(trackHitList, showerHitList, michelHitList, diffuseHitList);
+    if (m_writeFeatures)
+        this->OutputTruthTagging(trackHitList, showerHitList, michelHitList, diffuseHitList);
 
     return STATUS_CODE_SUCCESS;
 }
@@ -336,6 +469,13 @@ StatusCode HitTruthTaggingAlgorithm::ReadSettings(const pandora::TiXmlHandle xml
 {
     PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadVectorOfValues(xmlHandle, "MuonClusterListNames", m_muonClusterListNames));
     PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadVectorOfValues(xmlHandle, "NonMuonClusterListNames", m_nonMuonClusterListNames));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "Visualize", m_visualize));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "WriteFeatures", m_writeFeatures));
+    if (m_writeFeatures)
+    {
+        PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadValue(xmlHandle, "OutputFileName", m_outputFileName));
+    }
+
 
     return STATUS_CODE_SUCCESS;
 }
