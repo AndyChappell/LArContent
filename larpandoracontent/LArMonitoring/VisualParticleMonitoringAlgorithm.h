@@ -82,12 +82,10 @@ private:
     /**
      *  @brief  Selects the MC particles to consider based on reconstructability criteria
      *
-     *  @param  pMCList The input MC particle list
      *  @param  calotHitList The input calo hit list
      *  @param  mcMap The output map from MC particles to calo hits
      **/
-    void MakeSelection(const pandora::MCParticleList *pMCList, const pandora::CaloHitList *pCaloHitList,
-        LArMCParticleHelper::MCContributionMap &mcMap) const;
+    void MakeSelection(const pandora::CaloHitList *pCaloHitList, LArMCParticleHelper::MCContributionMap &mcMap) const;
 #endif // MONITORING
 
     std::string m_caloHitListName;  ///< Name of input calo hit list
