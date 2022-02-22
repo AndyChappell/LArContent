@@ -31,42 +31,32 @@ private:
      *
      *  @param  trackHitList The output list of track-like hits
      *  @param  showerHitList The output list of shower-like hits
-     *  @param  diffuseHitList The output list of diffuse-like hits
      */
-    void TagMuonClusters(pandora::CaloHitList &trackHitList, pandora::CaloHitList &showerHitList, pandora::CaloHitList &diffuseHitList) const;
+    void TagMuonClusters(pandora::CaloHitList &trackHitList, pandora::CaloHitList &showerHitList) const;
 
     /**
      *  @brief  Tag the hits in clusters that aren't muons.
      *
      *  @param  trackHitList The output list of track-like hits
      *  @param  showerHitList The output list of shower-like hits
-     *  @param  michelHitList The output list of Michel-like hits
-     *  @param  diffuseHitList The output list of diffuse-like hits
      */
-    void TagNonMuonClusters(pandora::CaloHitList &trackHitList, pandora::CaloHitList &showerHitList, pandora::CaloHitList &michelHitList,
-        pandora::CaloHitList &diffuseHitList) const;
+    void TagNonMuonClusters(pandora::CaloHitList &trackHitList, pandora::CaloHitList &showerHitList) const;
 
     /**
      *  @brief  Output the featuer vectors for track/shower ID training.
      *
      *  @param  trackHitList The list of track-like hits
      *  @param  showerHitList The list of shower-like hits
-     *  @param  michelHitList The list of Michel-like hits
-     *  @param  diffuseHitList The list of diffuse-like hits
      */
-    void OutputTruthTagging(const pandora::CaloHitList &trackHitList, const pandora::CaloHitList &showerHitList,
-        const pandora::CaloHitList &michelHitList, const pandora::CaloHitList &diffuseHitList) const;
+    void OutputTruthTagging(const pandora::CaloHitList &trackHitList, const pandora::CaloHitList &showerHitList) const;
 
     /**
      *  @brief  Visualise the truth tags for hits.
      *
      *  @param  trackHitList The list of track-like hits
      *  @param  showerHitList The list of shower-like hits
-     *  @param  michelHitList The list of Michel-like hits
-     *  @param  diffuseHitList The list of diffuse-like hits
      */
-    void VisualizeTruthTagging(const pandora::CaloHitList &trackHitList, const pandora::CaloHitList &showerHitList,
-        const pandora::CaloHitList &michelHitList, const pandora::CaloHitList &diffuseHitList) const;
+    void VisualizeTruthTagging(const pandora::CaloHitList &trackHitList, const pandora::CaloHitList &showerHitList) const;
 
     pandora::StatusCode Run();
     pandora::StatusCode ReadSettings(const pandora::TiXmlHandle xmlHandle);
