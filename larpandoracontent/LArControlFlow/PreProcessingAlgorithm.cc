@@ -12,6 +12,8 @@
 
 #include "larpandoracontent/LArHelpers/LArClusterHelper.h"
 
+#include "larpandoracontent/LArObjects/LArCaloHit.h"
+
 #include "larpandoracontent/LArUtility/KDTreeLinkerAlgoT.h"
 
 using namespace pandora;
@@ -156,6 +158,59 @@ void PreProcessingAlgorithm::ProcessCaloHits()
 
     if (!filteredCaloHitListW.empty() && !m_outputCaloHitListNameW.empty())
         PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::SaveList(*this, filteredCaloHitListW, m_outputCaloHitListNameW));
+
+    auto sort_me = [](auto a, auto b)
+    {
+        return LArClusterHelper::SortCoordinatesByPosition(a.first, b.first);
+    };
+
+    typedef std::pair<unsigned int, unsigned int> VolumePair;
+    typedef std::pair<CartesianVector, VolumePair> HitPair;
+    std::vector<HitPair> sortedHitsU;
+    for (const CaloHit *pCaloHit : filteredCaloHitListU)
+    {
+        const LArCaloHit *pLArCaloHit{dynamic_cast<const LArCaloHit *>(pCaloHit)};
+        std::pair volume{std::make_pair(pLArCaloHit->GetLArTPCVolumeId(), pLArCaloHit->GetDaughterVolumeId())};
+        sortedHitsU.emplace_back(std::make_pair(pCaloHit->GetPositionVector(), volume));
+    }
+    std::sort(sortedHitsU.begin(), sortedHitsU.end(), sort_me);
+
+    std::vector<HitPair> sortedHitsV;
+    for (const CaloHit *pCaloHit : filteredCaloHitListV)
+    {
+        const LArCaloHit *pLArCaloHit{dynamic_cast<const LArCaloHit *>(pCaloHit)};
+        std::pair volume{std::make_pair(pLArCaloHit->GetLArTPCVolumeId(), pLArCaloHit->GetDaughterVolumeId())};
+        sortedHitsV.emplace_back(std::make_pair(pCaloHit->GetPositionVector(), volume));
+    }
+    std::sort(sortedHitsV.begin(), sortedHitsV.end(), sort_me);
+
+    std::vector<HitPair> sortedHitsW;
+    for (const CaloHit *pCaloHit : filteredCaloHitListW)
+    {
+        const LArCaloHit *pLArCaloHit{dynamic_cast<const LArCaloHit *>(pCaloHit)};
+        std::pair volume{std::make_pair(pLArCaloHit->GetLArTPCVolumeId(), pLArCaloHit->GetDaughterVolumeId())};
+        sortedHitsW.emplace_back(std::make_pair(pCaloHit->GetPositionVector(), volume));
+    }
+    std::sort(sortedHitsW.begin(), sortedHitsW.end(), sort_me);
+
+    std::cout << "U view" << std::endl;
+    for (auto hit : sortedHitsU)
+    {
+        std::cout << "TPC " << hit.second.first << " Sub " << hit.second.second << " (" << hit.first.GetX() << "," <<
+            hit.first.GetZ() << ")" << std::endl;
+    }
+    std::cout << std::endl << "V view" << std::endl;
+    for (auto hit : sortedHitsV)
+    {
+        std::cout << "TPC " << hit.second.first << " Sub " << hit.second.second << " (" << hit.first.GetX() << "," <<
+            hit.first.GetZ() << ")" << std::endl;
+    }
+    std::cout << std::endl << "W view" << std::endl;
+    for (auto hit : sortedHitsW)
+    {
+        std::cout << "TPC " << hit.second.first << " Sub " << hit.second.second << " (" << hit.first.GetX() << "," <<
+            hit.first.GetZ() << ")" << std::endl;
+    }
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
