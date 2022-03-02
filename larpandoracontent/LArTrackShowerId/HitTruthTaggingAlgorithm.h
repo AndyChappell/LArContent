@@ -24,6 +24,11 @@ public:
      */
     HitTruthTaggingAlgorithm();
 
+    /**
+     *  @brief  Destructor
+     */
+    ~HitTruthTaggingAlgorithm();
+
 private:
     /**
      *  @brief  Tag the hits in clusters that are muons according to MC truth (in MCC11, delta rays are folded back to the parent muon, we
@@ -51,6 +56,14 @@ private:
     void OutputTruthTagging(const pandora::CaloHitList &trackHitList, const pandora::CaloHitList &showerHitList) const;
 
     /**
+     *  @brief  Validate the network inference against truth.
+     *
+     *  @param  trackHitList The list of track-like hits
+     *  @param  showerHitList The list of shower-like hits
+     */
+    void ValidateInference(const pandora::CaloHitList &trackHitList, const pandora::CaloHitList &showerHitList);
+
+    /**
      *  @brief  Visualise the truth tags for hits.
      *
      *  @param  trackHitList The list of track-like hits
@@ -67,6 +80,11 @@ private:
     std::string m_outputFileName;                       ///< The base output filename for feature vectors
     bool m_visualize;                                   ///< Whether or not to visualise the truth tagging
     bool m_writeFeatures;                               ///< Whether or not to write the features to training files
+    bool m_validate;                                    ///< Whether or not to validate network inference
+
+    int m_confusionU[2][2];                             ///< Confusion matrix for the U view
+    int m_confusionV[2][2];                             ///< Confusion matrix for the V view
+    int m_confusionW[2][2];                             ///< Confusion matrix for the W view
 
     enum Tag : int;
 };

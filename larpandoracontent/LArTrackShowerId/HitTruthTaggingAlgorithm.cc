@@ -13,6 +13,7 @@
 #include "larpandoracontent/LArHelpers/LArMvaHelper.h"
 #include "larpandoracontent/LArHelpers/LArPointingClusterHelper.h"
 
+#include "larpandoracontent/LArObjects/LArCaloHit.h"
 #include "larpandoracontent/LArObjects/LArMCParticle.h"
 #include "larpandoracontent/LArObjects/LArPointingCluster.h"
 
@@ -25,8 +26,36 @@ namespace lar_content
 
 enum HitTruthTaggingAlgorithm::Tag : int { SHOWER = 1, TRACK };
 
-HitTruthTaggingAlgorithm::HitTruthTaggingAlgorithm() : m_minTrackRatio{0.5f}, m_visualize{false}, m_writeFeatures{true}
+HitTruthTaggingAlgorithm::HitTruthTaggingAlgorithm() : m_minTrackRatio{0.5f}, m_visualize{false}, m_writeFeatures{true},
+    m_confusionU(), m_confusionV(), m_confusionW()
 {
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+HitTruthTaggingAlgorithm::~HitTruthTaggingAlgorithm()
+{
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "confusion_tree", "u_true_shower", m_confusionU[1][1]));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "confusion_tree", "u_false_shower", m_confusionU[0][1]));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "confusion_tree", "u_false_track", m_confusionU[1][0]));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "confusion_tree", "u_true_track", m_confusionU[0][0]));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "confusion_tree", "v_true_shower", m_confusionV[1][1]));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "confusion_tree", "v_false_shower", m_confusionV[0][1]));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "confusion_tree", "v_false_track", m_confusionV[1][0]));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "confusion_tree", "v_true_track", m_confusionV[0][0]));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "confusion_tree", "w_true_shower", m_confusionW[1][1]));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "confusion_tree", "w_false_shower", m_confusionW[0][1]));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "confusion_tree", "w_false_track", m_confusionW[1][0]));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "confusion_tree", "w_true_track", m_confusionW[0][0]));
+    PANDORA_MONITORING_API(FillTree(this->GetPandora(), "confusion_tree"));
+    try
+    {
+        PANDORA_MONITORING_API(SaveTree(this->GetPandora(), "confusion_tree", "confusion.root", "UPDATE"));
+    }
+    catch (const StatusCodeException &)
+    {
+        std::cout << "HitTruthTaggingAlgorithm: Unable to write confusion_tree to file" << std::endl;
+    }
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
@@ -378,6 +407,79 @@ void HitTruthTaggingAlgorithm::OutputTruthTagging(const CaloHitList &trackHitLis
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
+void HitTruthTaggingAlgorithm::ValidateInference(const CaloHitList &trackHitList, const CaloHitList &showerHitList)
+{
+    if (m_visualize)
+    {
+        PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1.f, 1.f, 1.f));
+    }
+
+    CaloHitList correctHitListW, incorrectHitListW;
+    for (const CaloHit *pCaloHit : trackHitList)
+    {
+        HitType view{pCaloHit->GetHitType()};
+        const LArCaloHit *pLArCaloHit{dynamic_cast<const LArCaloHit *>(pCaloHit)};
+        const float pTrack{pLArCaloHit->GetTrackProbability()};
+        const float pShower{pLArCaloHit->GetShowerProbability()};
+        const int cls{(pShower > pTrack) ? 1 : 0};
+        switch (view)
+        {
+            case TPC_VIEW_U:
+                ++m_confusionU[0][cls];
+                break;
+            case TPC_VIEW_V:
+                ++m_confusionV[0][cls];
+                break;
+            case TPC_VIEW_W:
+                ++m_confusionW[0][cls];
+                if (cls == 0)
+                    correctHitListW.emplace_back(pCaloHit);
+                else
+                    incorrectHitListW.emplace_back(pCaloHit);
+                break;
+            default:
+                break;
+        }
+    }
+
+    for (const CaloHit *pCaloHit : showerHitList)
+    {
+        HitType view{pCaloHit->GetHitType()};
+        const LArCaloHit *pLArCaloHit{dynamic_cast<const LArCaloHit *>(pCaloHit)};
+        const float pTrack{pLArCaloHit->GetTrackProbability()};
+        const float pShower{pLArCaloHit->GetShowerProbability()};
+        const int cls{(pShower > pTrack) ? 1 : 0};
+        switch (view)
+        {
+            case TPC_VIEW_U:
+                ++m_confusionU[1][cls];
+                break;
+            case TPC_VIEW_V:
+                ++m_confusionV[1][cls];
+                break;
+            case TPC_VIEW_W:
+                ++m_confusionW[1][cls];
+                if (cls == 0)
+                    incorrectHitListW.emplace_back(pCaloHit);
+                else
+                    correctHitListW.emplace_back(pCaloHit);
+                break;
+            default:
+                break;
+        }
+    }
+
+    if (m_visualize)
+    {
+        PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &correctHitListW, "Correct", BLACK));
+        PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &incorrectHitListW, "Incorrect", RED));
+
+        PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
+    }
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
 void HitTruthTaggingAlgorithm::VisualizeTruthTagging(const CaloHitList &trackHitList, const CaloHitList &showerHitList) const
 {
     PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1.f, 1.f, 1.f));
@@ -410,6 +512,9 @@ StatusCode HitTruthTaggingAlgorithm::Run()
         this->VisualizeTruthTagging(trackHitList, showerHitList);
     if (m_writeFeatures)
         this->OutputTruthTagging(trackHitList, showerHitList);
+
+    if (m_validate)
+        this->ValidateInference(trackHitList, showerHitList);
 
     return STATUS_CODE_SUCCESS;
 }
