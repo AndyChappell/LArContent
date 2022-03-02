@@ -59,7 +59,7 @@ StatusCode DlHitTrackShowerIdAlgorithm::Run()
 
 StatusCode DlHitTrackShowerIdAlgorithm::Train()
 {
-    const int SHOWER{1}, TRACK{2}, MICHEL{3}, DIFFUSE{4};
+    const int SHOWER{1}, TRACK{2};
     for (const std::string listName : m_caloHitListNames)
     {
         const CaloHitList *pCaloHitList(nullptr);
@@ -106,20 +106,20 @@ StatusCode DlHitTrackShowerIdAlgorithm::Train()
 
             if (LArMCParticleHelper::IsCapture(pMC) || LArMCParticleHelper::IsNuclear(pMC) || LArMCParticleHelper::IsIonisation(pMC))
             {
-                tag = DIFFUSE;
+                tag = SHOWER;
             }
             else if (LArMCParticleHelper::IsInelasticScatter(pMC))
             {
                 if (mcCaloHitList.size() >= 5)
                 {
                     if (pdg == PHOTON || pdg == E_MINUS)
-                        tag = DIFFUSE;
+                        tag = SHOWER;
                     else
                         tag = TRACK;
                 }
                 else
                 {
-                    tag = DIFFUSE;
+                    tag = SHOWER;
                 }
             }
             else if (pdg == PHOTON)
@@ -128,10 +128,7 @@ StatusCode DlHitTrackShowerIdAlgorithm::Train()
             }
             else if (pdg == E_MINUS)
             {
-                if (LArMCParticleHelper::IsDecay(pMC) && std::abs(pMC->GetParentList().front()->GetParticleId()) == MU_MINUS)
-                    tag = MICHEL;
-                else
-                    tag = SHOWER;
+                tag = SHOWER;
             }
             else
             {
@@ -163,6 +160,7 @@ StatusCode DlHitTrackShowerIdAlgorithm::Train()
 
 StatusCode DlHitTrackShowerIdAlgorithm::Infer()
 {
+    const int SHOWER{1}, TRACK{2};
     const float eps{1.1920929e-7}; // Python float epsilon, used in image padding
 
     if (m_visualize)
@@ -294,12 +292,31 @@ StatusCode DlHitTrackShowerIdAlgorithm::Infer()
                     float probShower = exp(outputAccessor[0][1][pixelZ][pixelX]);
                     float probTrack = exp(outputAccessor[0][2][pixelZ][pixelX]);
                     float probNull = exp(outputAccessor[0][0][pixelZ][pixelX]);
-                    if (probShower > probTrack && probShower > probNull)
-                        showerHits.push_back(pCaloHit);
-                    else if (probTrack > probShower && probTrack > probNull)
-                        trackHits.push_back(pCaloHit);
-                    else
-                        otherHits.push_back(pCaloHit);
+                    float probMax{probNull};
+
+                    int cls{0};
+                    if (probShower > probMax)
+                    {
+                        probMax = probShower;
+                        cls = SHOWER;
+                    }
+                    if (probTrack > probMax)
+                    {
+                        probMax = probTrack;
+                        cls = TRACK;
+                    }
+                    switch (cls)
+                    {
+                        case SHOWER:
+                            showerHits.push_back(pCaloHit);
+                            break;
+                        case TRACK:
+                            trackHits.push_back(pCaloHit);
+                            break;
+                        default:
+                            otherHits.emplace_back(pCaloHit);
+                            break;
+                    }
                     float recipSum = 1.f / (probShower + probTrack);
                     // Adjust probabilities to ignore null hits and update LArCaloHit
                     probShower *= recipSum;
