@@ -10,6 +10,7 @@
 
 #include "Objects/CaloHit.h"
 #include "Objects/CartesianVector.h"
+#include "Plugins/LArTransformationPlugin.h"
 
 namespace lar_content
 {
@@ -28,9 +29,12 @@ public:
      *  @param  child The TPC child volume
      *  @param  center The center of the child TPC volume (x, y, z)
      *  @param  length The full lengths of the sizes of the TPC volume (x, y, z)
+     *  @param  pTransform The transformation plugin
      */
     TpcHitVolume(const unsigned int cryostat, const unsigned int tpc, const unsigned int child, const pandora::CartesianVector &center,
-        const pandora::CartesianVector &length);
+        const pandora::CartesianVector &length, const pandora::LArTransformationPlugin *const pTransform);
+
+    TpcHitVolume(const TpcHitVolume &original) = default;
 
     /**
      *  @brief Destructor
@@ -72,8 +76,13 @@ private:
     const unsigned int m_cryostat;      ///< The cryostat containing the TPC child volume
     const unsigned int m_tpc;           ///< The parent TPC volume
     const unsigned int m_child;         ///< The TPC child volume
-    pandora::CartesianVector m_min;     ///< The minimum coordinate of the TPC child volume
-    pandora::CartesianVector m_max;     ///< The maximum coordinate of the TPC child volume
+    pandora::CartesianVector m_min;     ///< The minimum coordinate of the TPC child volume XW plane
+    pandora::CartesianVector m_max;     ///< The maximum coordinate of the TPC child volume in XW plane
+    pandora::CartesianVector m_uMin;     ///< The minimum coordinate of the TPC child volume in XU plane
+    pandora::CartesianVector m_uMax;     ///< The maximum coordinate of the TPC child volume in XU plane
+    pandora::CartesianVector m_vMin;     ///< The minimum coordinate of the TPC child volume in XV plane
+    pandora::CartesianVector m_vMax;     ///< The maximum coordinate of the TPC child volume in XV plane
+
     ViewToHitMap m_viewToCaloHitMap;    ///< The map from the view to the hits contained within the child volume
 };
 
