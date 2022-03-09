@@ -72,6 +72,13 @@ private:
      */
     void InitialiseView(const pandora::HitType view);
 
+    /**
+     *  @brief  Debug function that prints out various hit and volume information.
+     *
+     *  @param  pCaloHit The (LAr)CaloHit about which information should be printed
+     */
+    void _Echo(const pandora::CaloHit *const pCaloHit) const;
+
     typedef std::map<pandora::HitType, pandora::CaloHitList> ViewToHitMap;
     const unsigned int m_cryostat;      ///< The cryostat containing the TPC child volume
     const unsigned int m_tpc;           ///< The parent TPC volume
