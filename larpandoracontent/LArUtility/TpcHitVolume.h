@@ -56,6 +56,14 @@ public:
     void Add(const pandora::CaloHit *const pCaloHit);
 
     /**
+     *  @brief  Retrieve the hits from a given view in this volume
+     *
+     *  @param  view The view from which hits should be retrieved
+     *  @param  caloHitList The output CaloHitList
+     */
+    void GetHitList(const pandora::HitType view, pandora::CaloHitList &caloHitList) const;
+
+    /**
      *  @brief  Take all of the hits from a given view in this volume and transforms them to the local coorindate system
      *
      *  @param  view The view for which coordinates should be produced

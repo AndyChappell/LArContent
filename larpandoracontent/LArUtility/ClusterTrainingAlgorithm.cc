@@ -35,6 +35,13 @@ StatusCode ClusterTrainingAlgorithm::Run()
             LArTpcGeometryHelper::VolumeId id(0, t, c);
             TpcHitVolume &volume{helper.GetTpcHitVolume(id)};
             volume.Add(*pCaloHitList);
+            CaloHitList volumeHitsU, volumeHitsV, volumeHitsW;
+            volume.GetHitList(TPC_VIEW_U, volumeHitsU);
+            volume.GetHitList(TPC_VIEW_V, volumeHitsV);
+            volume.GetHitList(TPC_VIEW_W, volumeHitsW);
+            this->CreateHitList(volumeHitsU, "CaloHitListU_0_" + std::to_string(t) + "_" + std::to_string(c));
+            this->CreateHitList(volumeHitsV, "CaloHitListV_0_" + std::to_string(t) + "_" + std::to_string(c));
+            this->CreateHitList(volumeHitsW, "CaloHitListW_0_" + std::to_string(t) + "_" + std::to_string(c));
         }
     }
 
@@ -48,6 +55,13 @@ StatusCode ClusterTrainingAlgorithm::ReadSettings(const TiXmlHandle xmlHandle)
     (void)xmlHandle;
 
     return STATUS_CODE_SUCCESS;
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+StatusCode ClusterTrainingAlgorithm::CreateHitList(const CaloHitList &caloHitList, std::string listName) const
+{
+    return PandoraContentApi::SaveList<CaloHitList>(*this, caloHitList, listName);
 }
 
 } // namespace lar_content

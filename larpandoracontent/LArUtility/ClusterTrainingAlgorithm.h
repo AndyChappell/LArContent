@@ -27,6 +27,14 @@ public:
 private:
     pandora::StatusCode Run();
     pandora::StatusCode ReadSettings(const pandora::TiXmlHandle xmlHandle);
+
+    /**
+     *  @brief  Create child volume hit list
+     *
+     *  @param  caloHitList  The CaloHitList to persist
+     *  @param  listName The name to use for the list
+     */
+    pandora::StatusCode CreateHitList(const pandora::CaloHitList &caloHitList, std::string listName) const;
 };
 
 } // namespace lar_content

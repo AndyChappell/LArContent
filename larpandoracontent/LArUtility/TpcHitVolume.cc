@@ -80,6 +80,17 @@ void TpcHitVolume::Add(const CaloHit *const pCaloHit)
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
+void TpcHitVolume::GetHitList(const HitType view, CaloHitList &caloHitList) const
+{
+    if (m_viewToCaloHitMap.find(view) != m_viewToCaloHitMap.end())
+    {
+        const CaloHitList &localHitList{m_viewToCaloHitMap.at(view)};
+        caloHitList.insert(caloHitList.end(), localHitList.begin(), localHitList.end());
+    }
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
 void TpcHitVolume::GetLocalCoordinates(const HitType view, CartesianPointVector &localCoords) const
 {
     // Probably want to check initialisation status here
