@@ -203,6 +203,7 @@
 #include "larpandoracontent/LArUtility/ListMergingAlgorithm.h"
 #include "larpandoracontent/LArUtility/ListPruningAlgorithm.h"
 #include "larpandoracontent/LArUtility/PfoHitCleaningAlgorithm.h"
+#include "larpandoracontent/LArUtility/TpcVolumeIteratorAlgorithm.h"
 
 #include "larpandoracontent/LArVertex/CandidateVertexCreationAlgorithm.h"
 #include "larpandoracontent/LArVertex/EnergyKickVertexSelectionAlgorithm.h"
@@ -315,6 +316,7 @@
     d("LArListDeletion",                        ListDeletionAlgorithm)                                                          \
     d("LArListMerging",                         ListMergingAlgorithm)                                                           \
     d("LArPfoHitCleaning",                      PfoHitCleaningAlgorithm)                                                        \
+    d("LArTpcVolumeIterator",                   TpcVolumeIteratorAlgorithm)                                                     \
     d("LArListPruning",                         ListPruningAlgorithm)                                                           \
     d("LArCandidateVertexCreation",             CandidateVertexCreationAlgorithm)                                               \
     d("LArEnergyKickVertexSelection",           EnergyKickVertexSelectionAlgorithm)                                             \
