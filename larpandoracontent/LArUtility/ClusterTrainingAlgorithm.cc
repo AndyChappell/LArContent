@@ -16,7 +16,7 @@ using namespace pandora;
 namespace lar_content
 {
 
-ClusterTrainingAlgorithm::ClusterTrainingAlgorithm()
+ClusterTrainingAlgorithm::ClusterTrainingAlgorithm() : m_initialisation{false}
 {
 }
 
@@ -34,14 +34,29 @@ StatusCode ClusterTrainingAlgorithm::Run()
         {
             LArTpcGeometryHelper::VolumeId id(0, t, c);
             TpcHitVolume &volume{helper.GetTpcHitVolume(id)};
-            volume.Add(*pCaloHitList);
-            CaloHitList volumeHitsU, volumeHitsV, volumeHitsW;
-            volume.GetHitList(TPC_VIEW_U, volumeHitsU);
-            volume.GetHitList(TPC_VIEW_V, volumeHitsV);
-            volume.GetHitList(TPC_VIEW_W, volumeHitsW);
-            this->CreateHitList(volumeHitsU, "CaloHitListU_0_" + std::to_string(t) + "_" + std::to_string(c));
-            this->CreateHitList(volumeHitsV, "CaloHitListV_0_" + std::to_string(t) + "_" + std::to_string(c));
-            this->CreateHitList(volumeHitsW, "CaloHitListW_0_" + std::to_string(t) + "_" + std::to_string(c));
+            if (m_initialisation)
+            {
+                volume.Add(*pCaloHitList);
+                CaloHitList volumeHitsU, volumeHitsV, volumeHitsW;
+                volume.GetHitList(TPC_VIEW_U, volumeHitsU);
+                volume.GetHitList(TPC_VIEW_V, volumeHitsV);
+                volume.GetHitList(TPC_VIEW_W, volumeHitsW);
+                this->CreateHitList(volumeHitsU, "CaloHitListU_0_" + std::to_string(t) + "_" + std::to_string(c));
+                this->CreateHitList(volumeHitsV, "CaloHitListV_0_" + std::to_string(t) + "_" + std::to_string(c));
+                this->CreateHitList(volumeHitsW, "CaloHitListW_0_" + std::to_string(t) + "_" + std::to_string(c));
+            }
+            else
+            {
+                std::cout << "No init" << std::endl;
+                // Not sure why I need to run this line again, wouldn't have expected to, as singleton seems to persist as expected
+                volume.Add(*pCaloHitList);
+                CaloHitList volumeHitsU, volumeHitsV, volumeHitsW;
+                volume.GetHitList(TPC_VIEW_U, volumeHitsU);
+                volume.GetHitList(TPC_VIEW_V, volumeHitsV);
+                volume.GetHitList(TPC_VIEW_W, volumeHitsW);
+                std::cout << "TPC " << t << ":" << c << " (" << volumeHitsU.size() << "," << volumeHitsV.size() << "," <<
+                    volumeHitsW.size() << ")" << std::endl;
+            }
         }
     }
 
@@ -52,7 +67,7 @@ StatusCode ClusterTrainingAlgorithm::Run()
 
 StatusCode ClusterTrainingAlgorithm::ReadSettings(const TiXmlHandle xmlHandle)
 {
-    (void)xmlHandle;
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "Initialise", m_initialisation));
 
     return STATUS_CODE_SUCCESS;
 }

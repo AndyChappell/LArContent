@@ -35,6 +35,8 @@ private:
      *  @param  listName The name to use for the list
      */
     pandora::StatusCode CreateHitList(const pandora::CaloHitList &caloHitList, std::string listName) const;
+
+    bool m_initialisation;    ///< Whether or not this is an initialisation run
 };
 
 } // namespace lar_content
