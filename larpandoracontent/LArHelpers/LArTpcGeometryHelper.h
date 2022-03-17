@@ -8,6 +8,7 @@
 #ifndef LAR_TPC_GEOMETRY_HELPER_H
 #define LAR_TPC_GEOMETRY_HELPER_H 1
 
+#include "Pandora/Algorithm.h"
 #include "Plugins/LArTransformationPlugin.h"
 
 #include "larpandoracontent/LArUtility/TpcHitVolume.h"
@@ -28,11 +29,13 @@ public:
     /**
      *  @brief  Get the instance of the TPC geometry helper.
      *
+     *  @param  pAlgorithm The algorithm requesting the instance
      *  @param  pTransform The transformation plugin
      *
      *  @return The TPC geometry helper
      */
-    static const LArTpcGeometryHelper &GetInstance(const pandora::LArTransformationPlugin *const pTransform);
+    static const LArTpcGeometryHelper &GetInstance(const pandora::Algorithm *const pAlgorithm,
+        const pandora::LArTransformationPlugin *const pTransform);
 
     /**
      *  @brief  Retrieve a TpcHitVolume.
@@ -49,9 +52,10 @@ private:
     /**
      *  Constructor
      *
+     *  @param  pAlgorithm The algorithm requesting the instance
      *  @param  pTransform The transformation plugin
      */
-    LArTpcGeometryHelper(const pandora::LArTransformationPlugin *const pTransform);
+    LArTpcGeometryHelper(const pandora::Algorithm *const pAlgorithm, const pandora::LArTransformationPlugin *const pTransform);
 
     static LArTpcGeometryHelper *m_instance;    ///< Singleton describing the TPC geometry
     VolumeIdToTpcMap m_volumeToTpcMap;          ///< The map from ID to TPC

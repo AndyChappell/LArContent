@@ -10,6 +10,7 @@
 
 #include "Objects/CaloHit.h"
 #include "Objects/CartesianVector.h"
+#include "Pandora/Algorithm.h"
 #include "Plugins/LArTransformationPlugin.h"
 
 namespace lar_content
@@ -21,9 +22,12 @@ namespace lar_content
 class TpcHitVolume
 {
 public:
+    typedef std::map<const pandora::Cluster*, pandora::ClusterList> ClusterMap;
+
     /**
      *  @brief Constructor
      *
+     *  @param  pAlgorithm The algorithm creating the object
      *  @param  cryostat The cryostat containing the TPC child volume
      *  @param  tpc The parent TPC volume
      *  @param  child The TPC child volume
@@ -31,8 +35,8 @@ public:
      *  @param  length The full lengths of the sizes of the TPC volume (x, y, z)
      *  @param  pTransform The transformation plugin
      */
-    TpcHitVolume(const unsigned int cryostat, const unsigned int tpc, const unsigned int child, const pandora::CartesianVector &center,
-        const pandora::CartesianVector &length, const pandora::LArTransformationPlugin *const pTransform);
+    TpcHitVolume(const pandora::Algorithm *const pAlgorithm, const unsigned int cryostat, const unsigned int tpc, const unsigned int child,
+        const pandora::CartesianVector &center, const pandora::CartesianVector &length, const pandora::LArTransformationPlugin *const pTransform);
 
     TpcHitVolume(const TpcHitVolume &original) = default;
 
@@ -54,6 +58,14 @@ public:
      *  @param  pCaloHit The (LAr)CaloHit to be considered for addition to the volume
      */
     void Add(const pandora::CaloHit *const pCaloHit);
+
+    /**
+     *  @brief  Get the relationships between clusters in the different views.
+     *
+     *  @param  signalMap The output map from clusters in one view to clusters in another that constitute signal
+     *  @param  backgroundMap The output map from clusters in one view to clusters in another that constiture background
+     */
+    void GetCombinatorics(ClusterMap &signalMap, ClusterMap &backgroundMap) const;
 
     /**
      *  @brief  Retrieve the hits from a given view in this volume
@@ -98,6 +110,16 @@ private:
     void GetLocalCoordinate(const pandora::CaloHit *pCaloHit, pandora::CartesianPointVector &localCoords) const;
 
     /**
+     *  @brief  Retrieve the main MC particle associated with a cluster, along with the weight this particle contributes to the cluster
+     *
+     *  @param  pCluster The cluster for which the MC particle should be determined
+     *  @param  weight The output weight that the returned particle contributes to the cluster
+     *
+     *  @return The MCParticle that best represents the cluster
+     */
+    const pandora::MCParticle *GetMainMCParticle(const pandora::Cluster *const pCluster, float &weight) const;
+
+    /**
      *  @brief  Initialise a view to hits map for a given view.
      *
      *  @param  view The view whose map is to be initialised
@@ -112,17 +134,18 @@ private:
     void _Echo(const pandora::CaloHit *const pCaloHit) const;
 
     typedef std::map<pandora::HitType, pandora::CaloHitList> ViewToHitMap;
-    const unsigned int m_cryostat;      ///< The cryostat containing the TPC child volume
-    const unsigned int m_tpc;           ///< The parent TPC volume
-    const unsigned int m_child;         ///< The TPC child volume
-    pandora::CartesianVector m_min;     ///< The minimum coordinate of the TPC child volume XW plane
-    pandora::CartesianVector m_max;     ///< The maximum coordinate of the TPC child volume in XW plane
-    pandora::CartesianVector m_uMin;     ///< The minimum coordinate of the TPC child volume in XU plane
-    pandora::CartesianVector m_uMax;     ///< The maximum coordinate of the TPC child volume in XU plane
-    pandora::CartesianVector m_vMin;     ///< The minimum coordinate of the TPC child volume in XV plane
-    pandora::CartesianVector m_vMax;     ///< The maximum coordinate of the TPC child volume in XV plane
 
-    ViewToHitMap m_viewToCaloHitMap;    ///< The map from the view to the hits contained within the child volume
+    const pandora::Algorithm *const m_pAlgorithm;   ///< The parent algorithm
+    const unsigned int m_cryostat;                  ///< The cryostat containing the TPC child volume
+    const unsigned int m_tpc;                       ///< The parent TPC volume
+    const unsigned int m_child;                     ///< The TPC child volume
+    pandora::CartesianVector m_min;                 ///< The minimum coordinate of the TPC child volume XW plane
+    pandora::CartesianVector m_max;                 ///< The maximum coordinate of the TPC child volume in XW plane
+    pandora::CartesianVector m_uMin;                ///< The minimum coordinate of the TPC child volume in XU plane
+    pandora::CartesianVector m_uMax;                ///< The maximum coordinate of the TPC child volume in XU plane
+    pandora::CartesianVector m_vMin;                ///< The minimum coordinate of the TPC child volume in XV plane
+    pandora::CartesianVector m_vMax;                ///< The maximum coordinate of the TPC child volume in XV plane
+    ViewToHitMap m_viewToCaloHitMap;                ///< The map from the view to the hits contained within the child volume
 };
 
 } // namespace lar_content

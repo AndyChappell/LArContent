@@ -6,6 +6,7 @@
  *  $Log: $
  */
 
+#include "Api/PandoraContentApi.h"
 #include "Objects/Cluster.h"
 
 #include "larpandoracontent/LArObjects/LArCaloHit.h"
@@ -17,9 +18,18 @@ using namespace pandora;
 namespace lar_content
 {
 
-TpcHitVolume::TpcHitVolume(const unsigned int cryostat, const unsigned int tpc, const unsigned int child, const pandora::CartesianVector &center,
-    const pandora::CartesianVector &length, const LArTransformationPlugin *const pTransform) : m_cryostat{cryostat}, m_tpc{tpc}, m_child{child},
-    m_min{center - length * 0.5}, m_max{center + length * 0.5}, m_uMin{0., 0., 0.}, m_uMax{0., 0., 0.}, m_vMin{0., 0., 0.}, m_vMax{0., 0., 0.}
+TpcHitVolume::TpcHitVolume(const Algorithm *const pAlgorithm, const unsigned int cryostat, const unsigned int tpc, const unsigned int child,
+    const pandora::CartesianVector &center, const pandora::CartesianVector &length, const LArTransformationPlugin *const pTransform) :
+    m_pAlgorithm{pAlgorithm},
+    m_cryostat{cryostat},
+    m_tpc{tpc},
+    m_child{child},
+    m_min{center - length * 0.5},
+    m_max{center + length * 0.5},
+    m_uMin{0., 0., 0.},
+    m_uMax{0., 0., 0.},
+    m_vMin{0., 0., 0.},
+    m_vMax{0., 0., 0.}
 {
     // ATTN: Wire planes with non-zero wire angles can map hits to virtual wire centres that extend beyond the physical bounds of the
     // daughter volume in the Z direction. As a result, minima and maximum for these planes must be adjusted to reflect this.
@@ -132,6 +142,92 @@ void TpcHitVolume::GetLocalCoordinates(const Cluster *const pCluster, CartesianP
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
+void TpcHitVolume::GetCombinatorics(ClusterMap &signalMap, ClusterMap &backgroundMap) const
+{
+    std::map<const std::string, const ClusterList*> viewToClusterListMap{{"U", nullptr}, {"V", nullptr}, {"W", nullptr}};
+    for (const std::string view : {"U", "V", "W"})
+    {
+        const std::string suffix{"_" + std::to_string(m_cryostat) + "_" + std::to_string(m_tpc) + "_" + std::to_string(m_child)};
+        const std::string clusterListName{"Clusters" + view + suffix};
+        PandoraContentApi::GetList(*m_pAlgorithm, clusterListName, viewToClusterListMap[view]);
+    }
+
+    if (viewToClusterListMap["U"] && (viewToClusterListMap["V"] || viewToClusterListMap["W"]))
+    {
+        for (const Cluster *const pClusterU : *viewToClusterListMap["U"])
+        {
+            float weightU{0.f};
+            const MCParticle *const pMCParticleU{this->GetMainMCParticle(pClusterU, weightU)};
+            if (!pMCParticleU)
+                continue;
+
+            if (viewToClusterListMap["V"])
+            {
+                for (const Cluster *const pClusterV : *viewToClusterListMap["V"])
+                {
+                    float weightV{0.f};
+                    const MCParticle *const pMCParticleV{this->GetMainMCParticle(pClusterV, weightV)};
+                    if (!pMCParticleV)
+                        continue;
+                    if (weightU > 0.9f && weightV > 0.9f)
+                    {
+                        if (pMCParticleU == pMCParticleV)
+                            signalMap[pClusterU].emplace_back(pClusterV);
+                        else
+                            backgroundMap[pClusterU].emplace_back(pClusterV);
+                    }
+                }
+            }
+ 
+            if (viewToClusterListMap["W"])
+            {
+                for (const Cluster *const pClusterW : *viewToClusterListMap["W"])
+                {
+                    float weightW{0.f};
+                    const MCParticle *const pMCParticleW{this->GetMainMCParticle(pClusterW, weightW)};
+                    if (!pMCParticleW)
+                        continue;
+                    if (weightU > 0.9f && weightW > 0.9f)
+                    {
+                        if (pMCParticleU == pMCParticleW)
+                            signalMap[pClusterU].emplace_back(pClusterW);
+                        else
+                            backgroundMap[pClusterU].emplace_back(pClusterW);
+                    }
+                }
+            }
+        }
+    }
+
+    if (viewToClusterListMap["V"] && viewToClusterListMap["W"])
+    {
+        for (const Cluster *const pClusterV : *viewToClusterListMap["V"])
+        {
+            float weightV{0.f};
+            const MCParticle *const pMCParticleV{this->GetMainMCParticle(pClusterV, weightV)};
+            if (!pMCParticleV)
+                continue;
+
+            for (const Cluster *const pClusterW : *viewToClusterListMap["W"])
+            {
+                float weightW{0.f};
+                const MCParticle *const pMCParticleW{this->GetMainMCParticle(pClusterW, weightW)};
+                if (!pMCParticleW)
+                    continue;
+                if (weightV > 0.9f && weightW > 0.9f)
+                {
+                    if (pMCParticleV == pMCParticleW)
+                        signalMap[pClusterV].emplace_back(pClusterW);
+                    else
+                        backgroundMap[pClusterV].emplace_back(pClusterW);
+                }
+            }
+        }
+    }
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
 bool TpcHitVolume::Contains(const CaloHit *const pCaloHit) const
 {
     const LArCaloHit *pLArCaloHit{dynamic_cast<const LArCaloHit *>(pCaloHit)};
@@ -161,6 +257,37 @@ void TpcHitVolume::GetLocalCoordinate(const CaloHit *pCaloHit, CartesianPointVec
     const double xp{(x - min.GetX()) / (max.GetX() - min.GetX())};
     const double zp{(z - min.GetZ()) / (max.GetZ() - min.GetZ())};
     localCoords.emplace_back(CartesianVector(xp, 0., zp));
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+const MCParticle *TpcHitVolume::GetMainMCParticle(const Cluster *const pCluster, float &weight) const
+{
+    CaloHitList caloHitList;
+    pCluster->GetOrderedCaloHitList().FillCaloHitList(caloHitList);
+    const CaloHitList &isolatedCaloHitList{pCluster->GetIsolatedCaloHitList()};
+    caloHitList.insert(caloHitList.end(), isolatedCaloHitList.begin(), isolatedCaloHitList.end());
+
+    MCParticleWeightMap mcParticleWeightMap;
+    for (const CaloHit *const pCaloHit : caloHitList)
+    {
+        const MCParticleWeightMap &hitMCParticleWeightMap{pCaloHit->GetMCParticleWeightMap()};
+        for (const auto [ pMC, hitWeight ] : hitMCParticleWeightMap)
+            mcParticleWeightMap[pMC] += hitWeight;
+    }
+
+    const MCParticle *pBestMCParticle{nullptr};
+    weight = 0.f;
+    for (const auto [ pMC, mcWeight ] : mcParticleWeightMap)
+    {
+        if (mcWeight > weight)
+        {
+            pBestMCParticle = pMC;
+            weight = mcWeight;
+        }
+    }
+
+    return pBestMCParticle;
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
