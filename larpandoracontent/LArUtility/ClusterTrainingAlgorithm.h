@@ -36,7 +36,20 @@ private:
      */
     pandora::StatusCode CreateHitList(const pandora::CaloHitList &caloHitList, std::string listName) const;
 
-    bool m_initialisation;    ///< Whether or not this is an initialisation run
+    /**
+     *  @brief  Write a feature vector for a cluster pairing
+     *
+     *  @param  view1 The view from which the first set of hits is derived
+     *  @param  points1 The set of points from the first cluster
+     *  @param  view2 The view from which the second set of hits is derived
+     *  @param  points2 The set of points from the second cluster
+     *  @param  isSignal Whether or not the feature vector represents signal
+     */
+    pandora::StatusCode WriteFeatureVector(const pandora::HitType view1, const pandora::CartesianPointVector &points1,
+        const pandora::HitType view2, const pandora::CartesianPointVector &points2, const bool isSignal) const;
+
+    bool m_initialisation;          ///< Whether or not this is an initialisation run
+    std::string m_trainingFilename; ///< Training file name
 };
 
 } // namespace lar_content

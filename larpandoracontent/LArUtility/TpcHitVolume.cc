@@ -106,15 +106,24 @@ void TpcHitVolume::GetLocalCoordinates(const HitType view, CartesianPointVector 
     // Probably want to check initialisation status here
     if (m_viewToCaloHitMap.find(view) != m_viewToCaloHitMap.end())
     {
+        const float extreme{std::numeric_limits<float>::max()};
         const CaloHitList &caloHitList{m_viewToCaloHitMap.at(view)};
         for (const CaloHit *pCaloHit : caloHitList)
-            this->GetLocalCoordinate(pCaloHit, localCoords);
+            this->GetLocalCoordinate(pCaloHit, -extreme, +extreme, localCoords);
     }
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
 void TpcHitVolume::GetLocalCoordinates(const Cluster *const pCluster, CartesianPointVector &localCoords) const
+{
+    const float extreme{std::numeric_limits<float>::max()};
+    this->GetLocalCoordinates(pCluster, -extreme, +extreme, localCoords);
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+void TpcHitVolume::GetLocalCoordinates(const Cluster *const pCluster, const float xMin, const float xMax, CartesianPointVector &localCoords) const
 {
     CaloHitList caloHitList;
     pCluster->GetOrderedCaloHitList().FillCaloHitList(caloHitList);
@@ -131,11 +140,13 @@ void TpcHitVolume::GetLocalCoordinates(const Cluster *const pCluster, CartesianP
             if (view != refView || !pLArCaloHit)
                 throw StatusCodeException(STATUS_CODE_INVALID_PARAMETER);
             const unsigned int tpc{pLArCaloHit->GetLArTPCVolumeId()};
-            const unsigned int child{pLArCaloHit->GetDaughterVolumeId()};
+            const unsigned int child{pLArCaloHit->GetLArTPCVolumeId() == 0 ? 2 * pLArCaloHit->GetDaughterVolumeId() :
+                1 + 2 * pLArCaloHit->GetDaughterVolumeId()};
+
             if (tpc != m_tpc || child != m_child)
                 throw StatusCodeException(STATUS_CODE_INVALID_PARAMETER);
 
-            this->GetLocalCoordinate(pLArCaloHit, localCoords);
+            this->GetLocalCoordinate(pLArCaloHit, xMin, xMax, localCoords);
         }
     }
 }
@@ -247,16 +258,19 @@ bool TpcHitVolume::Contains(const CaloHit *const pCaloHit) const
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-void TpcHitVolume::GetLocalCoordinate(const CaloHit *pCaloHit, CartesianPointVector &localCoords) const
+void TpcHitVolume::GetLocalCoordinate(const CaloHit *pCaloHit, const float xMin, const float xMax, CartesianPointVector &localCoords) const
 {
     const HitType view{pCaloHit->GetHitType()};
     const CartesianVector &min{view == TPC_VIEW_U ? m_uMin : view == TPC_VIEW_V ? m_vMin : m_min};
     const CartesianVector &max{view == TPC_VIEW_U ? m_uMax : view == TPC_VIEW_V ? m_vMax : m_max};
     const CartesianVector pos{pCaloHit->GetPositionVector()};
     const double x{pos.GetX()}, z{pos.GetZ()};
-    const double xp{(x - min.GetX()) / (max.GetX() - min.GetX())};
-    const double zp{(z - min.GetZ()) / (max.GetZ() - min.GetZ())};
-    localCoords.emplace_back(CartesianVector(xp, 0., zp));
+    if (x >= xMin && x <= xMax)
+    {
+        const double xp{(x - min.GetX()) / (max.GetX() - min.GetX())};
+        const double zp{(z - min.GetZ()) / (max.GetZ() - min.GetZ())};
+        localCoords.emplace_back(CartesianVector(xp, 0., zp));
+    }
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------

@@ -91,6 +91,17 @@ public:
      */
     void GetLocalCoordinates(const pandora::Cluster *const pCluster, pandora::CartesianPointVector &localCoords) const;
 
+    /**
+     *  @brief  Take a given cluster and transform its hits into the local coorindate system
+     *
+     *  @param  view The view for which coordinates should be produced
+     *  @param  xMin The minimum x coordinate for hits to be transformed
+     *  @param  xMax The maximum x coordinate for hits to be transformed
+     *  @param  localCoords The output vector of coordinates
+     */
+    void GetLocalCoordinates(const pandora::Cluster *const pCluster, const float xMin, const float xMax,
+        pandora::CartesianPointVector &localCoords) const;
+
 private:
     /**
      *  @brief  Check if a (LAr)CaloHit is contained within this child volume.
@@ -105,9 +116,11 @@ private:
      *  @brief  Transform the hit coordinate to the local coorindate system
      *
      *  @param  pCaloHit The (LAr)CaloHit to transform
+     *  @param  xMin The minimum x coordinate for hits to be transformed
+     *  @param  xMax The maximum x coordinate for hits to be transformed
      *  @param  localCoords The output vector of coordinates in which the transformed coordinate should be stored
      */
-    void GetLocalCoordinate(const pandora::CaloHit *pCaloHit, pandora::CartesianPointVector &localCoords) const;
+    void GetLocalCoordinate(const pandora::CaloHit *pCaloHit, const float xMin, const float xMax, pandora::CartesianPointVector &localCoords) const;
 
     /**
      *  @brief  Retrieve the main MC particle associated with a cluster, along with the weight this particle contributes to the cluster
