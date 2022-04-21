@@ -213,6 +213,8 @@ StatusCode DlVertexingAlgorithm::Infer()
 
         CartesianPointVector positionVector;
         MakeWirePlaneCoordinatesFromCanvas(*pCaloHitList, canvas, canvasWidth, canvasHeight, colOffset, rowOffset, positionVector);
+        if (positionVector.empty())
+            return STATUS_CODE_NOT_FOUND;
         if (isU)
             vertexCandidatesU.emplace_back(positionVector.front());
         else if (isV)
@@ -309,7 +311,9 @@ StatusCode DlVertexingAlgorithm::Infer()
                             const float dr_u{std::sqrt((rx_u - tx) * (rx_u - tx) + (ru - tu) * (ru - tu))};
                             const float dr_v{std::sqrt((rx_v - tx) * (rx_v - tx) + (rv - tv) * (rv - tv))};
                             const float dr_w{std::sqrt((rx_w - tx) * (rx_w - tx) + (rw - tw) * (rw - tw))};
-                            const float dr{(recoVertex - trueVertex).GetMagnitude()};
+                            const CartesianVector &dv{recoVertex - trueVertex};
+                            const float dr{dv.GetMagnitude()};
+                            const float dx{dv.GetX()}, dy{dv.GetY()}, dz{dv.GetZ()};
 /*                            std::cout << "Truth: " << tx << " " << tu << " " << tv << " " << tw << std::endl;
                             std::cout << "U: " << rx_u << " " << ru << " " << dr_u << std::endl;
                             std::cout << "V: " << rx_v << " " << rv << " " << dr_v << std::endl;
@@ -319,6 +323,9 @@ StatusCode DlVertexingAlgorithm::Infer()
                             PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "vertex", "dr_v", dr_v));
                             PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "vertex", "dr_w", dr_w));
                             PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "vertex", "dr", dr));
+                            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "vertex", "dx", dx));
+                            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "vertex", "dy", dy));
+                            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "vertex", "dz", dz));
                             PANDORA_MONITORING_API(FillTree(this->GetPandora(), "vertex"));
                         }
                     }
@@ -482,30 +489,86 @@ StatusCode DlVertexingAlgorithm::MakeWirePlaneCoordinatesFromCanvas(const CaloHi
     const float xShift{static_cast<float>(dx * 0.5f)};
     const float zShift{static_cast<float>(dz * 0.5f)};
 
-    float best{-1.f};
-    int rowBest{0}, colBest{0};
+    CartesianPointVector pixelVector;
+    FloatVector bestVector;
     for (int row = 0; row < canvasHeight; ++row)
+    {
         for (int col = 0; col < canvasWidth; ++col)
-            if (canvas[row][col] > 0 && canvas[row][col] > best)
+        {
+            if (canvas[row][col] > 0.f)
             {
-                best = canvas[row][col];
-                rowBest = row;
-                colBest = col;
-            }
+                CartesianVector px(col, 0.f, row);
+                if (bestVector.empty())
+                {
+                    pixelVector.emplace_back(px);
+                    bestVector.emplace_back(canvas[row][col]);
+                }
+                else
+                {
+                    const float threshold{bestVector.back()};
+                    if ((bestVector.size() == 10)  && (canvas[row][col] <= threshold))
+                        continue;
 
-/*    for (int row = 0; row < canvasHeight; ++row)
-        for (int col = 0; col < canvasWidth; ++col)
-            if (canvas[row][col] > (best * 0.9f))
-            {
-                const float x{static_cast<float>((col - columnOffset) * dx + xMin + xShift)};
-                const float z{static_cast<float>(dz * ((m_height - 1) - (row - rowOffset)) + zMin + zShift)};
-                CartesianVector pt(x, 0.f, z);
-                positionVector.emplace_back(pt);
-            }*/
-    const float x{static_cast<float>((colBest - columnOffset) * dx + xMin + xShift)};
-    const float z{static_cast<float>(dz * ((m_height - 1) - (rowBest - rowOffset)) + zMin + zShift)};
-    CartesianVector pt(x, 0.f, z);
-    positionVector.emplace_back(pt);
+                    int idx{static_cast<int>(bestVector.size())};
+                    for (int i = idx - 1; i >= 0; --i)
+                    {
+                        if (canvas[row][col] > bestVector.at(i))
+                            idx = i;
+                        else
+                            break;
+                    }
+                    if (idx != 0)
+                    {
+                        // Don't include candidates within 10 pixel radius of a better candidate
+                        bool veto{false};
+                        for (int i = 0; i < idx; ++i)
+                        {
+                            if ((pixelVector.at(i) - px).GetMagnitudeSquared() < 100)
+                            {
+                                veto = true;
+                                break;
+                            }
+                        }
+                        if (veto)
+                            continue;
+                    }
+                    // Remove worse candidates within 10 pixels of the newest candidate
+                    for (auto iter = pixelVector.begin() + idx; iter != pixelVector.end();)
+                    {
+                        if ((*iter - px).GetMagnitudeSquared() < 100)
+                        {
+                            int distance{static_cast<int>(std::distance(pixelVector.begin(), iter))};
+                            iter = pixelVector.erase(iter);
+                            bestVector.erase(bestVector.begin() + distance);
+                        }
+                        else
+                            ++iter;
+                    }
+
+                    pixelVector.insert(pixelVector.begin() + idx, px);
+                    bestVector.insert(bestVector.begin() + idx, canvas[row][col]);
+
+                    if (bestVector.size() > 10)
+                    {
+                        pixelVector.pop_back();
+                        bestVector.pop_back();
+                    }
+                }
+            }
+        }
+    }
+
+    // Retain only those candidates with at least half the weight of the 'best' candidate
+    for (int i = 0; i < static_cast<int>(bestVector.size()); ++i)
+    {
+        if (bestVector.at(i) > 0.5f * bestVector.front())
+        {
+            const float x{static_cast<float>((pixelVector.at(i).GetX() - columnOffset) * dx + xMin + xShift)};
+            const float z{static_cast<float>(dz * ((m_height - 1) - (pixelVector.at(i).GetZ() - rowOffset)) + zMin + zShift)};
+            CartesianVector pt(x, 0.f, z);
+            positionVector.emplace_back(pt);
+        }
+    }
 
     return STATUS_CODE_SUCCESS;
 }
