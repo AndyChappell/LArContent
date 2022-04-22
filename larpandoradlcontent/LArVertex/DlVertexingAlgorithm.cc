@@ -26,6 +26,7 @@ namespace lar_dl_content
 DlVertexingAlgorithm::DlVertexingAlgorithm():
     m_trainingMode{false},
     m_trainingOutputFile{""},
+    m_centroid{CartesianVector(0., 0., 0.)},
     m_pass{1},
     m_height{256},
     m_width{256},
@@ -155,118 +156,143 @@ StatusCode DlVertexingAlgorithm::Infer()
     }
 
     CartesianPointVector vertexCandidatesU, vertexCandidatesV, vertexCandidatesW;
-    for (const std::string listName : m_caloHitListNames)
+
+    VertexList::const_iterator vertexIter;
+    int numRegions{1};
+    if (m_pass == 2)
     {
-        const CaloHitList *pCaloHitList{nullptr};
-        PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetList(*this, listName, pCaloHitList));
-
-        HitType view{pCaloHitList->front()->GetHitType()};
-        const bool isU{view == TPC_VIEW_U}, isV{view == TPC_VIEW_V}, isW{view == TPC_VIEW_W};
-        if (!isU && !isV && !isW)
-            return STATUS_CODE_NOT_ALLOWED;
-
-        LArDLHelper::TorchInput input;
-        PixelVector pixelVector;
-        this->MakeNetworkInputFromHits(*pCaloHitList, input, pixelVector);
-
-        // Run the input through the trained model
-        LArDLHelper::TorchInputVector inputs;
-        inputs.push_back(input);
-        LArDLHelper::TorchOutput output;
-        if (isU)
-            LArDLHelper::Forward(m_modelU, inputs, output);
-        else if (isV)
-            LArDLHelper::Forward(m_modelV, inputs, output);
-        else
-            LArDLHelper::Forward(m_modelW, inputs, output);
-
-        double thresholds[]{0., 0.00275, 0.00825, 0.01925, 0.03575, 0.05775, 0.08525, 0.12375, 0.15125, 0.20625, 0.26125, 0.31625, 0.37125,
-            0.42625, 0.50875, 0.59125, 0.67375, 0.75625, 0.85, 1.0};
-        int colOffset{0}, rowOffset{0}, canvasWidth{m_width}, canvasHeight{m_height};
-        this->GetCanvasParameters(output, pixelVector, thresholds, colOffset, rowOffset, canvasWidth, canvasHeight);
-
-        float **canvas{new float*[canvasHeight]};
-        for (int row = 0; row < canvasHeight; ++row)
-            canvas[row] = new float[canvasWidth]{};
-
-        // output is a 1 x num_classes x height x width tensor
-        auto outputAccessor{output.accessor<float, 4>()};
-        // we want the maximum value in the num_classes dimension (1) for every pixel
-        auto classes{torch::argmax(output, 1)};
-        // the argmax result is a 1 x height x width tensor where each element is a class id
-        auto classesAccessor{classes.accessor<long, 3>()};
-        const double scaleFactor{std::sqrt(m_height * m_height + m_width * m_width)};
-        std::map<int, bool> haveSeenMap;
-        //std::cout << std::fixed << std::setprecision(2);
-        for (const auto [ row, col ] : pixelVector)
-        {
-            const auto cls{classesAccessor[0][row][col]};
-            /*std::cout << "(" << row << ", " << col << ") [" << cls << "]: ";
-            for (int i = 0; i < 20; ++i)
-            {
-                const auto raw{outputAccessor[0][i][row][col]};
-                std::cout << raw << " ";
-            }
-            std::cout << std::endl;*/
-            if (cls > 0 && cls < 19)
-            {
-                const int inner{static_cast<int>(std::round(std::ceil(scaleFactor * thresholds[cls - 1])))};
-                const int outer{static_cast<int>(std::round(std::ceil(scaleFactor * thresholds[cls])))};
-                this->DrawRing(canvas, row + rowOffset, col + colOffset, inner, outer, 1.f / (outer * outer - inner * inner));
-            }
-        }
-
-        CartesianPointVector positionVector;
-        MakeWirePlaneCoordinatesFromCanvas(*pCaloHitList, canvas, canvasWidth, canvasHeight, colOffset, rowOffset, positionVector);
-        if (positionVector.empty())
+        const VertexList *pVertexList(nullptr);
+        PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetList(*this, m_inputVertexListName, pVertexList));
+        if (pVertexList->empty())
             return STATUS_CODE_NOT_FOUND;
-
-        for (auto position : positionVector)
+        numRegions = pVertexList->size();
+        vertexIter = pVertexList->begin();
+    }
+    for (int r = 0; r < numRegions; ++r)
+    {
+        std::cout << "Region " << (r + 1);
+        // We only need a reference centroid for pass 2, otherwise we look in one region (i.e. the whole event)
+        if (m_pass == 2)
         {
+            m_centroid = (*vertexIter)->GetPosition();
+            std::cout << " (" << m_centroid.GetX() << "," << m_centroid.GetY() << "," << m_centroid.GetZ() << ")";
+            ++vertexIter;
+        }
+        std::cout << std::endl;
+
+        for (const std::string listName : m_caloHitListNames)
+        {
+            const CaloHitList *pCaloHitList{nullptr};
+            PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetList(*this, listName, pCaloHitList));
+
+            HitType view{pCaloHitList->front()->GetHitType()};
+            const bool isU{view == TPC_VIEW_U}, isV{view == TPC_VIEW_V}, isW{view == TPC_VIEW_W};
+            if (!isU && !isV && !isW)
+                return STATUS_CODE_NOT_ALLOWED;
+
+            LArDLHelper::TorchInput input;
+            PixelVector pixelVector;
+            this->MakeNetworkInputFromHits(*pCaloHitList, input, pixelVector);
+
+            // Run the input through the trained model
+            LArDLHelper::TorchInputVector inputs;
+            inputs.push_back(input);
+            LArDLHelper::TorchOutput output;
             if (isU)
-                vertexCandidatesU.emplace_back(position);
+                LArDLHelper::Forward(m_modelU, inputs, output);
             else if (isV)
-                vertexCandidatesV.emplace_back(position);
+                LArDLHelper::Forward(m_modelV, inputs, output);
             else
-                vertexCandidatesW.emplace_back(position);
-        }
+                LArDLHelper::Forward(m_modelW, inputs, output);
 
-        if (m_visualise)
-        {
-            try
+            double thresholds[]{0., 0.00275, 0.00825, 0.01925, 0.03575, 0.05775, 0.08525, 0.12375, 0.15125, 0.20625, 0.26125, 0.31625, 0.37125,
+                0.42625, 0.50875, 0.59125, 0.67375, 0.75625, 0.85, 1.0};
+            int colOffset{0}, rowOffset{0}, canvasWidth{m_width}, canvasHeight{m_height};
+            this->GetCanvasParameters(output, pixelVector, thresholds, colOffset, rowOffset, canvasWidth, canvasHeight);
+
+            float **canvas{new float*[canvasHeight]};
+            for (int row = 0; row < canvasHeight; ++row)
+                canvas[row] = new float[canvasWidth]{};
+
+            // output is a 1 x num_classes x height x width tensor
+            auto outputAccessor{output.accessor<float, 4>()};
+            // we want the maximum value in the num_classes dimension (1) for every pixel
+            auto classes{torch::argmax(output, 1)};
+            // the argmax result is a 1 x height x width tensor where each element is a class id
+            auto classesAccessor{classes.accessor<long, 3>()};
+            const double scaleFactor{std::sqrt(m_height * m_height + m_width * m_width)};
+            std::map<int, bool> haveSeenMap;
+            //std::cout << std::fixed << std::setprecision(2);
+            for (const auto [ row, col ] : pixelVector)
             {
-                float x{0.f}, u{0.f}, v{0.f}, w{0.f};
-                this->GetTrueVertexPosition(x, u, v, w);
+                const auto cls{classesAccessor[0][row][col]};
+                /*std::cout << "(" << row << ", " << col << ") [" << cls << "]: ";
+                for (int i = 0; i < 20; ++i)
+                {
+                    const auto raw{outputAccessor[0][i][row][col]};
+                    std::cout << raw << " ";
+                }
+                std::cout << std::endl;*/
+                if (cls > 0 && cls < 19)
+                {
+                    const int inner{static_cast<int>(std::round(std::ceil(scaleFactor * thresholds[cls - 1])))};
+                    const int outer{static_cast<int>(std::round(std::ceil(scaleFactor * thresholds[cls])))};
+                    this->DrawRing(canvas, row + rowOffset, col + colOffset, inner, outer, 1.f / (outer * outer - inner * inner));
+                }
+            }
+
+            CartesianPointVector positionVector;
+            MakeWirePlaneCoordinatesFromCanvas(*pCaloHitList, canvas, canvasWidth, canvasHeight, colOffset, rowOffset, positionVector);
+            if (positionVector.empty())
+                continue;
+
+            for (auto position : positionVector)
+            {
                 if (isU)
-                {
-                    const CartesianVector trueVertex(x, 0.f, u);
-                    PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &trueVertex, "U(true)", BLUE, 3));
-                }
+                    vertexCandidatesU.emplace_back(position);
                 else if (isV)
-                {
-                    const CartesianVector trueVertex(x, 0.f, v);
-                    PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &trueVertex, "V(true)", BLUE, 3));
-                }
-                else if (isW)
-                {
-                    const CartesianVector trueVertex(x, 0.f, w);
-                    PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &trueVertex, "W(true)", BLUE, 3));
-                }
+                    vertexCandidatesV.emplace_back(position);
+                else
+                    vertexCandidatesW.emplace_back(position);
             }
-            catch (StatusCodeException &e)
-            {
-                std::cerr << "DlVertexingAlgorithm: Warning. Couldn't find true vertex." << std::endl;
-            }
-            for (const auto pos : positionVector)
-            {
-                std::string label{isU ? "U" : isV ? "V" : "W"};
-                PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &pos, label, RED, 3));
-            }
-        }
 
-        for (int row = 0; row < canvasHeight; ++row)
-            delete[] canvas[row];
-        delete[] canvas;
+            if (m_visualise)
+            {
+                try
+                {
+                    float x{0.f}, u{0.f}, v{0.f}, w{0.f};
+                    this->GetTrueVertexPosition(x, u, v, w);
+                    if (isU)
+                    {
+                        const CartesianVector trueVertex(x, 0.f, u);
+                        PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &trueVertex, "U(true)", BLUE, 3));
+                    }
+                    else if (isV)
+                    {
+                        const CartesianVector trueVertex(x, 0.f, v);
+                        PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &trueVertex, "V(true)", BLUE, 3));
+                    }
+                    else if (isW)
+                    {
+                        const CartesianVector trueVertex(x, 0.f, w);
+                        PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &trueVertex, "W(true)", BLUE, 3));
+                    }
+                }
+                catch (StatusCodeException &e)
+                {
+                    std::cerr << "DlVertexingAlgorithm: Warning. Couldn't find true vertex." << std::endl;
+                }
+                for (const auto pos : positionVector)
+                {
+                    std::string label{isU ? "U" : isV ? "V" : "W"};
+                    PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &pos, label, RED, 3));
+                }
+            }
+
+            for (int row = 0; row < canvasHeight; ++row)
+                delete[] canvas[row];
+            delete[] canvas;
+        }
     }
     
     int nEmptyLists{0};
@@ -399,9 +425,17 @@ StatusCode DlVertexingAlgorithm::Infer()
 
     if (!vertexTuples.empty())
     {
-        const CartesianVector &vertex{vertexTuples.at(bestIndex).GetPosition()};
         CartesianPointVector vertexCandidates;
-        vertexCandidates.emplace_back(vertex);
+        if (m_pass == 1)
+        {
+            for (const VertexTuple &vertex : vertexTuples)
+                vertexCandidates.emplace_back(vertex.GetPosition());
+        }
+        else
+        {
+            const CartesianVector &vertex{vertexTuples.at(bestIndex).GetPosition()};
+            vertexCandidates.emplace_back(vertex);
+        }
         PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, this->MakeCandidateVertexList(vertexCandidates));
     }
     else
@@ -784,24 +818,22 @@ void DlVertexingAlgorithm::GetHitRegion(const CaloHitList &caloHitList, float &x
     if (m_pass > 1)
     {
         // Constrain the hits to the allowed region if needed
-        const VertexList *pVertexList(nullptr);
-        PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetList(*this, m_inputVertexListName, pVertexList));
-        if (pVertexList->empty() || caloHitList.empty())
-            throw StatusCodeException(STATUS_CODE_NOT_FOUND);
-        const CartesianVector &centroid{pVertexList->front()->GetPosition()};
+        // Skip regions that have no hits
+        if (caloHitList.empty())
+            return;
         const HitType view{caloHitList.front()->GetHitType()};
-        float xCentroid{centroid.GetX()}, zCentroid{0.f};
+        float xCentroid{m_centroid.GetX()}, zCentroid{0.f};
         const LArTransformationPlugin *transform{this->GetPandora().GetPlugins()->GetLArTransformationPlugin()};
         switch (view)
         {
             case TPC_VIEW_U:
-                zCentroid = transform->YZtoU(centroid.GetY(), centroid.GetZ());
+                zCentroid = transform->YZtoU(m_centroid.GetY(), m_centroid.GetZ());
                 break;
             case TPC_VIEW_V:
-                zCentroid = transform->YZtoV(centroid.GetY(), centroid.GetZ());
+                zCentroid = transform->YZtoV(m_centroid.GetY(), m_centroid.GetZ());
                 break;
             case TPC_VIEW_W:
-                zCentroid = transform->YZtoW(centroid.GetY(), centroid.GetZ());
+                zCentroid = transform->YZtoW(m_centroid.GetY(), m_centroid.GetZ());
                 break;
             default:
                 throw StatusCodeException(STATUS_CODE_INVALID_PARAMETER);
