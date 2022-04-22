@@ -149,6 +149,11 @@ StatusCode DlVertexingAlgorithm::Train()
 
 StatusCode DlVertexingAlgorithm::Infer()
 {
+    if (m_visualise)
+    {
+        PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1.f, 1.f, 1.f));
+    }
+
     CartesianPointVector vertexCandidatesU, vertexCandidatesV, vertexCandidatesW;
     for (const std::string listName : m_caloHitListNames)
     {
@@ -215,16 +220,19 @@ StatusCode DlVertexingAlgorithm::Infer()
         MakeWirePlaneCoordinatesFromCanvas(*pCaloHitList, canvas, canvasWidth, canvasHeight, colOffset, rowOffset, positionVector);
         if (positionVector.empty())
             return STATUS_CODE_NOT_FOUND;
-        if (isU)
-            vertexCandidatesU.emplace_back(positionVector.front());
-        else if (isV)
-            vertexCandidatesV.emplace_back(positionVector.front());
-        else
-            vertexCandidatesW.emplace_back(positionVector.front());
+
+        for (auto position : positionVector)
+        {
+            if (isU)
+                vertexCandidatesU.emplace_back(position);
+            else if (isV)
+                vertexCandidatesV.emplace_back(position);
+            else
+                vertexCandidatesW.emplace_back(position);
+        }
 
         if (m_visualise)
         {
-            PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1.f, 1.f, 1.f));
             try
             {
                 float x{0.f}, u{0.f}, v{0.f}, w{0.f};
@@ -254,7 +262,6 @@ StatusCode DlVertexingAlgorithm::Infer()
                 std::string label{isU ? "U" : isV ? "V" : "W"};
                 PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &pos, label, RED, 3));
             }
-            PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
         }
 
         for (int row = 0; row < canvasHeight; ++row)
@@ -271,10 +278,23 @@ StatusCode DlVertexingAlgorithm::Infer()
         ++nEmptyLists;
     std::vector<VertexTuple> vertexTuples;
     CartesianPointVector candidates3D;
+    size_t bestIndex{0};
     if (nEmptyLists == 0)
     {
-        vertexTuples.emplace_back(VertexTuple(this->GetPandora(), vertexCandidatesU.front(), vertexCandidatesV.front(),
-            vertexCandidatesW.front()));
+        for (const CartesianVector &vertexU : vertexCandidatesU)
+            for (const CartesianVector &vertexV : vertexCandidatesV)
+                 for (const CartesianVector &vertexW : vertexCandidatesW)
+                    vertexTuples.emplace_back(VertexTuple(this->GetPandora(), vertexU, vertexV, vertexW));
+        float bestChi2{std::numeric_limits<float>::max()};
+        for (size_t i = 0; i < vertexTuples.size(); ++i)
+        {
+            const VertexTuple &vertex{vertexTuples.at(i)};
+            if (vertex.GetChi2() < bestChi2)
+            {
+                bestChi2 = vertex.GetChi2();
+                bestIndex = i;
+            }
+        }
 
         const MCParticleList *pMCParticleList{nullptr};
         if (STATUS_CODE_SUCCESS == PandoraContentApi::GetCurrentList(*this, pMCParticleList))
@@ -297,7 +317,7 @@ StatusCode DlVertexingAlgorithm::Infer()
                             const CartesianVector &trueVertex{primaries.front()->GetVertex()};
 //                            std::cout << "True vertex (" << trueVertex.GetX() << ", " << trueVertex.GetY() << ", " << trueVertex.GetZ() <<
 //                                ")" << std::endl;
-                            const CartesianVector &recoVertex{vertexTuples.back().GetPosition()};
+                            const CartesianVector &recoVertex{vertexTuples.at(bestIndex).GetPosition()};
                             const float tx{trueVertex.GetX()};
                             const float tu{static_cast<float>(transform->YZtoU(trueVertex.GetY(), trueVertex.GetZ()))};
                             const float tv{static_cast<float>(transform->YZtoV(trueVertex.GetY(), trueVertex.GetZ()))};
@@ -337,18 +357,33 @@ StatusCode DlVertexingAlgorithm::Infer()
     {
         if (vertexCandidatesU.empty())
         {   // V and W available
-            vertexTuples.emplace_back(VertexTuple(this->GetPandora(), vertexCandidatesV.front(), vertexCandidatesW.front(), TPC_VIEW_V,
-                TPC_VIEW_W));
+            for (const CartesianVector &vertexV : vertexCandidatesV)
+                for (const CartesianVector &vertexW : vertexCandidatesW)
+                    vertexTuples.emplace_back(VertexTuple(this->GetPandora(), vertexV, vertexW, TPC_VIEW_V, TPC_VIEW_W));
+
         }
         else if (vertexCandidatesV.empty())
         {   // U and W available
-            vertexTuples.emplace_back(VertexTuple(this->GetPandora(), vertexCandidatesU.front(), vertexCandidatesW.front(), TPC_VIEW_U,
-                TPC_VIEW_W));
+            for (const CartesianVector &vertexU : vertexCandidatesU)
+                for (const CartesianVector &vertexW : vertexCandidatesW)
+                    vertexTuples.emplace_back(VertexTuple(this->GetPandora(), vertexU, vertexW, TPC_VIEW_U, TPC_VIEW_W));
         }
         else
         {   // U and V available
-            vertexTuples.emplace_back(VertexTuple(this->GetPandora(), vertexCandidatesU.front(), vertexCandidatesV.front(), TPC_VIEW_U,
-                TPC_VIEW_W));
+            for (const CartesianVector &vertexU : vertexCandidatesU)
+                for (const CartesianVector &vertexV : vertexCandidatesV)
+                    vertexTuples.emplace_back(VertexTuple(this->GetPandora(), vertexU, vertexV, TPC_VIEW_U, TPC_VIEW_W));
+        }
+
+        float bestChi2{std::numeric_limits<float>::max()};
+        for (size_t i = 0; i < vertexTuples.size(); ++i)
+        {
+            const VertexTuple &vertex{vertexTuples.at(i)};
+            if (vertex.GetChi2() < bestChi2)
+            {
+                bestChi2 = vertex.GetChi2();
+                bestIndex = i;
+            }
         }
     }
     else
@@ -359,12 +394,12 @@ StatusCode DlVertexingAlgorithm::Infer()
 
     if (m_visualise)
     {
-        PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &vertexTuples.front().GetPosition(), "candidate", GREEN, 1));
+        PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &vertexTuples.at(bestIndex).GetPosition(), "candidate", GREEN, 1));
     }
 
     if (!vertexTuples.empty())
     {
-        const CartesianVector &vertex{vertexTuples.front().GetPosition()};
+        const CartesianVector &vertex{vertexTuples.at(bestIndex).GetPosition()};
         CartesianPointVector vertexCandidates;
         vertexCandidates.emplace_back(vertex);
         PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, this->MakeCandidateVertexList(vertexCandidates));
