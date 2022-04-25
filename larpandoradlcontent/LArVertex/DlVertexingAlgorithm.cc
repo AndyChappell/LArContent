@@ -156,6 +156,7 @@ StatusCode DlVertexingAlgorithm::Infer()
     }
 
     CartesianPointVector vertexCandidatesU, vertexCandidatesV, vertexCandidatesW;
+    FloatVector candidateScoresU, candidateScoresV, candidateScoresW;
 
     VertexList::const_iterator vertexIter;
     int numRegions{1};
@@ -170,15 +171,12 @@ StatusCode DlVertexingAlgorithm::Infer()
     }
     for (int r = 0; r < numRegions; ++r)
     {
-        std::cout << "Region " << (r + 1);
         // We only need a reference centroid for pass 2, otherwise we look in one region (i.e. the whole event)
         if (m_pass == 2)
         {
             m_centroid = (*vertexIter)->GetPosition();
-            std::cout << " (" << m_centroid.GetX() << "," << m_centroid.GetY() << "," << m_centroid.GetZ() << ")";
             ++vertexIter;
         }
-        std::cout << std::endl;
 
         for (const std::string listName : m_caloHitListNames)
         {
@@ -242,21 +240,33 @@ StatusCode DlVertexingAlgorithm::Infer()
             }
 
             CartesianPointVector positionVector;
-            MakeWirePlaneCoordinatesFromCanvas(*pCaloHitList, canvas, canvasWidth, canvasHeight, colOffset, rowOffset, positionVector);
+            FloatVector scoreVector;
+            MakeWirePlaneCoordinatesFromCanvas(*pCaloHitList, canvas, canvasWidth, canvasHeight, colOffset, rowOffset, positionVector, scoreVector);
             if (positionVector.empty())
                 continue;
 
-            for (auto position : positionVector)
+            for (size_t i = 0; i < positionVector.size(); ++i)
             {
+                const CartesianVector &position{positionVector.at(i)};
+                const float score{scoreVector.at(i)};
                 if (isU)
+                {
                     vertexCandidatesU.emplace_back(position);
+                    candidateScoresU.emplace_back(score);
+                }
                 else if (isV)
+                {
                     vertexCandidatesV.emplace_back(position);
+                    candidateScoresV.emplace_back(score);
+                }
                 else
+                {
                     vertexCandidatesW.emplace_back(position);
+                    candidateScoresW.emplace_back(score);
+                }
             }
 
-            if (m_visualise)
+            if (false)//m_visualise)
             {
                 try
                 {
@@ -304,21 +314,39 @@ StatusCode DlVertexingAlgorithm::Infer()
         ++nEmptyLists;
     std::vector<VertexTuple> vertexTuples;
     CartesianPointVector candidates3D;
-    size_t bestIndex{0};
     if (nEmptyLists == 0)
     {
-        for (const CartesianVector &vertexU : vertexCandidatesU)
-            for (const CartesianVector &vertexV : vertexCandidatesV)
-                 for (const CartesianVector &vertexW : vertexCandidatesW)
-                    vertexTuples.emplace_back(VertexTuple(this->GetPandora(), vertexU, vertexV, vertexW));
         float bestChi2{std::numeric_limits<float>::max()};
-        for (size_t i = 0; i < vertexTuples.size(); ++i)
+        for (size_t u = 0; u < vertexCandidatesU.size(); ++u)
         {
-            const VertexTuple &vertex{vertexTuples.at(i)};
-            if (vertex.GetChi2() < bestChi2)
+            const CartesianVector &vertexU{vertexCandidatesU.at(u)};
+            const float scoreU{candidateScoresU.at(u)};
+            for (size_t v = 0; v < vertexCandidatesV.size(); ++v)
             {
-                bestChi2 = vertex.GetChi2();
-                bestIndex = i;
+                const CartesianVector &vertexV{vertexCandidatesV.at(v)};
+                const float scoreV{candidateScoresV.at(v)};
+                for (size_t w = 0; w < vertexCandidatesW.size(); ++w)
+                {
+                    const CartesianVector &vertexW{vertexCandidatesW.at(w)};
+                    const float scoreW{candidateScoresW.at(w)};
+                    vertexTuples.emplace_back(VertexTuple(this->GetPandora(), vertexU, vertexV, vertexW, scoreU, scoreV, scoreW));
+                    // Ensure the best candidate (based on chi2) is the first element
+                    if (vertexTuples.back().GetChi2() < bestChi2)
+                    {
+                        bestChi2 = vertexTuples.back().GetChi2();
+                        std::swap(vertexTuples.front(), vertexTuples.back());
+                    }
+                }
+            }
+        }
+        if (vertexTuples.size() > 1)
+        {
+            for (auto iter = vertexTuples.begin() + 1; iter != vertexTuples.end(); )
+            {
+                if ((*iter).GetChi2() > 1.f)
+                    iter = vertexTuples.erase(iter);
+                else
+                    ++iter;
             }
         }
 
@@ -343,7 +371,7 @@ StatusCode DlVertexingAlgorithm::Infer()
                             const CartesianVector &trueVertex{primaries.front()->GetVertex()};
 //                            std::cout << "True vertex (" << trueVertex.GetX() << ", " << trueVertex.GetY() << ", " << trueVertex.GetZ() <<
 //                                ")" << std::endl;
-                            const CartesianVector &recoVertex{vertexTuples.at(bestIndex).GetPosition()};
+                            const CartesianVector &recoVertex{vertexTuples.front().GetPosition()};
                             const float tx{trueVertex.GetX()};
                             const float tu{static_cast<float>(transform->YZtoU(trueVertex.GetY(), trueVertex.GetZ()))};
                             const float tv{static_cast<float>(transform->YZtoV(trueVertex.GetY(), trueVertex.GetZ()))};
@@ -360,7 +388,8 @@ StatusCode DlVertexingAlgorithm::Infer()
                             const CartesianVector &dv{recoVertex - trueVertex};
                             const float dr{dv.GetMagnitude()};
                             const float dx{dv.GetX()}, dy{dv.GetY()}, dz{dv.GetZ()};
-/*                            std::cout << "Truth: " << tx << " " << tu << " " << tv << " " << tw << std::endl;
+                            //std::cout << "Truth: " << trueVertex.GetX() << " " << trueVertex.GetY() << " " << trueVertex.GetZ() << std::endl;
+                            /*std::cout << "Truth: " << tx << " " << tu << " " << tv << " " << tw << std::endl;
                             std::cout << "U: " << rx_u << " " << ru << " " << dr_u << std::endl;
                             std::cout << "V: " << rx_v << " " << rv << " " << dr_v << std::endl;
                             std::cout << "W: " << rx_w << " " << rw << " " << dr_w << std::endl;*/
@@ -381,34 +410,76 @@ StatusCode DlVertexingAlgorithm::Infer()
     }
     else if (nEmptyLists == 1)
     {
+        float bestChi2{std::numeric_limits<float>::max()};
         if (vertexCandidatesU.empty())
         {   // V and W available
-            for (const CartesianVector &vertexV : vertexCandidatesV)
-                for (const CartesianVector &vertexW : vertexCandidatesW)
-                    vertexTuples.emplace_back(VertexTuple(this->GetPandora(), vertexV, vertexW, TPC_VIEW_V, TPC_VIEW_W));
-
+            for (size_t v = 0; v < vertexCandidatesV.size(); ++v)
+            {
+                const CartesianVector &vertexV{vertexCandidatesV.at(v)};
+                const float scoreV{candidateScoresV.at(v)};
+                for (size_t w = 0; w < vertexCandidatesW.size(); ++w)
+                {
+                    const CartesianVector &vertexW{vertexCandidatesW.at(w)};
+                    const float scoreW{candidateScoresW.at(w)};
+                    vertexTuples.emplace_back(VertexTuple(this->GetPandora(), vertexV, vertexW, TPC_VIEW_V, TPC_VIEW_W, scoreV, scoreW));
+                    // Ensure the best candidate (based on chi2) is the first element
+                    if (vertexTuples.back().GetChi2() < bestChi2)
+                    {
+                        bestChi2 = vertexTuples.back().GetChi2();
+                        std::swap(vertexTuples.front(), vertexTuples.back());
+                    }
+                }
+            }
         }
         else if (vertexCandidatesV.empty())
         {   // U and W available
-            for (const CartesianVector &vertexU : vertexCandidatesU)
-                for (const CartesianVector &vertexW : vertexCandidatesW)
-                    vertexTuples.emplace_back(VertexTuple(this->GetPandora(), vertexU, vertexW, TPC_VIEW_U, TPC_VIEW_W));
+            for (size_t u = 0; u < vertexCandidatesU.size(); ++u)
+            {
+                const CartesianVector &vertexU{vertexCandidatesU.at(u)};
+                const float scoreU{candidateScoresU.at(u)};
+                for (size_t w = 0; w < vertexCandidatesW.size(); ++w)
+                {
+                    const CartesianVector &vertexW{vertexCandidatesW.at(w)};
+                    const float scoreW{candidateScoresW.at(w)};
+                    vertexTuples.emplace_back(VertexTuple(this->GetPandora(), vertexU, vertexW, TPC_VIEW_U, TPC_VIEW_W, scoreU, scoreW));
+                    // Ensure the best candidate (based on chi2) is the first element
+                    if (vertexTuples.back().GetChi2() < bestChi2)
+                    {
+                        bestChi2 = vertexTuples.back().GetChi2();
+                        std::swap(vertexTuples.front(), vertexTuples.back());
+                    }
+                }
+            }
         }
         else
         {   // U and V available
-            for (const CartesianVector &vertexU : vertexCandidatesU)
-                for (const CartesianVector &vertexV : vertexCandidatesV)
-                    vertexTuples.emplace_back(VertexTuple(this->GetPandora(), vertexU, vertexV, TPC_VIEW_U, TPC_VIEW_W));
+            for (size_t u = 0; u < vertexCandidatesU.size(); ++u)
+            {
+                const CartesianVector &vertexU{vertexCandidatesU.at(u)};
+                const float scoreU{candidateScoresU.at(u)};
+                for (size_t v = 0; v < vertexCandidatesV.size(); ++v)
+                {
+                    const CartesianVector &vertexV{vertexCandidatesV.at(v)};
+                    const float scoreV{candidateScoresV.at(v)};
+                    vertexTuples.emplace_back(VertexTuple(this->GetPandora(), vertexU, vertexV, TPC_VIEW_U, TPC_VIEW_V, scoreU, scoreV));
+                    // Ensure the best candidate (based on chi2) is the first element
+                    if (vertexTuples.back().GetChi2() < bestChi2)
+                    {
+                        bestChi2 = vertexTuples.back().GetChi2();
+                        std::swap(vertexTuples.front(), vertexTuples.back());
+                    }
+                }
+            }
         }
 
-        float bestChi2{std::numeric_limits<float>::max()};
-        for (size_t i = 0; i < vertexTuples.size(); ++i)
+        if (vertexTuples.size() > 1)
         {
-            const VertexTuple &vertex{vertexTuples.at(i)};
-            if (vertex.GetChi2() < bestChi2)
+            for (auto iter = vertexTuples.begin() + 1; iter != vertexTuples.end(); )
             {
-                bestChi2 = vertex.GetChi2();
-                bestIndex = i;
+                if ((*iter).GetChi2() > 1.f)
+                    iter = vertexTuples.erase(iter);
+                else
+                    ++iter;
             }
         }
     }
@@ -420,7 +491,20 @@ StatusCode DlVertexingAlgorithm::Infer()
 
     if (m_visualise)
     {
-        PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &vertexTuples.at(bestIndex).GetPosition(), "candidate", GREEN, 1));
+        try
+        {
+            float x{0.f}, u{0.f}, v{0.f}, w{0.f};
+            this->GetTrueVertexPosition(x, u, v, w);
+            const CartesianVector trueVertex(x, 0.f, w);
+            PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &trueVertex, "W(true)", BLUE, 3));
+        }
+        catch (StatusCodeException &e)
+        {
+            std::cerr << "DlVertexingAlgorithm: Warning. Couldn't find true vertex." << std::endl;
+        }
+
+        PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &vertexTuples.front().GetPosition(),
+            "candidate " + std::to_string(vertexTuples.front().GetChi2()), GREEN, 2));
     }
 
     if (!vertexTuples.empty())
@@ -433,7 +517,7 @@ StatusCode DlVertexingAlgorithm::Infer()
         }
         else
         {
-            const CartesianVector &vertex{vertexTuples.at(bestIndex).GetPosition()};
+            const CartesianVector &vertex{vertexTuples.front().GetPosition()};
             vertexCandidates.emplace_back(vertex);
         }
         PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, this->MakeCandidateVertexList(vertexCandidates));
@@ -543,7 +627,7 @@ StatusCode DlVertexingAlgorithm::MakeWirePlaneCoordinatesFromPixels(const CaloHi
 //-----------------------------------------------------------------------------------------------------------------------------------------
 
 StatusCode DlVertexingAlgorithm::MakeWirePlaneCoordinatesFromCanvas(const CaloHitList &caloHits, float **canvas, const int canvasWidth,
-    const int canvasHeight, const int columnOffset, const int rowOffset, CartesianPointVector &positionVector) const
+    const int canvasHeight, const int columnOffset, const int rowOffset, CartesianPointVector &positionVector, FloatVector &scoreVector) const
 {
     // Determine the range of coordinates for the view
     float xMin{0.f}, xMax{0.f}, zMin{0.f}, zMax{0.f};
@@ -636,6 +720,7 @@ StatusCode DlVertexingAlgorithm::MakeWirePlaneCoordinatesFromCanvas(const CaloHi
             const float z{static_cast<float>(dz * ((m_height - 1) - (pixelVector.at(i).GetZ() - rowOffset)) + zMin + zShift)};
             CartesianVector pt(x, 0.f, z);
             positionVector.emplace_back(pt);
+            scoreVector.emplace_back(bestVector.at(i));
         }
     }
 
@@ -983,9 +1068,12 @@ StatusCode DlVertexingAlgorithm::ReadSettings(const TiXmlHandle xmlHandle)
 //-----------------------------------------------------------------------------------------------------------------------------------------
 
 DlVertexingAlgorithm::VertexTuple::VertexTuple(const Pandora &pandora, const CartesianVector &vertexU, const CartesianVector &vertexV,
-    const CartesianVector &vertexW) :
+    const CartesianVector &vertexW, const float scoreU, const float scoreV, const float scoreW) :
     m_pos{0.f, 0.f, 0.f},
-    m_chi2{0.f}
+    m_chi2{0.f},
+    m_scoreU{scoreU},
+    m_scoreV{scoreV},
+    m_scoreW{scoreW}
 {
     LArGeometryHelper::MergeThreePositions3D(pandora, TPC_VIEW_U, TPC_VIEW_V, TPC_VIEW_W, vertexU, vertexV, vertexW, m_pos, m_chi2);
     if (m_chi2 > 1.f)
@@ -1018,16 +1106,17 @@ DlVertexingAlgorithm::VertexTuple::VertexTuple(const Pandora &pandora, const Car
             m_chi2 = chi2VW;
         }
     }
-//    std::cout << "Merging 3, position (" << m_pos.GetX() << ", " << m_pos.GetY() << ", " << m_pos.GetZ() << ") with chi2 " << m_chi2 <<
-//        std::endl;
 }
 
 //-----------------------------------------------------------------------------------------------------------------------------------------
 
 DlVertexingAlgorithm::VertexTuple::VertexTuple(const Pandora &pandora, const CartesianVector &vertex1, const CartesianVector &vertex2,
-    const HitType view1, const HitType view2) :
+    const HitType view1, const HitType view2, const float score1, const float score2) :
     m_pos{0.f, 0.f, 0.f},
-    m_chi2{0.f}
+    m_chi2{0.f},
+    m_scoreU{view1 == TPC_VIEW_U ? score1 : view2 == TPC_VIEW_U ? score2 : 0.f},
+    m_scoreV{view1 == TPC_VIEW_V ? score1 : view2 == TPC_VIEW_V ? score2 : 0.f},
+    m_scoreW{view1 == TPC_VIEW_W ? score1 : view2 == TPC_VIEW_W ? score2 : 0.f}
 {
     LArGeometryHelper::MergeTwoPositions3D(pandora, view1, view2, vertex1, vertex2, m_pos, m_chi2);
     std::cout << "Merging 2, position (" << m_pos.GetX() << ", " << m_pos.GetY() << ", " << m_pos.GetZ() << ") with chi2 " << m_chi2 << std::endl;
@@ -1052,7 +1141,8 @@ float DlVertexingAlgorithm::VertexTuple::GetChi2() const
 std::string DlVertexingAlgorithm::VertexTuple::ToString() const
 {
     const float x{m_pos.GetX()}, y{m_pos.GetY()}, z{m_pos.GetZ()};
-    return "3D pos: (" + std::to_string(x) + ", " + std::to_string(y) + ", " + std::to_string(z) + ")   X2 = " + std::to_string(m_chi2);
+    return "3D pos: (" + std::to_string(x) + ", " + std::to_string(y) + ", " + std::to_string(z) + ")   X2 = " + std::to_string(m_chi2) +
+        " Scores = (" + std::to_string(m_scoreU) + "," + std::to_string(m_scoreV) + "," + std::to_string(m_scoreW) + ")";
 }
 
 } // namespace lar_dl_content

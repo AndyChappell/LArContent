@@ -41,18 +41,21 @@ private:
     {
     public:
         VertexTuple(const pandora::Pandora &pandora, const pandora::CartesianVector &vertexU, const pandora::CartesianVector &vertexV,
-            const pandora::CartesianVector &vertexW);
+            const pandora::CartesianVector &vertexW, const float scoreU, const float scoreV, const float scoreW);
 
         VertexTuple(const pandora::Pandora &pandora, const pandora::CartesianVector &vertex1, const pandora::CartesianVector &vertex2,
-            const pandora::HitType view1, const pandora::HitType view2);
+            const pandora::HitType view1, const pandora::HitType view2, const float score1, const float score2);
 
         const pandora::CartesianVector &GetPosition() const;
         float GetChi2() const;
         std::string ToString() const;
 
     private:
-        pandora::CartesianVector m_pos;         ///< Calculated 3D position
-        float                   m_chi2;         ///< Chi squared of calculated position
+        pandora::CartesianVector m_pos; ///< Calculated 3D position
+        float m_chi2;                   ///< Chi squared of calculated position
+        float m_scoreU;                 ///< The network score for the vertex in the U view
+        float m_scoreV;                 ///< The network score for the vertex in the V view
+        float m_scoreW;                 ///< The network score for the vertex in the W view
     };
 
     typedef std::pair<int, int> Pixel;          // A Pixel is a row, column pair
@@ -97,11 +100,13 @@ private:
      *  @param  columnOffset The column offset used when populating the canvas
      *  @param  rowOffset The row offset used when populating the canvas
      *  @param  positionVector The output vector of wire plane positions
+     *  @param  scoreVector The touptu vector of scores for each position
      *
      *  @return The StatusCode resulting from the function
      **/
     pandora::StatusCode MakeWirePlaneCoordinatesFromCanvas(const pandora::CaloHitList &caloHits, float **canvas, const int canvasWidth,
-        const int canvasHeight, const int columnOffset, const int rowOffset, pandora::CartesianPointVector &positionVector) const;
+        const int canvasHeight, const int columnOffset, const int rowOffset, pandora::CartesianPointVector &positionVector,
+        pandora::FloatVector &scoreVector) const;
 
     /**
      *  @brief  Determines the parameters of the canvas for extracting the vertex location.
