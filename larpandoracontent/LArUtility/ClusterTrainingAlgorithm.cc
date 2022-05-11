@@ -13,6 +13,8 @@
 #include "larpandoracontent/LArHelpers/LArTpcGeometryHelper.h"
 #include "larpandoracontent/LArUtility/ClusterTrainingAlgorithm.h"
 
+#include <random>
+
 using namespace pandora;
 
 namespace lar_content
@@ -26,10 +28,14 @@ ClusterTrainingAlgorithm::ClusterTrainingAlgorithm() : m_initialisation{false}
 
 StatusCode ClusterTrainingAlgorithm::Run()
 {
+    std::mt19937 rng(static_cast<std::mt19937::result_type>(0));
+    std::uniform_real_distribution<double> uniform(0.0, 1.0);
     const LArTransformationPlugin *const pTransform{this->GetPandora().GetPlugins()->GetLArTransformationPlugin()};
     LArTpcGeometryHelper helper{LArTpcGeometryHelper::GetInstance(this, pTransform)};
     const CaloHitList *pCaloHitList{nullptr};
     PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetList(*this, "CaloHitList2D", pCaloHitList));
+    rng.seed(static_cast<std::mt19937::result_type>(pCaloHitList->size()));
+
     for (unsigned int t = 0; t < 2; ++t)
     {
         for (unsigned int c = t % 2; c < 24; c += 2)
@@ -71,8 +77,14 @@ StatusCode ClusterTrainingAlgorithm::Run()
                             volume.GetLocalCoordinates(pCluster1, xMin, xMax, hits1);
                             CartesianPointVector hits2;
                             volume.GetLocalCoordinates(pCluster2, xMin, xMax, hits2);
+                            // Set a minimum number of hits to produce a training sample
                             if (hits1.size() >= 5 && hits2.size() >= 5)
-                                this->WriteFeatureVector(view1, hits1, view2, hits2, true);
+                            {
+                                // Signal dominates the sample due to volume and overlap constraints so only keep 20% of signal cases
+                                const double r{uniform(rng)};
+                                if (r < 0.2)
+                                    this->WriteFeatureVector(view1, hits1, view2, hits2, true);
+                            }
                         }
                     }
                 }
