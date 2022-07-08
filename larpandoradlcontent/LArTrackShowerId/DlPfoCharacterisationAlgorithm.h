@@ -40,7 +40,7 @@ private:
     /**
      *  @brief  Produce files that act as inputs to network training
      */
-    pandora::StatusCode Train();
+    pandora::StatusCode PrepareTrainingSample();
 
     /**
      *  @brief  Add calo hits to the input for the network

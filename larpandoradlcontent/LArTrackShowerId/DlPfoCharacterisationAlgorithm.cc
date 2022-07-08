@@ -34,7 +34,7 @@ DlPfoCharacterisationAlgorithm::DlPfoCharacterisationAlgorithm() :
 StatusCode DlPfoCharacterisationAlgorithm::Run()
 {
     if (m_training)
-        return this->Train();
+        return this->PrepareTrainingSample();
     else
         return this->Infer();
 }
@@ -43,6 +43,7 @@ StatusCode DlPfoCharacterisationAlgorithm::Run()
 
 StatusCode DlPfoCharacterisationAlgorithm::Infer()
 {
+    PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1.f, 1.f, 1.f));
     PfoList tracksToShowers, showersToTracks;
     LArDLHelper::TorchInput input;
     LArDLHelper::InitialiseInput({1, 3, m_imageHeight, m_imageWidth}, input);
@@ -57,11 +58,13 @@ StatusCode DlPfoCharacterisationAlgorithm::Infer()
         for (const ParticleFlowObject *const pPfo : *pPfoList)
         {
             const HitType viewU{HitType::TPC_VIEW_U}, viewV{HitType::TPC_VIEW_V}, viewW{HitType::TPC_VIEW_W};
-            CaloHitList caloHitList;
-            LArPfoHelper::GetCaloHits(pPfo, viewU, caloHitList);
-            LArPfoHelper::GetCaloHits(pPfo, viewV, caloHitList);
-            LArPfoHelper::GetCaloHits(pPfo, viewW, caloHitList);
-            this->PrepareNetworkInput(caloHitList, input);
+            CaloHitList caloHitListU, caloHitListV, caloHitListW;
+            LArPfoHelper::GetCaloHits(pPfo, viewU, caloHitListU);
+            this->PrepareNetworkInput(caloHitListU, input);
+            LArPfoHelper::GetCaloHits(pPfo, viewV, caloHitListV);
+            this->PrepareNetworkInput(caloHitListV, input);
+            LArPfoHelper::GetCaloHits(pPfo, viewW, caloHitListW);
+            this->PrepareNetworkInput(caloHitListW, input);
 
             // Run the input through the trained model and get the output accessor
             LArDLHelper::TorchInputVector inputs;
@@ -72,9 +75,12 @@ StatusCode DlPfoCharacterisationAlgorithm::Infer()
             // Get class probabilities
             const double output0{exp(outputAccessor[0][0])};
             const double output1{exp(outputAccessor[0][1])};
-            const double sum{(output0 + output1) > std::numeric_limits<float>::epsilon() ? output0 + output1 : 1.f};
-            const double prob0{output0 / sum}, prob1{output1 / sum};
-            if (prob0 > prob1)
+            const double output2{exp(outputAccessor[0][2])};
+            const double sum{(output0 + output1 + output2) > std::numeric_limits<float>::epsilon() ? output0 + output1 + output2 : 1.f};
+            const double prob0{output0 / sum}, prob1{output1 / sum}, prob2{output2 / sum};
+            // Currently still assigns a track-like or shower-like tag even if prob0 is largest (implying a broken PFO), these should be
+            // placed in a third list for broken PFOs - the PFO can still carry a track or shower tag
+            if (prob2 > prob1)
             {
                 // Shower-like PFO
                 if (inputIsTrack)
@@ -92,6 +98,15 @@ StatusCode DlPfoCharacterisationAlgorithm::Infer()
                     showersToTracks.emplace_back(pPfo);
                 }
             }
+            {
+                const std::string netClass{prob0 > prob1 && prob0 > prob2 ? "Broken" : prob1 >= prob2 ? "Track" : "Shower"};
+                std::cout << std::setprecision(3) << "Classification: " << netClass << " (" << prob0 << ":" << prob1 << ":" << prob2 << ")" << std::endl;
+
+                PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &caloHitListU, "U", RED));
+                PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &caloHitListV, "V", GREEN));
+                PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &caloHitListW, "W", BLUE));
+                PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
+            }
         }
     }
 
@@ -106,7 +121,7 @@ StatusCode DlPfoCharacterisationAlgorithm::Infer()
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-StatusCode DlPfoCharacterisationAlgorithm::Train()
+StatusCode DlPfoCharacterisationAlgorithm::PrepareTrainingSample()
 {
     PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, this->ProcessPfoList(m_trackPfoListName));
     PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, this->ProcessPfoList(m_showerPfoListName));
@@ -118,9 +133,15 @@ StatusCode DlPfoCharacterisationAlgorithm::Train()
 
 void DlPfoCharacterisationAlgorithm::PrepareNetworkInput(const CaloHitList &caloHitList, LArDLHelper::TorchInput &input) const
 {
+    if (caloHitList.empty())
+        return;
+    const int channel{caloHitList.front()->GetHitType() - HitType::TPC_VIEW_U};
+
     const double eps{1.1920929e-7}; // Python float epsilon, used in image padding
     double xMin{0.}, xMax{0.}, zMin{0.}, zMax{0.};
 
+    // This is total nonsense. We're getting rnages based on all three views, instead of view specific. Refactor this bit of code
+    // to populate the relevant channel of the accessor, isolated to the relevant view
     this->GetHitRegion(caloHitList, xMin, xMax, zMin, zMax);
     double xRange{xMax - xMin}, zRange{zMax - zMin};
 
@@ -142,10 +163,9 @@ void DlPfoCharacterisationAlgorithm::PrepareNetworkInput(const CaloHitList &calo
     xRange = xMax - xMin;
     zRange = zMax - zMin;
 
-    float **weights = new float *[m_imageHeight];
-    for (int r = 0; r < m_imageHeight; ++r)
-        weights[r] = new float[m_imageWidth]();
-
+    // Check that calling it like this consecutively for each view doesn't overwrite the accessor
+    // Channel mapping is UVW => RGB (012)
+    auto accessor = input.accessor<float, 4>();
     for (const CaloHit *pCaloHit : caloHitList)
     {
         // Determine hit pixel
@@ -154,7 +174,8 @@ void DlPfoCharacterisationAlgorithm::PrepareNetworkInput(const CaloHitList &calo
         const double localZ{(z - zMin) / zRange};
         const int pixelX{static_cast<int>(std::floor(localX * m_imageWidth))};
         const int pixelZ{static_cast<int>(std::floor(localZ * m_imageHeight))};
-        weights[pixelZ][pixelX] += pCaloHit->GetInputEnergy();
+        // Temporary swap x and z because cv2 expects columr x row, not row x column
+        accessor[0][2 - channel][pixelX][pixelZ] += pCaloHit->GetInputEnergy();
     }
 
     float minWeight{std::numeric_limits<float>::max()}, maxWeight{-std::numeric_limits<float>::max()};
@@ -162,31 +183,22 @@ void DlPfoCharacterisationAlgorithm::PrepareNetworkInput(const CaloHitList &calo
     {
         for (int c = 0; c < m_imageWidth; ++c)
         {
-            if (weights[r][c] < minWeight)
-                minWeight = weights[r][c];
-            if (weights[r][c] > maxWeight)
-                maxWeight = weights[r][c];
+            if (accessor[0][2 - channel][r][c] < minWeight)
+                minWeight = accessor[0][channel][r][c];
+            if (accessor[0][2 - channel][r][c] > maxWeight)
+                maxWeight = accessor[0][2 - channel][r][c];
         }
     }
     const float weightRange{maxWeight - minWeight > std::numeric_limits<float>::epsilon() ? maxWeight - minWeight : 1.f};
 
-    auto accessor = input.accessor<float, 4>();
-    // Channel mapping is UVW => RGB (012)
-    const int channel{caloHitList.front()->GetHitType() - HitType::TPC_VIEW_U};
-    for (const CaloHit *pCaloHit : caloHitList)
-    {
-        const double x(pCaloHit->GetPositionVector().GetX());
-        const double z(pCaloHit->GetPositionVector().GetZ());
-        const double localX{(x - xMin) / xRange};
-        const double localZ{(z - zMin) / zRange};
-        const int pixelX{static_cast<int>(std::floor(localX * m_imageWidth))};
-        const int pixelZ{static_cast<int>(std::floor(localZ * m_imageHeight))};
-        accessor[0][channel][pixelZ][pixelX] = (weights[pixelZ][pixelX] - minWeight) / weightRange;
-    }
-
     for (int r = 0; r < m_imageHeight; ++r)
-        delete [] weights[r];
-    delete[] weights;
+    {
+        for (int c = 0; c < m_imageWidth; ++c)
+        {
+            if (accessor[0][2 - channel][r][c] > 0.f)
+                accessor[0][2 - channel][r][c] = 255.f * (accessor[0][2 - channel][r][c] - minWeight) / weightRange;
+        }
+    }
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
@@ -216,6 +228,7 @@ void DlPfoCharacterisationAlgorithm::GetHitRegion(const CaloHitList &caloHitList
 
 StatusCode DlPfoCharacterisationAlgorithm::ProcessPfoList(const std::string &pfoListName) const
 {
+    //PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1.f, 1.f, 1.f));
     const PfoList *pPfoList(nullptr);
     PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetList(*this, pfoListName, pPfoList));
 
@@ -237,6 +250,11 @@ StatusCode DlPfoCharacterisationAlgorithm::ProcessPfoList(const std::string &pfo
             ++numGoodViews;
         if (numGoodViews < 2 || (caloHitListU.size() + caloHitListV.size() + caloHitListW.size() < 15))
             continue;
+        std::map<const MCParticle *, float> showerContributionMap;
+        std::map<const int, float> trackContributionMap;
+        float leadingContribution{0.f}, totalContribution{0.f};
+        const MCParticle *pLeadingParticle{nullptr};
+        int leadingPdg{0};
         for (const CaloHitList &caloHitList : {caloHitListU, caloHitListV, caloHitListW})
         {
             for (const CaloHit *pCaloHit : caloHitList)
@@ -244,27 +262,72 @@ StatusCode DlPfoCharacterisationAlgorithm::ProcessPfoList(const std::string &pfo
                 try
                 {
                     const MCParticle *pMCParticle{MCParticleHelper::GetMainMCParticle(pCaloHit)};
-                    const int pdg{std::abs(pMCParticle->GetParticleId())};
-                    if (pdg == E_MINUS || pdg == PHOTON)
-                        showerContribution += pCaloHit->GetInputEnergy();
+                    if (!pMCParticle)
+                        continue;
+                    const int pdg{pMCParticle->GetParticleId()};
+                    const int absPdg{std::abs(pdg)};
+                    const float energy{pCaloHit->GetInputEnergy()};
+                    totalContribution += energy;
+                    if (absPdg == E_MINUS || absPdg == PHOTON)
+                    {
+                        if (showerContributionMap.find(pMCParticle) != showerContributionMap.end())
+                            showerContributionMap[pMCParticle] += energy;
+                        else
+                            showerContributionMap.insert({pMCParticle, energy});
+                    }
                     else
+                    {
+                        if (trackContributionMap.find(pdg) != trackContributionMap.end())
+                            trackContributionMap[pdg] += energy;
+                        else
+                            trackContributionMap.insert({pdg, energy});
+
+                    }
+                    if (absPdg == E_MINUS || absPdg == PHOTON)
+                    {
+                        showerContribution += pCaloHit->GetInputEnergy();
+                        if (showerContributionMap.at(pMCParticle) > leadingContribution)
+                        {
+                            leadingContribution = showerContributionMap.at(pMCParticle);
+                            pLeadingParticle = pMCParticle;
+                            leadingPdg = 0;
+                        }
+                    }
+                    else
+                    {
                         trackContribution += pCaloHit->GetInputEnergy();
+                        if (trackContributionMap.at(pdg) > leadingContribution)
+                        {
+                            leadingContribution = trackContributionMap.at(pdg);
+                            pLeadingParticle = nullptr;
+                            leadingPdg = pdg;
+                        }
+                    }
                 }
                 catch (const StatusCodeException &)
                 {
                 }
             }
         }
-        const float totalContribution{trackContribution + showerContribution};
-        if (totalContribution <= std::numeric_limits<float>::epsilon())
+        if (!(pLeadingParticle || leadingPdg ) || totalContribution <= std::numeric_limits<float>::epsilon())
             continue;
+        if (pLeadingParticle)
+            leadingPdg = pLeadingParticle->GetParticleId();
+        const float coherentFraction{leadingContribution / totalContribution};
+        const bool isCoherent{coherentFraction > 0.75f};
         const float trackFraction{trackContribution / totalContribution};
+        const int cls{isCoherent ? (trackFraction > 0.5f ? 1 : 2) : 0 };
+        featureVector.emplace_back(static_cast<double>(cls));
         featureVector.emplace_back(static_cast<double>(trackFraction));
         this->PopulateFeatureVector(caloHitListU, featureVector);
         this->PopulateFeatureVector(caloHitListV, featureVector);
         this->PopulateFeatureVector(caloHitListW, featureVector);
         PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, LArMvaHelper::ProduceTrainingExample(m_trainingFileName,
-            trackFraction > 0.5f, featureVector));
+            isCoherent, featureVector));
+        //PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &caloHitListU, "U", RED));
+        //PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &caloHitListV, "V", GREEN));
+        //PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &caloHitListW, "W", BLUE));
+        //PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
     }
 
     return STATUS_CODE_SUCCESS;
