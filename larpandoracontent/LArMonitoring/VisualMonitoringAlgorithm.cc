@@ -9,6 +9,9 @@
 #include "Pandora/AlgorithmHeaders.h"
 
 #include "larpandoracontent/LArMonitoring/VisualMonitoringAlgorithm.h"
+#include "larpandoracontent/LArObjects/LArCaloHit.h"
+
+#include <map>
 
 using namespace pandora;
 
@@ -18,6 +21,7 @@ namespace lar_content
 VisualMonitoringAlgorithm::VisualMonitoringAlgorithm() :
     m_showCurrentMCParticles(false),
     m_showCurrentCaloHits(false),
+    m_showVolumeInformation(false),
     m_showCurrentTracks(false),
     m_showCurrentClusters(false),
     m_showCurrentPfos(false),
@@ -186,21 +190,66 @@ void VisualMonitoringAlgorithm::VisualizeCaloHitList(const std::string &listName
         }
     }
 
-    // Filter calo hit list
-    CaloHitList caloHitList;
-
-    for (CaloHitList::const_iterator iter = pCaloHitList->begin(), iterEnd = pCaloHitList->end(); iter != iterEnd; ++iter)
+    if (!m_showVolumeInformation)
     {
-        const CaloHit *const pCaloHit = *iter;
+        // Filter calo hit list
+        CaloHitList caloHitList;
 
-        if ((pCaloHit->GetElectromagneticEnergy() > m_thresholdEnergy) && (!m_showOnlyAvailable || PandoraContentApi::IsAvailable(*this, pCaloHit)))
+        for (CaloHitList::const_iterator iter = pCaloHitList->begin(), iterEnd = pCaloHitList->end(); iter != iterEnd; ++iter)
         {
-            caloHitList.push_back(pCaloHit);
-        }
-    }
+            const CaloHit *const pCaloHit = *iter;
 
-    PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &caloHitList, listName.empty() ? "CurrentCaloHits" : listName.c_str(),
-        (m_hitColors.find("energy") != std::string::npos ? AUTOENERGY : GRAY)));
+            if ((pCaloHit->GetElectromagneticEnergy() > m_thresholdEnergy) && (!m_showOnlyAvailable || PandoraContentApi::IsAvailable(*this, pCaloHit)))
+            {
+                caloHitList.push_back(pCaloHit);
+            }
+        }
+
+        PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &caloHitList, listName.empty() ? "CurrentCaloHits" : listName.c_str(),
+            (m_hitColors.find("energy") != std::string::npos ? AUTOENERGY : GRAY)));
+    }
+    else
+    {
+        // Filter calo hit lists
+        std::map<std::string, CaloHitList> caloHitMap;
+
+        for (CaloHitList::const_iterator iter = pCaloHitList->begin(), iterEnd = pCaloHitList->end(); iter != iterEnd; ++iter)
+        {
+            const LArCaloHit *const pCaloHit = dynamic_cast<const LArCaloHit *const>(*iter);
+            if (!pCaloHit)
+                continue;
+
+            if ((pCaloHit->GetElectromagneticEnergy() > m_thresholdEnergy))
+            {
+                const unsigned int tpcVolume{pCaloHit->GetLArTPCVolumeId()};
+                const unsigned int childVolume{pCaloHit->GetDaughterVolumeId()};
+                const HitType view{pCaloHit->GetHitType()};
+                std::string key;
+                switch (view)
+                {
+                    case HitType::TPC_VIEW_U:
+                        key = "U";
+                        break;
+                    case HitType::TPC_VIEW_V:
+                        key = "V";
+                        break;
+                    case HitType::TPC_VIEW_W:
+                        key = "W";
+                        break;
+                    default:
+                        key = "?";
+                        break;
+                }
+                key += "_T" + std::to_string(tpcVolume) + "_C" + std::to_string(childVolume);
+                if (caloHitMap.find(key) == caloHitMap.end())
+                    caloHitMap[key] = CaloHitList();
+                caloHitMap[key].emplace_back(pCaloHit);
+            }
+        }
+
+        for (const auto &[ key, hitList ] : caloHitMap)
+            PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &hitList, key.c_str(), AUTOITER));
+    }
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
@@ -368,6 +417,9 @@ StatusCode VisualMonitoringAlgorithm::ReadSettings(const TiXmlHandle xmlHandle)
 
     PANDORA_RETURN_RESULT_IF_AND_IF(
         STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "ShowCurrentCaloHits", m_showCurrentCaloHits));
+
+    PANDORA_RETURN_RESULT_IF_AND_IF(
+        STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "ShowVolumeInfo", m_showVolumeInformation));
 
     PANDORA_RETURN_RESULT_IF_AND_IF(
         STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadVectorOfValues(xmlHandle, "CaloHitListNames", m_caloHitListNames));

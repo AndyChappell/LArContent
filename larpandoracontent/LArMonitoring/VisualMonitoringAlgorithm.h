@@ -76,6 +76,7 @@ private:
     pandora::StringVector m_mcParticleListNames; ///< Names of mc particles lists to show
 
     bool m_showCurrentCaloHits;               ///< Whether to show current calohitlist
+    bool m_showVolumeInformation;             ///< Whether to show volume information
     pandora::StringVector m_caloHitListNames; ///< Names of calo hit lists to show
 
     bool m_showCurrentTracks;               ///< Whether to show current tracks
