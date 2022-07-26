@@ -25,7 +25,8 @@ namespace lar_dl_content
 DlPfoCharacterisationAlgorithm::DlPfoCharacterisationAlgorithm() :
     m_training{false},
     m_imageWidth{224},
-    m_imageHeight{224}
+    m_imageHeight{224},
+    m_minHitsForGoodView{5}
 {
 }
 
@@ -241,20 +242,16 @@ StatusCode DlPfoCharacterisationAlgorithm::ProcessPfoList(const std::string &pfo
         LArPfoHelper::GetCaloHits(pPfo, viewU, caloHitListU);
         LArPfoHelper::GetCaloHits(pPfo, viewV, caloHitListV);
         LArPfoHelper::GetCaloHits(pPfo, viewW, caloHitListW);
-        int numGoodViews{0};
-        if (caloHitListU.size() >= 5)
-            ++numGoodViews;
-        if (caloHitListV.size() >= 5)
-            ++numGoodViews;
-        if (caloHitListW.size() >= 5)
-            ++numGoodViews;
-        if (numGoodViews < 2 || (caloHitListU.size() + caloHitListV.size() + caloHitListW.size() < 15))
+        int numGoodViews{0}, numHitsTotal{0};
+        for (const CaloHitList &caloHitList : {caloHitListU, caloHitListV, caloHitListW})
+        {
+            numHitsTotal += caloHitList.size();
+            if (caloHitList.size() >= 3)
+                ++numGoodViews;
+        }
+        if ((numGoodViews < 2) || (numHitsTotal < (3 * m_minHitsForGoodView)))
             continue;
-        std::map<const MCParticle *, float> showerContributionMap;
-        std::map<const int, float> trackContributionMap;
-        float leadingContribution{0.f}, totalContribution{0.f};
-        const MCParticle *pLeadingParticle{nullptr};
-        int leadingPdg{0};
+        float showerContribution{0.f}, trackContribution{0.f};
         for (const CaloHitList &caloHitList : {caloHitListU, caloHitListV, caloHitListW})
         {
             for (const CaloHit *pCaloHit : caloHitList)
@@ -269,54 +266,20 @@ StatusCode DlPfoCharacterisationAlgorithm::ProcessPfoList(const std::string &pfo
                     const float energy{pCaloHit->GetInputEnergy()};
                     totalContribution += energy;
                     if (absPdg == E_MINUS || absPdg == PHOTON)
-                    {
-                        if (showerContributionMap.find(pMCParticle) != showerContributionMap.end())
-                            showerContributionMap[pMCParticle] += energy;
-                        else
-                            showerContributionMap.insert({pMCParticle, energy});
-                    }
+                        showerContribution += energy;
                     else
-                    {
-                        if (trackContributionMap.find(pdg) != trackContributionMap.end())
-                            trackContributionMap[pdg] += energy;
-                        else
-                            trackContributionMap.insert({pdg, energy});
-
-                    }
-                    if (absPdg == E_MINUS || absPdg == PHOTON)
-                    {
-                        showerContribution += pCaloHit->GetInputEnergy();
-                        if (showerContributionMap.at(pMCParticle) > leadingContribution)
-                        {
-                            leadingContribution = showerContributionMap.at(pMCParticle);
-                            pLeadingParticle = pMCParticle;
-                            leadingPdg = 0;
-                        }
-                    }
-                    else
-                    {
-                        trackContribution += pCaloHit->GetInputEnergy();
-                        if (trackContributionMap.at(pdg) > leadingContribution)
-                        {
-                            leadingContribution = trackContributionMap.at(pdg);
-                            pLeadingParticle = nullptr;
-                            leadingPdg = pdg;
-                        }
-                    }
+                        trackContribution += energy;
                 }
                 catch (const StatusCodeException &)
                 {
                 }
             }
         }
-        if (!(pLeadingParticle || leadingPdg ) || totalContribution <= std::numeric_limits<float>::epsilon())
+        const float totalContribution{trackContribution + showerContribution};
+        if (totalContribution <= std::numeric_limits<float>::epsilon())
             continue;
-        if (pLeadingParticle)
-            leadingPdg = pLeadingParticle->GetParticleId();
-        const float coherentFraction{leadingContribution / totalContribution};
-        const bool isCoherent{coherentFraction > 0.75f};
         const float trackFraction{trackContribution / totalContribution};
-        const int cls{isCoherent ? (trackFraction > 0.5f ? 1 : 2) : 0 };
+        const int cls{trackFraction > 0.5f ? 1 : 2};
         featureVector.emplace_back(static_cast<double>(cls));
         featureVector.emplace_back(static_cast<double>(trackFraction));
         this->PopulateFeatureVector(caloHitListU, featureVector);
@@ -380,6 +343,7 @@ StatusCode DlPfoCharacterisationAlgorithm::ReadSettings(const TiXmlHandle xmlHan
     if (m_training)
     {
         PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadValue(xmlHandle, "TrainingFileName", m_trainingFileName));
+        PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATIS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "MinHitsForGoodView", m_minHitsForGoodView));
     }
     else
     {

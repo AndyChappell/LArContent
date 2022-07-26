@@ -83,6 +83,7 @@ private:
     bool m_training;    ///< Whether or not to run in training mode
     int m_imageWidth; ///< The width of event images
     int m_imageHeight; ///< The height of event images
+    int m_minHitsForGoodView; ///< The minimum number of hits for a good view
     std::string m_trackPfoListName; ///< Name of input track PFO list
     std::string m_showerPfoListName; ///< Name of input shower PFO list
     std::string m_trainingFileName; ///< Name of the output training file
