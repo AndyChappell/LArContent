@@ -46,11 +46,10 @@ StatusCode DlPfoCharacterisationAlgorithm::Infer()
 {
     PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1.f, 1.f, 1.f));
     PfoList tracksToShowers, showersToTracks;
-    LArDLHelper::TorchInput input;
-    LArDLHelper::InitialiseInput({1, 3, m_imageHeight, m_imageWidth}, input);
 
     const PfoList *pPfoList(nullptr);
-
+    std::map<const std::string, LArDLHelper::TorchModel> models{{"U", m_modelU}, {"V", m_modelV}, {"W", m_modelW}};
+    std::map<const std::string, const HitType> views{{"U", HitType::TPC_VIEW_U}, {"V", HitType::TPC_VIEW_V}, {"W", HitType::TPC_VIEW_W}};
     for (const bool inputIsTrack : {true, false})
     {
         const std::string listName{inputIsTrack ? m_trackPfoListName : m_showerPfoListName};
@@ -58,55 +57,48 @@ StatusCode DlPfoCharacterisationAlgorithm::Infer()
 
         for (const ParticleFlowObject *const pPfo : *pPfoList)
         {
-            const HitType viewU{HitType::TPC_VIEW_U}, viewV{HitType::TPC_VIEW_V}, viewW{HitType::TPC_VIEW_W};
-            CaloHitList caloHitListU, caloHitListV, caloHitListW;
-            LArPfoHelper::GetCaloHits(pPfo, viewU, caloHitListU);
-            this->PrepareNetworkInput(caloHitListU, input);
-            LArPfoHelper::GetCaloHits(pPfo, viewV, caloHitListV);
-            this->PrepareNetworkInput(caloHitListV, input);
-            LArPfoHelper::GetCaloHits(pPfo, viewW, caloHitListW);
-            this->PrepareNetworkInput(caloHitListW, input);
-
-            // Run the input through the trained model and get the output accessor
-            LArDLHelper::TorchInputVector inputs;
-            inputs.emplace_back(input);
-            LArDLHelper::TorchOutput output;
-            LArDLHelper::Forward(m_model, inputs, output);
-            auto outputAccessor = output.accessor<float, 2>();
-            // Get class probabilities
-            const double output0{exp(outputAccessor[0][0])};
-            const double output1{exp(outputAccessor[0][1])};
-            const double output2{exp(outputAccessor[0][2])};
-            const double sum{(output0 + output1 + output2) > std::numeric_limits<float>::epsilon() ? output0 + output1 + output2 : 1.f};
-            const double prob0{output0 / sum}, prob1{output1 / sum}, prob2{output2 / sum};
-            // Currently still assigns a track-like or shower-like tag even if prob0 is largest (implying a broken PFO), these should be
-            // placed in a third list for broken PFOs - the PFO can still carry a track or shower tag
-            if (prob2 > prob1)
+            int nTrackVotes{0}, nShowerVotes{0};
+            for (const std::string &view : {"U", "V", "W"})
             {
-                // Shower-like PFO
-                if (inputIsTrack)
+                CaloHitList caloHitList;
+                LArPfoHelper::GetCaloHits(pPfo, views[view], caloHitList);
+                if (caloHitList.empty())
+                    continue;
+                LArDLHelper::TorchInput input;
+                LArDLHelper::InitialiseInput({1, 3, m_imageHeight, m_imageWidth}, input);
+                this->PrepareNetworkInput(caloHitList, input);
+
+                // Run the input through the trained model and get the output accessor
+                LArDLHelper::TorchInputVector inputs;
+                inputs.emplace_back(input);
+                LArDLHelper::TorchOutput output;
+                LArDLHelper::Forward(models[view], inputs, output);
+                auto outputAccessor = output.accessor<float, 2>();
+                // Get class probabilities
+                const double outputShower{exp(outputAccessor[0][0])};
+                const double outputTrack{exp(outputAccessor[0][1])};
+                const double sum{(outputShower + outputTrack) > std::numeric_limits<float>::epsilon() ? outputShower + outputTrack : 1.f};
+                const double probShower{outputShower / sum}, probTrack{outputTrack / sum};
+                if (probShower > probTrack)
+                    ++nShowerVotes;
+                else
+                    ++nTrackVotes;
                 {
-                    this->ChangeCharacterisation(pPfo);
-                    tracksToShowers.emplace_back(pPfo);
+                    const std::string netClass{probTrack >= probShower ? "Track" : "Shower"};
+
+                    PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &caloHitList, view, BLUE));
+                    PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
                 }
             }
-            else
+            if (inputIsTrack && nShowerVotes > nTrackVotes)
             {
-                // Track-like PFO
-                if (!inputIsTrack)
-                {
-                    this->ChangeCharacterisation(pPfo);
-                    showersToTracks.emplace_back(pPfo);
-                }
+                this->ChangeCharacterisation(pPfo);
+                tracksToShowers.emplace_back(pPfo);
             }
+            else if (!inputIsTrack && nTrackVotes > nShowerVotes)
             {
-                const std::string netClass{prob0 > prob1 && prob0 > prob2 ? "Broken" : prob1 >= prob2 ? "Track" : "Shower"};
-                std::cout << std::setprecision(3) << "Classification: " << netClass << " (" << prob0 << ":" << prob1 << ":" << prob2 << ")" << std::endl;
-
-                PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &caloHitListU, "U", RED));
-                PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &caloHitListV, "V", GREEN));
-                PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &caloHitListW, "W", BLUE));
-                PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
+                this->ChangeCharacterisation(pPfo);
+                showersToTracks.emplace_back(pPfo);
             }
         }
     }
@@ -136,13 +128,10 @@ void DlPfoCharacterisationAlgorithm::PrepareNetworkInput(const CaloHitList &calo
 {
     if (caloHitList.empty())
         return;
-    const int channel{caloHitList.front()->GetHitType() - HitType::TPC_VIEW_U};
 
     const double eps{1.1920929e-7}; // Python float epsilon, used in image padding
     double xMin{0.}, xMax{0.}, zMin{0.}, zMax{0.};
 
-    // This is total nonsense. We're getting rnages based on all three views, instead of view specific. Refactor this bit of code
-    // to populate the relevant channel of the accessor, isolated to the relevant view
     this->GetHitRegion(caloHitList, xMin, xMax, zMin, zMax);
     double xRange{xMax - xMin}, zRange{zMax - zMin};
 
@@ -164,7 +153,6 @@ void DlPfoCharacterisationAlgorithm::PrepareNetworkInput(const CaloHitList &calo
     xRange = xMax - xMin;
     zRange = zMax - zMin;
 
-    // Check that calling it like this consecutively for each view doesn't overwrite the accessor
     // Channel mapping is UVW => RGB (012)
     auto accessor = input.accessor<float, 4>();
     for (const CaloHit *pCaloHit : caloHitList)
@@ -175,8 +163,10 @@ void DlPfoCharacterisationAlgorithm::PrepareNetworkInput(const CaloHitList &calo
         const double localZ{(z - zMin) / zRange};
         const int pixelX{static_cast<int>(std::floor(localX * m_imageWidth))};
         const int pixelZ{static_cast<int>(std::floor(localZ * m_imageHeight))};
-        // Temporary swap x and z because cv2 expects columr x row, not row x column
-        accessor[0][2 - channel][pixelX][pixelZ] += pCaloHit->GetInputEnergy();
+        // Repeat channel for RGB input image
+        accessor[0][0][pixelX][pixelZ] += pCaloHit->GetInputEnergy();
+        accessor[0][1][pixelX][pixelZ] += pCaloHit->GetInputEnergy();
+        accessor[0][2][pixelX][pixelZ] += pCaloHit->GetInputEnergy();
     }
 
     float minWeight{std::numeric_limits<float>::max()}, maxWeight{-std::numeric_limits<float>::max()};
@@ -184,20 +174,31 @@ void DlPfoCharacterisationAlgorithm::PrepareNetworkInput(const CaloHitList &calo
     {
         for (int c = 0; c < m_imageWidth; ++c)
         {
-            if (accessor[0][2 - channel][r][c] < minWeight)
-                minWeight = accessor[0][channel][r][c];
-            if (accessor[0][2 - channel][r][c] > maxWeight)
-                maxWeight = accessor[0][2 - channel][r][c];
+            // ATTN: Channels are identical, so we only need to look at one
+            if (accessor[0][0][r][c] < minWeight)
+                minWeight = accessor[0][0][r][c];
+            if (accessor[0][0][r][c] > maxWeight)
+                maxWeight = accessor[0][0][r][c];
         }
     }
     const float weightRange{maxWeight - minWeight > std::numeric_limits<float>::epsilon() ? maxWeight - minWeight : 1.f};
 
+    int count{0};
     for (int r = 0; r < m_imageHeight; ++r)
     {
         for (int c = 0; c < m_imageWidth; ++c)
         {
-            if (accessor[0][2 - channel][r][c] > 0.f)
-                accessor[0][2 - channel][r][c] = 255.f * (accessor[0][2 - channel][r][c] - minWeight) / weightRange;
+            // First we want to get the pixels into the range [0,1] (not [0, 255], transforms.ToTensor handles this)
+            accessor[0][0][r][c] = (accessor[0][0][r][c] - minWeight) / weightRange;
+            accessor[0][1][r][c] = (accessor[0][1][r][c] - minWeight) / weightRange;
+            accessor[0][2][r][c] = (accessor[0][2][r][c] - minWeight) / weightRange;
+            if (accessor[0][0][r][c] > 0)
+                ++count;
+
+            // Next we want to apply the standard ResNet normalisation (which acts per channel)
+            accessor[0][0][r][c] = (accessor[0][0][r][c] - 0.485) / 0.229;
+            accessor[0][1][r][c] = (accessor[0][1][r][c] - 0.456) / 0.224;
+            accessor[0][2][r][c] = (accessor[0][2][r][c] - 0.406) / 0.225;
         }
     }
 }
@@ -236,7 +237,6 @@ StatusCode DlPfoCharacterisationAlgorithm::ProcessPfoList(const std::string &pfo
     for (const ParticleFlowObject *const pPfo : *pPfoList)
     {
         LArMvaHelper::MvaFeatureVector featureVector;
-        float trackContribution{0.f}, showerContribution{0.f};
         CaloHitList caloHitListU, caloHitListV, caloHitListW;
         const HitType viewU{HitType::TPC_VIEW_U}, viewV{HitType::TPC_VIEW_V}, viewW{HitType::TPC_VIEW_W};
         LArPfoHelper::GetCaloHits(pPfo, viewU, caloHitListU);
@@ -264,7 +264,6 @@ StatusCode DlPfoCharacterisationAlgorithm::ProcessPfoList(const std::string &pfo
                     const int pdg{pMCParticle->GetParticleId()};
                     const int absPdg{std::abs(pdg)};
                     const float energy{pCaloHit->GetInputEnergy()};
-                    totalContribution += energy;
                     if (absPdg == E_MINUS || absPdg == PHOTON)
                         showerContribution += energy;
                     else
@@ -285,8 +284,7 @@ StatusCode DlPfoCharacterisationAlgorithm::ProcessPfoList(const std::string &pfo
         this->PopulateFeatureVector(caloHitListU, featureVector);
         this->PopulateFeatureVector(caloHitListV, featureVector);
         this->PopulateFeatureVector(caloHitListW, featureVector);
-        PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, LArMvaHelper::ProduceTrainingExample(m_trainingFileName,
-            isCoherent, featureVector));
+        PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, LArMvaHelper::ProduceTrainingExample(m_trainingFileName, true, featureVector));
         //PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &caloHitListU, "U", RED));
         //PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &caloHitListV, "V", GREEN));
         //PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &caloHitListW, "W", BLUE));
@@ -343,15 +341,22 @@ StatusCode DlPfoCharacterisationAlgorithm::ReadSettings(const TiXmlHandle xmlHan
     if (m_training)
     {
         PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadValue(xmlHandle, "TrainingFileName", m_trainingFileName));
-        PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATIS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "MinHitsForGoodView", m_minHitsForGoodView));
+        PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "MinHitsForGoodView", m_minHitsForGoodView));
     }
     else
     {
         PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadValue(xmlHandle, "ImageHeight", m_imageHeight));
         PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadValue(xmlHandle, "ImageWidth", m_imageWidth));
-        PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadValue(xmlHandle, "ModelFileName", m_modelFileName));
-        m_modelFileName = LArFileHelper::FindFileInPath(m_modelFileName, "FW_SEARCH_PATH");
-        PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, LArDLHelper::LoadModel(m_modelFileName, m_model));
+        PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadValue(xmlHandle, "ModelFileNameU", m_modelFileNameU));
+        PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadValue(xmlHandle, "ModelFileNameV", m_modelFileNameV));
+        PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadValue(xmlHandle, "ModelFileNameW", m_modelFileNameW));
+
+        m_modelFileNameU = LArFileHelper::FindFileInPath(m_modelFileNameU, "FW_SEARCH_PATH");
+        PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, LArDLHelper::LoadModel(m_modelFileNameU, m_modelU));
+        m_modelFileNameV = LArFileHelper::FindFileInPath(m_modelFileNameV, "FW_SEARCH_PATH");
+        PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, LArDLHelper::LoadModel(m_modelFileNameV, m_modelV));
+        m_modelFileNameW = LArFileHelper::FindFileInPath(m_modelFileNameW, "FW_SEARCH_PATH");
+        PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, LArDLHelper::LoadModel(m_modelFileNameW, m_modelW));
     }
 
     return STATUS_CODE_SUCCESS;

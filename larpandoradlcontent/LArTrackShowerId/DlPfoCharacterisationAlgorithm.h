@@ -87,8 +87,12 @@ private:
     std::string m_trackPfoListName; ///< Name of input track PFO list
     std::string m_showerPfoListName; ///< Name of input shower PFO list
     std::string m_trainingFileName; ///< Name of the output training file
-    std::string m_modelFileName; ///< Model file name
-    LArDLHelper::TorchModel m_model; ///< Model
+    std::string m_modelFileNameU; ///< Model file name for U view
+    std::string m_modelFileNameV; ///< Model file name for V view
+    std::string m_modelFileNameW; ///< Model file name for W view
+    LArDLHelper::TorchModel m_modelU; ///< Model for the U view
+    LArDLHelper::TorchModel m_modelV; ///< Model for the V view
+    LArDLHelper::TorchModel m_modelW; ///< Model for the W view
 };
 
 } // namespace lar_dl_content
