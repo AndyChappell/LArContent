@@ -67,6 +67,15 @@ private:
     pandora::StatusCode ProcessPfoList(const std::string &pfoListName) const;
 
     /**
+     *  @brief Retrieves the fraction of hit energy in a PFO contributed from track-like hits
+     *
+     *  @param pPfo The PFO to consider
+     *
+     *  @returns The fraction of hit energy coming from track-like hits
+     */
+    float GetTrackFraction(const pandora::ParticleFlowObject *const pPfo) const;
+
+    /**
      *  @brief  Change the existing track/shower characterisation of a PFO
      *
      *  @param  pfo The particle flow object whose characterisation should be changed

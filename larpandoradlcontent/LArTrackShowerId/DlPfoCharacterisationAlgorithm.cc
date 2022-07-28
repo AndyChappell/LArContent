@@ -90,15 +90,22 @@ StatusCode DlPfoCharacterisationAlgorithm::Infer()
                     PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
                 }
             }
+            std::cout << "Here" << std::endl;
             if (inputIsTrack && nShowerVotes > nTrackVotes)
             {
                 this->ChangeCharacterisation(pPfo);
                 tracksToShowers.emplace_back(pPfo);
+                std::cout << "Changed to shower truth, " << this->GetTrackFraction(pPfo) << std::endl;
             }
             else if (!inputIsTrack && nTrackVotes > nShowerVotes)
             {
                 this->ChangeCharacterisation(pPfo);
                 showersToTracks.emplace_back(pPfo);
+                std::cout << "Changed to track, truth " << this->GetTrackFraction(pPfo) << std::endl;
+            }
+            else
+            {
+                std::cout << "Unchanged. Retained as " << inputIsTrack << " truth " << this->GetTrackFraction(pPfo) << std::endl;
             }
         }
     }
@@ -292,6 +299,48 @@ StatusCode DlPfoCharacterisationAlgorithm::ProcessPfoList(const std::string &pfo
     }
 
     return STATUS_CODE_SUCCESS;
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+float DlPfoCharacterisationAlgorithm::GetTrackFraction(const ParticleFlowObject *const pPfo) const
+{
+    CaloHitList caloHitListU, caloHitListV, caloHitListW;
+    const HitType viewU{HitType::TPC_VIEW_U}, viewV{HitType::TPC_VIEW_V}, viewW{HitType::TPC_VIEW_W};
+    LArPfoHelper::GetCaloHits(pPfo, viewU, caloHitListU);
+    LArPfoHelper::GetCaloHits(pPfo, viewV, caloHitListV);
+    LArPfoHelper::GetCaloHits(pPfo, viewW, caloHitListW);
+    int numHitsTotal{0};
+    for (const CaloHitList &caloHitList : {caloHitListU, caloHitListV, caloHitListW})
+        numHitsTotal += caloHitList.size();
+    float showerContribution{0.f}, trackContribution{0.f};
+    for (const CaloHitList &caloHitList : {caloHitListU, caloHitListV, caloHitListW})
+    {
+        for (const CaloHit *pCaloHit : caloHitList)
+        {
+            try
+            {
+                const MCParticle *pMCParticle{MCParticleHelper::GetMainMCParticle(pCaloHit)};
+                if (!pMCParticle)
+                    continue;
+                const int pdg{pMCParticle->GetParticleId()};
+                const int absPdg{std::abs(pdg)};
+                const float energy{pCaloHit->GetInputEnergy()};
+                if (absPdg == E_MINUS || absPdg == PHOTON)
+                    showerContribution += energy;
+                else
+                    trackContribution += energy;
+            }
+            catch (const StatusCodeException &)
+            {
+            }
+        }
+    }
+    const float totalContribution{trackContribution + showerContribution};
+    if (totalContribution <= std::numeric_limits<float>::epsilon())
+        return -1.f;
+
+    return trackContribution / totalContribution;
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
