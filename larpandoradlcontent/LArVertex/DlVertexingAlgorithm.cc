@@ -158,6 +158,7 @@ StatusCode DlVertexingAlgorithm::Infer()
 {
     if (m_pass == 1)
         ++m_event;
+    std::map<HitType, Canvas*> canvasMap;
     CartesianPointVector vertexCandidatesU, vertexCandidatesV, vertexCandidatesW;
     for (const std::string listName : m_caloHitListNames)
     {
@@ -187,9 +188,7 @@ StatusCode DlVertexingAlgorithm::Infer()
         int colOffset{0}, rowOffset{0}, canvasWidth{m_width}, canvasHeight{m_height};
         this->GetCanvasParameters(output, pixelVector, colOffset, rowOffset, canvasWidth, canvasHeight);
 
-        float **canvas{new float *[canvasHeight]};
-        for (int row = 0; row < canvasHeight; ++row)
-            canvas[row] = new float[canvasWidth]{};
+        canvasMap[view] = new Canvas(canvasWidth, canvasHeight, colOffset, rowOffset);
 
         // we want the maximum value in the num_classes dimension (1) for every pixel
         auto classes{torch::argmax(output, 1)};
@@ -204,12 +203,12 @@ StatusCode DlVertexingAlgorithm::Infer()
             {
                 const int inner{static_cast<int>(std::round(std::ceil(scaleFactor * m_thresholds[cls - 1])))};
                 const int outer{static_cast<int>(std::round(std::ceil(scaleFactor * m_thresholds[cls])))};
-                this->DrawRing(canvas, row + rowOffset, col + colOffset, inner, outer, 1.f / (outer * outer - inner * inner));
+                this->DrawRing(canvasMap[view]->m_canvas, row + rowOffset, col + colOffset, inner, outer, 1.f / (outer * outer - inner * inner));
             }
         }
 
         CartesianPointVector positionVector;
-        this->MakeWirePlaneCoordinatesFromCanvas(*pCaloHitList, canvas, canvasWidth, canvasHeight, colOffset, rowOffset, positionVector);
+        this->MakeWirePlaneCoordinatesFromCanvas(*pCaloHitList, canvasMap[view]->m_canvas, canvasWidth, canvasHeight, colOffset, rowOffset, positionVector);
         if (isU)
             vertexCandidatesU.emplace_back(positionVector.front());
         else if (isV)
@@ -251,10 +250,12 @@ StatusCode DlVertexingAlgorithm::Infer()
             }
             PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
         }
+    }
 
-        for (int row = 0; row < canvasHeight; ++row)
-            delete[] canvas[row];
-        delete[] canvas;
+    for (const auto &[view, canvas] : canvasMap)
+    {
+        delete canvas;
+        canvasMap[view] = nullptr;
     }
 
     int nEmptyLists{0};
@@ -917,6 +918,29 @@ std::string DlVertexingAlgorithm::VertexTuple::ToString() const
 {
     const float x{m_pos.GetX()}, y{m_pos.GetY()}, z{m_pos.GetZ()};
     return "3D pos: (" + std::to_string(x) + ", " + std::to_string(y) + ", " + std::to_string(z) + ")   X2 = " + std::to_string(m_chi2);
+}
+
+//-----------------------------------------------------------------------------------------------------------------------------------------
+//-----------------------------------------------------------------------------------------------------------------------------------------
+
+DlVertexingAlgorithm::Canvas::Canvas(const int width, const int height, const int colOffset, const int rowOffset) :
+    m_width{width},
+    m_height{height},
+    m_colOffset{colOffset},
+    m_rowOffset{rowOffset}
+{
+    m_canvas = new float *[m_height];
+    for (int row = 0; row < m_height; ++row)
+        m_canvas[row] = new float[m_width]{};
+}
+
+//-----------------------------------------------------------------------------------------------------------------------------------------
+
+DlVertexingAlgorithm::Canvas::~Canvas()
+{
+    for (int row = 0; row < m_height; ++row)
+        delete[] m_canvas[row];
+    delete[] m_canvas;
 }
 
 } // namespace lar_dl_content

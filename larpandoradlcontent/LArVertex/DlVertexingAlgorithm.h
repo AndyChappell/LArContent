@@ -55,6 +55,28 @@ private:
         float m_chi2;                   ///< Chi squared of calculated position
     };
 
+    class Canvas
+    {
+    public:
+        /**
+         *  @brief Constructor
+         *
+         *  @param  width The width of the canvas
+         *  @param  height The height of the canvas
+         *  @param  colOffset The column position within the canvas where the event begins
+         *  @param  rowOffset The row  position within the canvas where the event begins
+         */
+        Canvas(const int width, const int height, const int colOffset, const int rowOffset);
+
+        ~Canvas();
+
+        float **m_canvas;
+        const int m_width;
+        const int m_height;
+        const int m_colOffset;
+        const int m_rowOffset;
+    };
+
     typedef std::pair<int, int> Pixel; // A Pixel is a row, column pair
     typedef std::vector<Pixel> PixelVector;
 
