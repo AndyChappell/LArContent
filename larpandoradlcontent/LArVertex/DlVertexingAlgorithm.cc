@@ -687,6 +687,7 @@ void DlVertexingAlgorithm::GetViewMappings(const Canvas *const canvasU, const Ca
     const float xStartV{static_cast<float>(canvasV->m_xMin + xShiftV - canvasV->m_dx * canvasV->m_colOffset)};
     const float xStartW{static_cast<float>(canvasW->m_xMin + xShiftW - canvasW->m_dx * canvasW->m_colOffset)};
 
+    // UV
     for (int col = 0; col < canvasU->m_width; ++col)
     {
         const float delta{static_cast<float>(col * canvasU->m_dx + xStartU) - xStartV};
@@ -705,9 +706,6 @@ void DlVertexingAlgorithm::GetViewMappings(const Canvas *const canvasU, const Ca
             else
                 xIndexUVMap[col] = -1;
         }
-        std::cout << "U col: " << col << " V col: " << xIndexUVMap[col] << " U x: " <<
-            static_cast<float>((col - canvasU->m_colOffset) * canvasU->m_dx + canvasU->m_xMin + xShiftU) << " V x: " <<
-            static_cast<float>((xIndexUVMap[col] - canvasV->m_colOffset) * canvasV->m_dx + canvasV->m_xMin + xShiftV) << std::endl;
     }
     for (int col = 0; col < canvasV->m_width; ++col)
     {
@@ -725,7 +723,7 @@ void DlVertexingAlgorithm::GetViewMappings(const Canvas *const canvasU, const Ca
             if ((idx >= 0) && (idx < canvasU->m_width))
             {
                 xIndexVUMap[col] = idx;
-                std::cout << "Updating " << idx << " : " << xIndexUVMap[idx] << " to " << xIndexUVMap[idx] << std::endl;
+                std::cout << "Updating " << idx << " : " << xIndexUVMap[idx] << " to " << col << std::endl;
                 xIndexUVMap[idx] = col;
             }
             else
@@ -733,17 +731,101 @@ void DlVertexingAlgorithm::GetViewMappings(const Canvas *const canvasU, const Ca
                 xIndexVUMap[col] = -1;
             }
         }
-        std::cout << "V col: " << col << " U col: " << xIndexVUMap[col] << " V x: " <<
-            static_cast<float>((col - canvasV->m_colOffset) * canvasV->m_dx + canvasV->m_xMin + xShiftV) << " U x: " <<
-            static_cast<float>((xIndexVUMap[col] - canvasU->m_colOffset) * canvasU->m_dx + canvasU->m_xMin + xShiftU) << std::endl;
     }
 
-    (void)zShiftU; (void)zShiftV; (void)zShiftW; (void)xStartW;
+    // UW
+    for (int col = 0; col < canvasU->m_width; ++col)
+    {
+        const float delta{static_cast<float>(col * canvasU->m_dx + xStartU) - xStartW};
+        if (delta < 0)
+        {
+            xIndexUWMap[col] = -1;
+        }
+        else
+        {
+            const int idx{static_cast<int>(std::floor(0.5f + delta / canvasW->m_dx))};
+            if ((idx >= 0) && (idx < canvasW->m_width))
+            {
+                xIndexUWMap[col] = idx;
+                xIndexWUMap[idx] = col;
+            }
+            else
+                xIndexUWMap[col] = -1;
+        }
+    }
+    for (int col = 0; col < canvasW->m_width; ++col)
+    {
+        if (xIndexWUMap.find(col) != xIndexWUMap.end())
+            continue;
 
-    //const float xStartU{static_cast<float>((col - m_colOffset) * m_dx + m_xMin + xShift)};
-    //for (int c = 0; c < canvasU.m_height; ++c)
-    //{
-    //}
+        const float delta{static_cast<float>(col * canvasW->m_dx + xStartW) - xStartU};
+        if (delta < 0)
+        {
+            xIndexWUMap[col] = -1;
+        }
+        else
+        {
+            const int idx{static_cast<int>(std::floor(0.5f + delta / canvasU->m_dx))};
+            if ((idx >= 0) && (idx < canvasU->m_width))
+            {
+                xIndexWUMap[col] = idx;
+                std::cout << "Updating " << idx << " : " << xIndexUWMap[idx] << " to " << col << std::endl;
+                xIndexUWMap[idx] = col;
+            }
+            else
+            {
+                xIndexWUMap[col] = -1;
+            }
+        }
+    }
+
+    // VW
+    for (int col = 0; col < canvasV->m_width; ++col)
+    {
+        const float delta{static_cast<float>(col * canvasV->m_dx + xStartV) - xStartW};
+        if (delta < 0)
+        {
+            xIndexVWMap[col] = -1;
+        }
+        else
+        {
+            const int idx{static_cast<int>(std::floor(0.5f + delta / canvasW->m_dx))};
+            if ((idx >= 0) && (idx < canvasW->m_width))
+            {
+                xIndexVWMap[col] = idx;
+                xIndexWVMap[idx] = col;
+            }
+            else
+                xIndexVWMap[col] = -1;
+        }
+    }
+    for (int col = 0; col < canvasW->m_width; ++col)
+    {
+        if (xIndexWVMap.find(col) != xIndexWVMap.end())
+            continue;
+
+        const float delta{static_cast<float>(col * canvasW->m_dx + xStartW) - xStartV};
+        if (delta < 0)
+        {
+            xIndexWVMap[col] = -1;
+        }
+        else
+        {
+            const int idx{static_cast<int>(std::floor(0.5f + delta / canvasV->m_dx))};
+            if ((idx >= 0) && (idx < canvasV->m_width))
+            {
+                xIndexWVMap[col] = idx;
+                std::cout << "Updating " << idx << " : " << xIndexVWMap[idx] << " to " << col << std::endl;
+                xIndexVWMap[idx] = col;
+            }
+            else
+            {
+                xIndexWVMap[col] = -1;
+            }
+        }
+    }
+
+    (void)zShiftU; (void)zShiftV; (void)zShiftW;
 
     // Original hit mapping applies a floor operation, so add half a pixel width to get pixel centre
     //const float xShift = static_cast<float>(m_dx * 0.5f);
