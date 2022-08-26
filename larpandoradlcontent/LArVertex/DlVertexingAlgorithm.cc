@@ -188,7 +188,16 @@ StatusCode DlVertexingAlgorithm::Infer()
         int colOffset{0}, rowOffset{0}, canvasWidth{m_width}, canvasHeight{m_height};
         this->GetCanvasParameters(output, pixelVector, colOffset, rowOffset, canvasWidth, canvasHeight);
 
-        canvasMap[view] = new Canvas(canvasWidth, canvasHeight, colOffset, rowOffset);
+        float xMin{0.f}, xMax{0.f}, zMin{0.f}, zMax{0.f};
+        GetHitRegion(*pCaloHitList, xMin, xMax, zMin, zMax);
+
+        // Determine the bin size - need double precision here for consistency with Python binning
+        const double dx{((xMax + PY_EPSILON) - (xMin - PY_EPSILON)) / m_width};
+        xMin -= PY_EPSILON;
+        const double dz{((zMax + PY_EPSILON) - (zMin - PY_EPSILON)) / m_height};
+        zMin -= PY_EPSILON;
+
+        canvasMap[view] = new Canvas(m_width, m_height, canvasWidth, canvasHeight, colOffset, rowOffset, xMin, zMin, dx, dz);
 
         // we want the maximum value in the num_classes dimension (1) for every pixel
         auto classes{torch::argmax(output, 1)};
@@ -252,6 +261,7 @@ StatusCode DlVertexingAlgorithm::Infer()
         }
     }
 
+    this->GetViewMappings(canvasMap[TPC_VIEW_U], canvasMap[TPC_VIEW_V], canvasMap[TPC_VIEW_W]);
     for (const auto &[view, canvas] : canvasMap)
     {
         delete canvas;
@@ -664,6 +674,88 @@ void DlVertexingAlgorithm::GetHitRegion(const CaloHitList &caloHitList, float &x
 
 //-----------------------------------------------------------------------------------------------------------------------------------------
 
+void DlVertexingAlgorithm::GetViewMappings(const Canvas *const canvasU, const Canvas *const canvasV, const Canvas *const canvasW) const
+{
+    // Find the correspondance beteen the x coordinates
+    std::map<int, int> xIndexUVMap, xIndexVUMap, xIndexUWMap, xIndexWUMap, xIndexVWMap, xIndexWVMap;
+
+    const float xShiftU{static_cast<float>(canvasU->m_dx * 0.5f)}, zShiftU{static_cast<float>(canvasU->m_dz * 0.5f)};
+    const float xShiftV{static_cast<float>(canvasV->m_dx * 0.5f)}, zShiftV{static_cast<float>(canvasV->m_dz * 0.5f)};
+    const float xShiftW{static_cast<float>(canvasW->m_dx * 0.5f)}, zShiftW{static_cast<float>(canvasW->m_dz * 0.5f)};
+
+    const float xStartU{static_cast<float>(canvasU->m_xMin + xShiftU - canvasU->m_dx * canvasU->m_colOffset)};
+    const float xStartV{static_cast<float>(canvasV->m_xMin + xShiftV - canvasV->m_dx * canvasV->m_colOffset)};
+    const float xStartW{static_cast<float>(canvasW->m_xMin + xShiftW - canvasW->m_dx * canvasW->m_colOffset)};
+
+    for (int col = 0; col < canvasU->m_width; ++col)
+    {
+        const float delta{static_cast<float>(col * canvasU->m_dx + xStartU) - xStartV};
+        if (delta < 0)
+        {
+            xIndexUVMap[col] = -1;
+        }
+        else
+        {
+            const int idx{static_cast<int>(std::floor(0.5f + delta / canvasV->m_dx))};
+            if ((idx >= 0) && (idx < canvasV->m_width))
+            {
+                xIndexUVMap[col] = idx;
+                xIndexVUMap[idx] = col;
+            }
+            else
+                xIndexUVMap[col] = -1;
+        }
+        std::cout << "U col: " << col << " V col: " << xIndexUVMap[col] << " U x: " <<
+            static_cast<float>((col - canvasU->m_colOffset) * canvasU->m_dx + canvasU->m_xMin + xShiftU) << " V x: " <<
+            static_cast<float>((xIndexUVMap[col] - canvasV->m_colOffset) * canvasV->m_dx + canvasV->m_xMin + xShiftV) << std::endl;
+    }
+    for (int col = 0; col < canvasV->m_width; ++col)
+    {
+        if (xIndexVUMap.find(col) != xIndexVUMap.end())
+            continue;
+
+        const float delta{static_cast<float>(col * canvasV->m_dx + xStartV) - xStartU};
+        if (delta < 0)
+        {
+            xIndexVUMap[col] = -1;
+        }
+        else
+        {
+            const int idx{static_cast<int>(std::floor(0.5f + delta / canvasU->m_dx))};
+            if ((idx >= 0) && (idx < canvasU->m_width))
+            {
+                xIndexVUMap[col] = idx;
+                std::cout << "Updating " << idx << " : " << xIndexUVMap[idx] << " to " << xIndexUVMap[idx] << std::endl;
+                xIndexUVMap[idx] = col;
+            }
+            else
+            {
+                xIndexVUMap[col] = -1;
+            }
+        }
+        std::cout << "V col: " << col << " U col: " << xIndexVUMap[col] << " V x: " <<
+            static_cast<float>((col - canvasV->m_colOffset) * canvasV->m_dx + canvasV->m_xMin + xShiftV) << " U x: " <<
+            static_cast<float>((xIndexVUMap[col] - canvasU->m_colOffset) * canvasU->m_dx + canvasU->m_xMin + xShiftU) << std::endl;
+    }
+
+    (void)zShiftU; (void)zShiftV; (void)zShiftW; (void)xStartW;
+
+    //const float xStartU{static_cast<float>((col - m_colOffset) * m_dx + m_xMin + xShift)};
+    //for (int c = 0; c < canvasU.m_height; ++c)
+    //{
+    //}
+
+    // Original hit mapping applies a floor operation, so add half a pixel width to get pixel centre
+    //const float xShift = static_cast<float>(m_dx * 0.5f);
+    //const float zShift = static_cast<float>(m_dz * 0.5f);
+
+    //const float x{static_cast<float>((col - m_colOffset) * m_dx + m_xMin + m_xShift)};
+    //const float z{static_cast<float>(m_dz * ((m_imgHeight - 1) - (row - m_rowOffset)) + m_zMin + m_zShift)};
+
+}
+
+//-----------------------------------------------------------------------------------------------------------------------------------------
+
 StatusCode DlVertexingAlgorithm::MakeCandidateVertexList(const CartesianPointVector &positions)
 {
     const VertexList *pVertexList{nullptr};
@@ -923,15 +1015,29 @@ std::string DlVertexingAlgorithm::VertexTuple::ToString() const
 //-----------------------------------------------------------------------------------------------------------------------------------------
 //-----------------------------------------------------------------------------------------------------------------------------------------
 
-DlVertexingAlgorithm::Canvas::Canvas(const int width, const int height, const int colOffset, const int rowOffset) :
+DlVertexingAlgorithm::Canvas::Canvas(const int imgWidth, const int imgHeight, const int width, const int height, const int colOffset,
+    const int rowOffset, const float xMin, const float zMin, const double dx, const double dz) :
     m_width{width},
     m_height{height},
     m_colOffset{colOffset},
-    m_rowOffset{rowOffset}
+    m_rowOffset{rowOffset},
+    m_imgWidth{imgWidth},
+    m_imgHeight{imgHeight},
+    m_xMin{xMin},
+    m_zMin{zMin},
+    m_dx{dx},
+    m_dz{dz}
 {
     m_canvas = new float *[m_height];
     for (int row = 0; row < m_height; ++row)
         m_canvas[row] = new float[m_width]{};
+
+    // Original hit mapping applies a floor operation, so add half a pixel width to get pixel centre
+    //const float xShift = static_cast<float>(m_dx * 0.5f);
+    //const float zShift = static_cast<float>(m_dz * 0.5f);
+
+    //const float x{static_cast<float>((col - m_colOffset) * m_dx + m_xMin + m_xShift)};
+    //const float z{static_cast<float>(m_dz * ((m_imgHeight - 1) - (row - m_rowOffset)) + m_zMin + m_zShift)};
 }
 
 //-----------------------------------------------------------------------------------------------------------------------------------------
@@ -942,5 +1048,23 @@ DlVertexingAlgorithm::Canvas::~Canvas()
         delete[] m_canvas[row];
     delete[] m_canvas;
 }
+
+//-----------------------------------------------------------------------------------------------------------------------------------------
+
+void DlVertexingAlgorithm::Canvas::Normalize()
+{
+    float totalWeight{0.f};
+    for (int row = 0; row < m_height; ++row)
+        for (int col = 0; col < m_width; ++col)
+            totalWeight += m_canvas[row][col];
+
+    if (totalWeight > std::numeric_limits<float>::epsilon())
+    {
+        for (int row = 0; row < m_height; ++row)
+            for (int col = 0; col < m_width; ++col)
+                m_canvas[row][col] /= totalWeight;;
+    }
+}
+
 
 } // namespace lar_dl_content

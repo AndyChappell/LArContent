@@ -61,20 +61,35 @@ private:
         /**
          *  @brief Constructor
          *
+         *  @param  imgWidth The width of the original image
+         *  @param  imgHeight The height of the original image
          *  @param  width The width of the canvas
          *  @param  height The height of the canvas
          *  @param  colOffset The column position within the canvas where the event begins
          *  @param  rowOffset The row  position within the canvas where the event begins
+         *  @param  xMin The minimum x value from the calo hits
+         *  @param  zMin The minimum z value from the calo hits
+         *  @param  dx The x bin width for pixels
+         *  @param  dz The z bin width for pixels
          */
-        Canvas(const int width, const int height, const int colOffset, const int rowOffset);
+        Canvas(const int imgWidth, const int imgHeight, const int width, const int height, const int colOffset, const int rowOffset,
+            const float xMin, const float zMin, const double dx, const double dz);
 
         ~Canvas();
+
+        void Normalize();
 
         float **m_canvas;
         const int m_width;
         const int m_height;
         const int m_colOffset;
         const int m_rowOffset;
+        const int m_imgWidth;
+        const int m_imgHeight;
+        float m_xMin;
+        float m_zMin;
+        double m_dx;
+        double m_dz;
     };
 
     typedef std::pair<int, int> Pixel; // A Pixel is a row, column pair
@@ -208,6 +223,15 @@ private:
      *  @return The StatusCode resulting from the function
      */
     void GetHitRegion(const pandora::CaloHitList &caloHitList, float &xMin, float &xMax, float &zMin, float &zMax) const;
+
+    /**
+     *  @brief  Retrieve the relationships between the pixels in the different views
+     *
+     *  @param  canvasU The heat map canvas in view U
+     *  @param  canvasU The heat map canvas in view V
+     *  @param  canvasU The heat map canvas in view W
+     */
+    void GetViewMappings(const Canvas *const canvasU, const Canvas *const canvasV, const Canvas *const canvasW) const;
 
     /**
      *  @brief Create a vertex list from the candidate vertices.
