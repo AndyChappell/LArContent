@@ -825,15 +825,35 @@ void DlVertexingAlgorithm::GetViewMappings(const Canvas *const canvasU, const Ca
         }
     }
 
-    (void)zShiftU; (void)zShiftV; (void)zShiftW;
-
-    // Original hit mapping applies a floor operation, so add half a pixel width to get pixel centre
-    //const float xShift = static_cast<float>(m_dx * 0.5f);
-    //const float zShift = static_cast<float>(m_dz * 0.5f);
-
-    //const float x{static_cast<float>((col - m_colOffset) * m_dx + m_xMin + m_xShift)};
-    //const float z{static_cast<float>(m_dz * ((m_imgHeight - 1) - (row - m_rowOffset)) + m_zMin + m_zShift)};
-
+    CartesianVector point3D(0, 0, 0);
+    for (int colU = 0; colU < canvasU->m_width; ++colU)
+    {
+        const int colV{xIndexUVMap[colU]};
+        if (colV >= 0)
+        {
+            //const float xU{static_cast<float>((colU - canvasU->m_colOffset) * canvasU->m_dx + canvasU->m_xMin + xShiftU)};
+            //const float xV{static_cast<float>((colV - canvasV->m_colOffset) * canvasV->m_dx + canvasV->m_xMin + xShiftV)};
+            for (int rowU = 0; rowU < canvasU->m_height; ++rowU)
+            {
+                const float zU{static_cast<float>(canvasU->m_dz * ((canvasU->m_imgHeight - 1) - (rowU - canvasU->m_rowOffset)) +
+                    canvasU->m_zMin + zShiftU)};
+                for (int rowV = 0; rowV < canvasV->m_height; ++rowV)
+                {
+                    const float zV{static_cast<float>(canvasV->m_dz * ((canvasV->m_imgHeight - 1) - (rowV - canvasV->m_rowOffset)) +
+                        canvasV->m_zMin + zShiftV)};
+                    // No point in getting chi2 from two view case, we already know x coordinates match
+                    const float zW{LArGeometryHelper::MergeTwoPositions(this->GetPandora(), TPC_VIEW_U, TPC_VIEW_V, zU, zV)};
+                    const int rowW{static_cast<int>(canvasW->m_rowOffset + (canvasW->m_imgHeight - 1) -
+                        (zW - canvasW->m_zMin - zShiftW) / canvasW->m_dz)};
+                    // Check if projection is outside of canvas bounds
+                    if (rowW < 0 || rowW >= canvasW->m_height)
+                        continue;
+                    // Can we use this via two view availability? i.e. we might be able to figure out plausible bounds for a
+                    // missing third view and still check if this match makes sense
+                }
+            }
+        }
+    }
 }
 
 //-----------------------------------------------------------------------------------------------------------------------------------------
