@@ -37,10 +37,8 @@ private:
      *  @brief  Visualize all MC particles independently.
      *
      *  This function ensures each MC particle has its own entry in the TEve tree, though common PDG colour scheme is used.
-     *
-     *  @param  mcMap The map from MC particles to calo hits
      **/
-    void VisualizeIndependentMC(const LArMCParticleHelper::MCContributionMap &mcMap) const;
+    void VisualizeIndependentMC() const;
 
     /**
      *  @brief  Visualize the MC particles according to their PDG codes.
@@ -108,6 +106,7 @@ private:
     bool m_showPfoByPid;            ///< Whether or not to colour PFOs by particle id
     bool m_showPfoMatchedMC;        ///< Whether or not to display the best matched MC particle for a PFO
     bool m_isTestBeam;              ///< Whether or not this is a test beam experiment
+    bool m_foldToPrimaries;         ///< Whether or not to fold the particle hierarchy to primaries
     float m_transparencyThresholdE; ///< Cell energy for which transparency is saturated (0%, fully opaque)
     float m_energyScaleThresholdE;  ///< Cell energy for which color is at top end of continous color palette
     float m_scalingFactor;          ///< TEve works with [cm], Pandora usually works with [mm] (but LArContent went with cm too)
