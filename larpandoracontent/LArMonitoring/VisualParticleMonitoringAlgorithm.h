@@ -59,16 +59,6 @@ private:
     void VisualizeIndependentPfo(const pandora::PfoList &pfoList) const;
 
     /**
-     *  @brief  Visualize the PFO particles independently (not colour-coded by PID).
-     *
-     *  This function visualises each PFO.
-     *
-     *  @param  pfoList The list of PFOs to visualize
-     *  @param  mcMap The map from MC particles to calo hits
-     **/
-    void VisualizeIndependentPfo(const pandora::PfoList &pfoList, const LArMCParticleHelper::MCContributionMap &mcMap) const;
-
-    /**
      *  @brief  Visualize the PFO particles in each slice (colour-coded by slice).
      *
      *  This function visualises each slice.
