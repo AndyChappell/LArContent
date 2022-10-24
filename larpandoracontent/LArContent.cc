@@ -47,6 +47,7 @@
 
 #include "larpandoracontent/LArHelpers/LArGeometryHelper.h"
 
+#include "larpandoracontent/LArMonitoring/CharacterisationMonitoringAlgorithm.h"
 #include "larpandoracontent/LArMonitoring/CosmicRayTaggingMonitoringTool.h"
 #include "larpandoracontent/LArMonitoring/HierarchyMonitoringAlgorithm.h"
 #include "larpandoracontent/LArMonitoring/HierarchyValidationAlgorithm.h"
@@ -218,6 +219,7 @@
     d("LArNeutrinoEventValidation",             NeutrinoEventValidationAlgorithm)                                               \
     d("LArTestBeamEventValidation",             TestBeamEventValidationAlgorithm)                                               \
     d("LArTestBeamHierarchyEventValidation",    TestBeamHierarchyEventValidationAlgorithm)                                      \
+    d("LArCharacterisationMonitoring",          CharacterisationMonitoringAlgorithm)                                            \
     d("LArHierarchyMonitoring",                 HierarchyMonitoringAlgorithm)                                                   \
     d("LArHierarchyValidation",                 HierarchyValidationAlgorithm)                                                   \
     d("LArPfoValidation",                       PfoValidationAlgorithm)                                                         \

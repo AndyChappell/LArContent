@@ -8,6 +8,7 @@
 
 #include "Pandora/AlgorithmHeaders.h"
 
+#include "larpandoracontent/LArHelpers/LArCalorimetryHelper.h"
 #include "larpandoracontent/LArHelpers/LArFileHelper.h"
 #include "larpandoracontent/LArHelpers/LArPfoHelper.h"
 #include "larpandoracontent/LArObjects/LArCaloHit.h"
@@ -44,13 +45,13 @@ StatusCode DlPfoCharacterisationAlgorithm::Run()
 
 StatusCode DlPfoCharacterisationAlgorithm::Infer()
 {
-    PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1.f, 1.f, 1.f));
+    //PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1.f, 1.f, 1.f));
     PfoList tracksToShowers, showersToTracks;
 
     const PfoList *pPfoList(nullptr);
     std::map<const std::string, LArDLHelper::TorchModel> models{{"U", m_modelU}, {"V", m_modelV}, {"W", m_modelW}};
     std::map<const std::string, const HitType> views{{"U", HitType::TPC_VIEW_U}, {"V", HitType::TPC_VIEW_V}, {"W", HitType::TPC_VIEW_W}};
-    for (const bool inputIsTrack : {true, false})
+    for (const bool inputIsTrack : {true})/*, false})*/
     {
         const std::string listName{inputIsTrack ? m_trackPfoListName : m_showerPfoListName};
         PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetList(*this, listName, pPfoList));
@@ -86,26 +87,19 @@ StatusCode DlPfoCharacterisationAlgorithm::Infer()
                 {
                     const std::string netClass{probTrack >= probShower ? "Track" : "Shower"};
 
-                    PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &caloHitList, view, BLUE));
-                    PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
+                    //PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &caloHitList, view, BLUE));
+                    //PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
                 }
             }
-            std::cout << "Here" << std::endl;
             if (inputIsTrack && nShowerVotes > nTrackVotes)
             {
                 this->ChangeCharacterisation(pPfo);
                 tracksToShowers.emplace_back(pPfo);
-                std::cout << "Changed to shower truth, " << this->GetTrackFraction(pPfo) << std::endl;
             }
             else if (!inputIsTrack && nTrackVotes > nShowerVotes)
             {
                 this->ChangeCharacterisation(pPfo);
                 showersToTracks.emplace_back(pPfo);
-                std::cout << "Changed to track, truth " << this->GetTrackFraction(pPfo) << std::endl;
-            }
-            else
-            {
-                std::cout << "Unchanged. Retained as " << inputIsTrack << " truth " << this->GetTrackFraction(pPfo) << std::endl;
             }
         }
     }
@@ -124,7 +118,7 @@ StatusCode DlPfoCharacterisationAlgorithm::Infer()
 StatusCode DlPfoCharacterisationAlgorithm::PrepareTrainingSample()
 {
     PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, this->ProcessPfoList(m_trackPfoListName));
-    PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, this->ProcessPfoList(m_showerPfoListName));
+    //PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, this->ProcessPfoList(m_showerPfoListName));
 
     return STATUS_CODE_SUCCESS;
 }
@@ -237,85 +231,25 @@ void DlPfoCharacterisationAlgorithm::GetHitRegion(const CaloHitList &caloHitList
 
 StatusCode DlPfoCharacterisationAlgorithm::ProcessPfoList(const std::string &pfoListName) const
 {
-    //PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1.f, 1.f, 1.f));
     const PfoList *pPfoList(nullptr);
     PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetList(*this, pfoListName, pPfoList));
 
     for (const ParticleFlowObject *const pPfo : *pPfoList)
     {
-        LArMvaHelper::MvaFeatureVector featureVector;
-        CaloHitList caloHitListU, caloHitListV, caloHitListW;
-        const HitType viewU{HitType::TPC_VIEW_U}, viewV{HitType::TPC_VIEW_V}, viewW{HitType::TPC_VIEW_W};
-        LArPfoHelper::GetCaloHits(pPfo, viewU, caloHitListU);
-        LArPfoHelper::GetCaloHits(pPfo, viewV, caloHitListV);
-        LArPfoHelper::GetCaloHits(pPfo, viewW, caloHitListW);
-        int numGoodViews{0}, numHitsTotal{0};
-        for (const CaloHitList &caloHitList : {caloHitListU, caloHitListV, caloHitListW})
-        {
-            numHitsTotal += caloHitList.size();
-            if (caloHitList.size() >= 3)
-                ++numGoodViews;
-        }
-        if ((numGoodViews < 2) || (numHitsTotal < (3 * m_minHitsForGoodView)))
+        CaloHitList caloHitList;
+        LArPfoHelper::GetCaloHits(pPfo, HitType::TPC_VIEW_W, caloHitList);
+        if (caloHitList.size() < 15)
             continue;
-        float showerContribution{0.f}, trackContribution{0.f};
-        for (const CaloHitList &caloHitList : {caloHitListU, caloHitListV, caloHitListW})
-        {
-            for (const CaloHit *pCaloHit : caloHitList)
-            {
-                try
-                {
-                    const MCParticle *pMCParticle{MCParticleHelper::GetMainMCParticle(pCaloHit)};
-                    if (!pMCParticle)
-                        continue;
-                    const int pdg{pMCParticle->GetParticleId()};
-                    const int absPdg{std::abs(pdg)};
-                    const float energy{pCaloHit->GetInputEnergy()};
-                    if (absPdg == E_MINUS || absPdg == PHOTON)
-                        showerContribution += energy;
-                    else
-                        trackContribution += energy;
-                }
-                catch (const StatusCodeException &)
-                {
-                }
-            }
-        }
-        const float totalContribution{trackContribution + showerContribution};
-        if (totalContribution <= std::numeric_limits<float>::epsilon())
+
+        CartesianVector origin(0.f, 0.f, 0.f), longitudinal(0.f, 0.f, 0.f), transverse(0.f, 0.f, 0.f);
+        LArCalorimetryHelper::GetPrincipalAxes(caloHitList, origin, longitudinal, transverse);
+        FloatVector longitudinalProfile{LArCalorimetryHelper::GetLongitudinalAdcProfile(caloHitList, origin, longitudinal, 0.1f, 14.f)};
+        FloatVector transverseProfile{LArCalorimetryHelper::GetTransverseAdcProfile(caloHitList, origin, transverse, 0.15f, 9.f)};
+
+        const int nHits{static_cast<int>(caloHitList.size())};
+        if (nHits < m_minHitsForGoodView)
             continue;
-        const float trackFraction{trackContribution / totalContribution};
-        const int cls{trackFraction > 0.5f ? 1 : 2};
-        featureVector.emplace_back(static_cast<double>(cls));
-        featureVector.emplace_back(static_cast<double>(trackFraction));
-        this->PopulateFeatureVector(caloHitListU, featureVector);
-        this->PopulateFeatureVector(caloHitListV, featureVector);
-        this->PopulateFeatureVector(caloHitListW, featureVector);
-        PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, LArMvaHelper::ProduceTrainingExample(m_trainingFileName, true, featureVector));
-        //PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &caloHitListU, "U", RED));
-        //PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &caloHitListV, "V", GREEN));
-        //PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &caloHitListW, "W", BLUE));
-        //PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
-    }
-
-    return STATUS_CODE_SUCCESS;
-}
-
-//------------------------------------------------------------------------------------------------------------------------------------------
-
-float DlPfoCharacterisationAlgorithm::GetTrackFraction(const ParticleFlowObject *const pPfo) const
-{
-    CaloHitList caloHitListU, caloHitListV, caloHitListW;
-    const HitType viewU{HitType::TPC_VIEW_U}, viewV{HitType::TPC_VIEW_V}, viewW{HitType::TPC_VIEW_W};
-    LArPfoHelper::GetCaloHits(pPfo, viewU, caloHitListU);
-    LArPfoHelper::GetCaloHits(pPfo, viewV, caloHitListV);
-    LArPfoHelper::GetCaloHits(pPfo, viewW, caloHitListW);
-    int numHitsTotal{0};
-    for (const CaloHitList &caloHitList : {caloHitListU, caloHitListV, caloHitListW})
-        numHitsTotal += caloHitList.size();
-    float showerContribution{0.f}, trackContribution{0.f};
-    for (const CaloHitList &caloHitList : {caloHitListU, caloHitListV, caloHitListW})
-    {
+        float showerContribution{0.f}, trackContribution{0.f}, neutronContribution{0.f}, totalContribution{0.f};
         for (const CaloHit *pCaloHit : caloHitList)
         {
             try
@@ -323,24 +257,49 @@ float DlPfoCharacterisationAlgorithm::GetTrackFraction(const ParticleFlowObject 
                 const MCParticle *pMCParticle{MCParticleHelper::GetMainMCParticle(pCaloHit)};
                 if (!pMCParticle)
                     continue;
-                const int pdg{pMCParticle->GetParticleId()};
-                const int absPdg{std::abs(pdg)};
-                const float energy{pCaloHit->GetInputEnergy()};
+                const int absPdg{static_cast<int>(std::abs(pMCParticle->GetParticleId()))};
+                const float adc{pCaloHit->GetInputEnergy()};
+                const MCParticle *pParent{pMCParticle};
+                while (!pParent->GetParentList().empty())
+                {
+                    pParent = pParent->GetParentList().front();
+                    if (std::abs(pParent->GetParticleId()) == NEUTRON)
+                    {
+                        neutronContribution += adc;
+                        break;
+                    }
+                }
+                totalContribution += adc;
                 if (absPdg == E_MINUS || absPdg == PHOTON)
-                    showerContribution += energy;
+                    showerContribution += adc;
                 else
-                    trackContribution += energy;
+                    trackContribution += adc;
             }
             catch (const StatusCodeException &)
             {
             }
         }
-    }
-    const float totalContribution{trackContribution + showerContribution};
-    if (totalContribution <= std::numeric_limits<float>::epsilon())
-        return -1.f;
+        if (totalContribution <= std::numeric_limits<float>::epsilon())
+            continue;
+        const float trackFraction{trackContribution / totalContribution};
+        const bool isDownstreamNeutron{neutronContribution > 0.5f ? true : false};
+        if (isDownstreamNeutron)
+            continue;
 
-    return trackContribution / totalContribution;
+        LArMvaHelper::MvaFeatureVector featureVector;
+        featureVector.emplace_back(static_cast<double>(trackFraction));
+        const int cls{trackFraction > 0.5f ? 1 : 2};
+        featureVector.emplace_back(static_cast<double>(cls));
+        this->PopulateFeatureVector(longitudinalProfile, transverseProfile, featureVector);
+        PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, LArMvaHelper::ProduceTrainingExample(m_trainingFileName, true, featureVector));
+
+        //std::cout << "NHits " << caloHitList.size() << " Neutron " << isDownstreamNeutron << " Track Frac " << trackFraction << " CLS " << cls << std::endl;
+        //PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1.f, 1.f, 1.f));
+        //PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &caloHitList, "PFO", BLUE));
+        //PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
+    }
+
+    return STATUS_CODE_SUCCESS;
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
@@ -368,15 +327,51 @@ StatusCode DlPfoCharacterisationAlgorithm::ChangeCharacterisation(const Particle
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-void DlPfoCharacterisationAlgorithm::PopulateFeatureVector(const CaloHitList &caloHitList, LArMvaHelper::MvaFeatureVector &featureVector) const
+void DlPfoCharacterisationAlgorithm::PopulateFeatureVector(const FloatVector &longitudinalProfile, const FloatVector &transverseProfile,
+    LArMvaHelper::MvaFeatureVector &featureVector) const
 {
-    featureVector.emplace_back(static_cast<double>(caloHitList.size()));
-    for (const CaloHit *pCaloHit : caloHitList)
+    FloatVector startProfile(30), endProfile(30);
+    int i{0};
+    // Starting profile
+    for (const float adc : longitudinalProfile)
     {
-        featureVector.emplace_back(static_cast<double>(pCaloHit->GetPositionVector().GetX()));
-        featureVector.emplace_back(static_cast<double>(pCaloHit->GetPositionVector().GetZ()));
-        featureVector.emplace_back(static_cast<double>(pCaloHit->GetInputEnergy()));
+        startProfile[i] = adc;
+        ++i;
+        if (i == 30)
+            break;
     }
+    // Ending profile
+    i = 29;
+    for (auto iter = longitudinalProfile.rbegin(); iter != longitudinalProfile.rend(); ++iter)
+    {
+        endProfile[i] = *iter;
+        --i;
+        if (i < 0)
+            break;
+    }
+    // Transverse profile
+    size_t length{transverseProfile.size()};
+    size_t midPoint{length / 2};
+    const int nRadialBins{10};
+    FloatVector tProfile(2 * nRadialBins + 1);
+    for (i = -nRadialBins; i <= nRadialBins; ++i)
+    {
+        if ((i + static_cast<long>(midPoint)) < 0)
+            continue;
+        if ((i + static_cast<long>(midPoint)) > static_cast<long>(transverseProfile.size()))
+            break;
+        tProfile[i + nRadialBins] = transverseProfile[i + midPoint];
+    }
+
+    featureVector.emplace_back(static_cast<double>(startProfile.size()));
+    for (const float adc : startProfile)
+        featureVector.emplace_back(static_cast<double>(adc));
+    featureVector.emplace_back(static_cast<double>(endProfile.size()));
+    for (const float adc : endProfile)
+        featureVector.emplace_back(static_cast<double>(adc));
+    featureVector.emplace_back(static_cast<double>(tProfile.size()));
+    for (const float adc : tProfile)
+        featureVector.emplace_back(static_cast<double>(adc));
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
