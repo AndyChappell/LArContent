@@ -100,6 +100,7 @@
 #include "larpandoracontent/LArThreeDReco/LArHitCreation/ClearLongitudinalTrackHitsTool.h"
 #include "larpandoracontent/LArThreeDReco/LArHitCreation/ClearTransverseTrackHitsTool.h"
 #include "larpandoracontent/LArThreeDReco/LArHitCreation/DeltaRayShowerHitsTool.h"
+#include "larpandoracontent/LArThreeDReco/LArHitCreation/HitCorrelationAlgorithm.h"
 #include "larpandoracontent/LArThreeDReco/LArHitCreation/MultiValuedLongitudinalTrackHitsTool.h"
 #include "larpandoracontent/LArThreeDReco/LArHitCreation/MultiValuedTransverseTrackHitsTool.h"
 #include "larpandoracontent/LArThreeDReco/LArHitCreation/ThreeDHitCreationAlgorithm.h"
@@ -250,6 +251,7 @@
     d("LArNeutrinoHierarchy",                   NeutrinoHierarchyAlgorithm)                                                     \
     d("LArNeutrinoProperties",                  NeutrinoPropertiesAlgorithm)                                                    \
     d("LArTestBeamParticleCreation",            TestBeamParticleCreationAlgorithm)                                              \
+    d("LArHitCorrelation",                      HitCorrelationAlgorithm)                                                        \
     d("LArCosmicRayShowerMatching",             CosmicRayShowerMatchingAlgorithm)                                               \
     d("LArCosmicRayTrackMatching",              CosmicRayTrackMatchingAlgorithm)                                                \
     d("LArCosmicRayTrackRecovery",              CosmicRayTrackRecoveryAlgorithm)                                                \
