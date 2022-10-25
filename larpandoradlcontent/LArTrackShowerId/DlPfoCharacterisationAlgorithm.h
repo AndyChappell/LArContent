@@ -85,7 +85,7 @@ private:
     /**
      *  @brief  Adds hit information from a hit list to a feature vector
      */
-    void PopulateFeatureVector(const pandora::FloatVector &longitudinalProfile, const pandora::FloatVector &transverseProfile,
+    void PopulateFeatureVector(const pandora::FloatVector &longitudinalProfile, const pandora::FloatVector &transverseStats,
         lar_content::LArMvaHelper::MvaFeatureVector &featureVector) const;
 
     pandora::StatusCode ReadSettings(const pandora::TiXmlHandle xmlHandle);

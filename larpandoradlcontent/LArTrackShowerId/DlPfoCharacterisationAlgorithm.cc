@@ -246,6 +246,42 @@ StatusCode DlPfoCharacterisationAlgorithm::ProcessPfoList(const std::string &pfo
         FloatVector longitudinalProfile{LArCalorimetryHelper::GetLongitudinalAdcProfile(caloHitList, origin, longitudinal, 0.1f, 14.f)};
         FloatVector transverseProfile{LArCalorimetryHelper::GetTransverseAdcProfile(caloHitList, origin, transverse, 0.15f, 9.f)};
 
+        const size_t length{transverseProfile.size()};
+        const size_t midPoint{length / 2};
+        const size_t nRadialBins{(length - 1) / 2};
+        float mean{0.f};
+        float frequency{0.f};
+        for (int i = -nRadialBins; i <= static_cast<int>(nRadialBins); ++i)
+        {
+            mean += transverseProfile[i + midPoint] * (0.15f * i);
+            frequency += transverseProfile[i + midPoint];
+        }
+        if (frequency > std::numeric_limits<float>::epsilon())
+            mean /= frequency;
+        FloatVector deviations(length);
+        for (int i = -nRadialBins; i <= static_cast<int>(nRadialBins); ++i)
+            deviations[i + midPoint] = (0.15f * i) - mean;
+        float sd{0.f}, variance{0.f}, skewness{0.f}, kurtosis{0.f};
+        for (int i = -nRadialBins; i <= static_cast<int>(nRadialBins); ++i)
+        {
+            const float delta2{deviations[i + midPoint] * deviations[i + midPoint]};
+            variance += transverseProfile[i + midPoint] * delta2;
+            skewness += transverseProfile[i + midPoint] * delta2 * deviations[i + midPoint];
+            kurtosis += transverseProfile[i + midPoint] * delta2 * delta2;
+        }
+        if (frequency > 1)
+        {
+            variance /= (frequency - 1);
+            sd = std::sqrt(variance);
+            if (sd > std::numeric_limits<float>::epsilon())
+            {
+                skewness /= (frequency - 1) * variance * sd;
+                kurtosis /= (frequency - 1) * variance * variance;
+                kurtosis -= 3;
+            }
+        }
+        const FloatVector transverseStats{sd, skewness, kurtosis};
+
         const int nHits{static_cast<int>(caloHitList.size())};
         if (nHits < m_minHitsForGoodView)
             continue;
@@ -290,7 +326,7 @@ StatusCode DlPfoCharacterisationAlgorithm::ProcessPfoList(const std::string &pfo
         featureVector.emplace_back(static_cast<double>(trackFraction));
         const int cls{trackFraction > 0.5f ? 1 : 2};
         featureVector.emplace_back(static_cast<double>(cls));
-        this->PopulateFeatureVector(longitudinalProfile, transverseProfile, featureVector);
+        this->PopulateFeatureVector(longitudinalProfile, transverseStats, featureVector);
         PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, LArMvaHelper::ProduceTrainingExample(m_trainingFileName, true, featureVector));
 
         //std::cout << "NHits " << caloHitList.size() << " Neutron " << isDownstreamNeutron << " Track Frac " << trackFraction << " CLS " << cls << std::endl;
@@ -327,7 +363,7 @@ StatusCode DlPfoCharacterisationAlgorithm::ChangeCharacterisation(const Particle
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-void DlPfoCharacterisationAlgorithm::PopulateFeatureVector(const FloatVector &longitudinalProfile, const FloatVector &transverseProfile,
+void DlPfoCharacterisationAlgorithm::PopulateFeatureVector(const FloatVector &longitudinalProfile, const FloatVector &transverseStats,
     LArMvaHelper::MvaFeatureVector &featureVector) const
 {
     FloatVector startProfile(30), endProfile(30);
@@ -349,19 +385,6 @@ void DlPfoCharacterisationAlgorithm::PopulateFeatureVector(const FloatVector &lo
         if (i < 0)
             break;
     }
-    // Transverse profile
-    size_t length{transverseProfile.size()};
-    size_t midPoint{length / 2};
-    const int nRadialBins{10};
-    FloatVector tProfile(2 * nRadialBins + 1);
-    for (i = -nRadialBins; i <= nRadialBins; ++i)
-    {
-        if ((i + static_cast<long>(midPoint)) < 0)
-            continue;
-        if ((i + static_cast<long>(midPoint)) > static_cast<long>(transverseProfile.size()))
-            break;
-        tProfile[i + nRadialBins] = transverseProfile[i + midPoint];
-    }
 
     featureVector.emplace_back(static_cast<double>(startProfile.size()));
     for (const float adc : startProfile)
@@ -369,9 +392,9 @@ void DlPfoCharacterisationAlgorithm::PopulateFeatureVector(const FloatVector &lo
     featureVector.emplace_back(static_cast<double>(endProfile.size()));
     for (const float adc : endProfile)
         featureVector.emplace_back(static_cast<double>(adc));
-    featureVector.emplace_back(static_cast<double>(tProfile.size()));
-    for (const float adc : tProfile)
-        featureVector.emplace_back(static_cast<double>(adc));
+    featureVector.emplace_back(static_cast<double>(transverseStats.size()));
+    for (const float moment : transverseStats)
+        featureVector.emplace_back(static_cast<double>(moment));
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
