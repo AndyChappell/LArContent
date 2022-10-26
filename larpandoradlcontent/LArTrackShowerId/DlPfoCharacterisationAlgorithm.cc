@@ -358,7 +358,7 @@ void DlPfoCharacterisationAlgorithm::PopulateFeatureVector(const FloatVector &lo
     {
         if ((i + static_cast<long>(midPoint)) < 0)
             continue;
-        if ((i + static_cast<long>(midPoint)) > static_cast<long>(transverseProfile.size()))
+        if ((i + static_cast<long>(midPoint)) >= static_cast<long>(transverseProfile.size()))
             break;
         tProfile[i + nRadialBins] = transverseProfile[i + midPoint];
     }
