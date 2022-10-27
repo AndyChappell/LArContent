@@ -31,6 +31,10 @@ public:
 private:
     class TpcChildVolume;
     typedef std::map<const pandora::CaloHit *, pandora::CaloHitList> HitMap;
+    typedef std::map<const pandora::CaloHit *, bool> HitTable;
+    typedef std::set<const pandora::CaloHit *> LArSet;
+    typedef std::tuple<const pandora::CaloHit *, const pandora::CaloHit *, const pandora::CaloHit *> LArTriplet;
+    typedef std::vector<const LArTriplet> LArTripletVector;
 
     /**
      *  @brief  Find pairs of 2D hits that might originate from the same 3D hit
@@ -40,6 +44,24 @@ private:
      *  @param  hitMap A map from CaloHits in one view to CaloHits in the other
      **/
     void Correlate(const pandora::CaloHitList &caloHitList1, const pandora::CaloHitList &caloHitList2, HitMap &hitMap) const;
+
+    /**
+     *  @brief  Find all of the potentially related hits associated to a list of hits
+     *
+     *  @param  caloHitList The seed set of hits
+     *  @param  hitMap A map from CaloHits in one view to CaloHits in the other
+     *  @param  hitSet The output set of related hits
+     **/
+    void FindRelationships(const pandora::CaloHitList &caloHitList, const HitMap &hitMap, LArSet &hitSet) const;
+
+    /**
+     *  @brief  Determine which hits should form 3D hits
+     *
+     *  @param  caloHitList The set of hits for which triplets should be made
+     *  @param  usedHits A map indicating which hits have already been used
+     *  @param  hitTriplets The output vector of hit triplets
+     **/
+    void MakeHitTriplets(const pandora::CaloHitList &caloHitList, HitTable &usedHits, LArTripletVector &hitTriplets) const;
 
     pandora::StatusCode Run();
     pandora::StatusCode ReadSettings(const pandora::TiXmlHandle xmlHandle);

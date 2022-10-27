@@ -60,10 +60,28 @@ StatusCode HitCorrelationAlgorithm::Run()
         this->Correlate(caloHitListU, caloHitListW, hitMap);
         this->Correlate(caloHitListV, caloHitListW, hitMap);
 
-        // Having found the 2D pairs, find the links to the third view and create sets of hits that ought to be considered together
+        for (const auto & [pCaloHit, caloHits] : hitMap)
+        {
+            LArSet hitSet{pCaloHit};
+            this->FindRelationships(caloHits, hitMap, hitSet);
+        }
     }
 
     return STATUS_CODE_SUCCESS;
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+void HitCorrelationAlgorithm::FindRelationships(const CaloHitList &caloHitList, const HitMap &hitMap, LArSet &hitSet) const
+{
+    for (const CaloHit *pCaloHit : caloHitList)
+    {
+        if (hitSet.find(pCaloHit) == hitSet.end())
+        {
+            hitSet.insert(pCaloHit);
+            this->FindRelationships(hitMap.at(pCaloHit), hitMap, hitSet);
+        }
+    }
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
@@ -106,6 +124,35 @@ void HitCorrelationAlgorithm::Correlate(const CaloHitList &caloHitList1, const C
         }
         ++iter1;
     }
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+void HitCorrelationAlgorithm::MakeHitTriplets(const CaloHitList &caloHitList, HitTable &/*usedHits*/, LArTripletVector &/*hitTriplets*/) const
+{
+    CaloHitList caloHitListU, caloHitListV, caloHitListW;
+
+    for (const CaloHit *const pCaloHit : caloHitList)
+    {
+        switch (pCaloHit->GetHitType())
+        {
+            case TPC_VIEW_U:
+                caloHitListU.emplace_back(pCaloHit);
+                break;
+            case TPC_VIEW_V:
+                caloHitListV.emplace_back(pCaloHit);
+                break;
+            default:
+                caloHitListW.emplace_back(pCaloHit);
+                break;
+        }
+    }
+
+    // Loop over U and find all plausible combinations and determine the 3 hit chi2
+    // Then loop over V and W and do the same
+    // If any good 3D hits can be made based on chi2, make them and mark those hits as used
+    // Loop over the remaining hits in a similar fashion, but for 2 hit combinations only
+    // If any good 3D hits can be made, make them and mark as used. Return
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
