@@ -51,6 +51,7 @@ StatusCode HitCorrelationAlgorithm::Run()
 
     for (const auto & [ key, volume ] : m_volumeMap)
     {
+        std::cout << "Volume " << key << std::endl; 
         const CaloHitList caloHitListU{volume.GetCaloHits(HitType::TPC_VIEW_U)};
         const CaloHitList caloHitListV{volume.GetCaloHits(HitType::TPC_VIEW_V)};
         const CaloHitList caloHitListW{volume.GetCaloHits(HitType::TPC_VIEW_W)};
@@ -80,13 +81,31 @@ void HitCorrelationAlgorithm::Correlate(const CaloHitList &caloHitList1, const C
 
     std::cout << "Overlap found in " << caloHitList1.front()->GetHitType() << " and " << caloHitList2.front()->GetHitType() << " from " <<
         minX << " to " << maxX << std::endl;
-    // Next we need to figure out an efficient way to step through the lists and group hits (ideally we'd like to note where we are
-    // in the list and step back until out of range
-    //
-    // e.g. Hit 1 list 1 has a position, find the first hit in the other list within bounds and walk forward until out of bounds
-    // then Hit 2 list 1 has a position, walk back (if necessary) from where we were in list 2 until we hit the lower limit, repeat
-    // This should guarantee that all hits in list 2 should also have their corresponding partners
-    (void)hitMap;
+    auto iter1{caloHitList1.begin()};
+    while((*iter1)->GetPositionVector().GetX() < minX)
+        ++iter1;
+
+    while (iter1 != caloHitList1.end())
+    {
+        const CaloHit *const pCaloHit1{*iter1};
+        const float x1{pCaloHit1->GetPositionVector().GetX()};
+        if (x1 > maxX)
+            break;
+        // Make this half the wire pitch for W
+        const float lowX{x1 - 0.025f};
+        const float highX{x1 + 0.025f};
+
+        for (const CaloHit *pCaloHit2 : caloHitList2)
+        {
+            const float x2{pCaloHit2->GetPositionVector().GetX()};
+            if ((x2 >= lowX) && (x2 <= highX))
+            {
+                hitMap[pCaloHit1].emplace_back(pCaloHit2);
+                hitMap[pCaloHit2].emplace_back(pCaloHit1);
+            }
+        }
+        ++iter1;
+    }
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
