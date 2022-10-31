@@ -67,6 +67,15 @@ private:
     pandora::StatusCode ProcessPfoList(const std::string &pfoListName) const;
 
     /**
+     *  @brief  Produce training output for PFO image generation
+     *
+     *  @param  pfoList The list of PFOs for which a training images should be made
+     *
+     *  @return The StatusCode for the operation
+     */
+    pandora::StatusCode MakeTrainingImage(const pandora::PfoList &pfoList) const;
+
+    /**
      *  @brief Retrieves the fraction of hit energy in a PFO contributed from track-like hits
      *
      *  @param pPfo The PFO to consider
