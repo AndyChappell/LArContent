@@ -11,6 +11,7 @@
 #include "larpandoracontent/LArThreeDReco/LArHitCreation/HitCorrelationAlgorithm.h"
 
 #include "larpandoracontent/LArHelpers/LArClusterHelper.h"
+#include "larpandoracontent/LArHelpers/LArGeometryHelper.h"
 #include "larpandoracontent/LArObjects/LArCaloHit.h"
 
 using namespace pandora;
@@ -60,11 +61,31 @@ StatusCode HitCorrelationAlgorithm::Run()
         this->Correlate(caloHitListU, caloHitListW, hitMap);
         this->Correlate(caloHitListV, caloHitListW, hitMap);
 
+        HitTable usedHits;
+        LArTripletVector hitTriplets;
         for (const auto & [pCaloHit, caloHits] : hitMap)
         {
             LArSet hitSet{pCaloHit};
             this->FindRelationships(caloHits, hitMap, hitSet);
+            this->MakeHitTriplets(hitSet, usedHits, hitTriplets);
         }
+
+        for (const LArTriplet &triplet : hitTriplets)
+        {
+            const CaloHit *const pCaloHitU{std::get<0>(triplet)};
+            const CaloHit *const pCaloHitV{std::get<1>(triplet)};
+            const CaloHit *const pCaloHitW{std::get<2>(triplet)};
+            const CartesianVector &posU{pCaloHitU->GetPositionVector()};
+            const CartesianVector &posV{pCaloHitV->GetPositionVector()};
+            const CartesianVector &posW{pCaloHitW->GetPositionVector()};
+            CartesianVector pos3D(0, 0, 0);
+            float chi2{0.f};
+            LArGeometryHelper::MergeThreePositions3D(this->GetPandora(), TPC_VIEW_U, TPC_VIEW_V, TPC_VIEW_W, posU, posV, posW, pos3D, chi2);
+            std::cout << "In [(" << posU.GetX() << "," << posU.GetZ() << ") (" << posV.GetX() << "," << posV.GetZ() << ") (" <<
+                posW.GetX() << "," << posW.GetZ() << ")] Out (" << pos3D.GetX() << "," << pos3D.GetZ() << ") chi2: " << chi2 << std::endl;
+        }
+        std::cout << "Inputs: " << caloHitListU.size() << " " << caloHitListV.size() << " " << caloHitListW.size() << std::endl;
+        std::cout << "Triplets: " << hitTriplets.size() << std::endl;
     }
 
     return STATUS_CODE_SUCCESS;
@@ -128,11 +149,11 @@ void HitCorrelationAlgorithm::Correlate(const CaloHitList &caloHitList1, const C
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-void HitCorrelationAlgorithm::MakeHitTriplets(const CaloHitList &caloHitList, HitTable &/*usedHits*/, LArTripletVector &/*hitTriplets*/) const
+void HitCorrelationAlgorithm::MakeHitTriplets(const LArSet &caloHitSet, HitTable &usedHits, LArTripletVector &hitTriplets) const
 {
     CaloHitList caloHitListU, caloHitListV, caloHitListW;
 
-    for (const CaloHit *const pCaloHit : caloHitList)
+    for (const CaloHit *const pCaloHit : caloHitSet)
     {
         switch (pCaloHit->GetHitType())
         {
@@ -148,11 +169,46 @@ void HitCorrelationAlgorithm::MakeHitTriplets(const CaloHitList &caloHitList, Hi
         }
     }
 
-    // Loop over U and find all plausible combinations and determine the 3 hit chi2
-    // Then loop over V and W and do the same
-    // If any good 3D hits can be made based on chi2, make them and mark those hits as used
-    // Loop over the remaining hits in a similar fashion, but for 2 hit combinations only
-    // If any good 3D hits can be made, make them and mark as used. Return
+    CartesianVector pos3D(0, 0, 0);
+    for (const CaloHit *const pCaloHitU : caloHitListU)
+    {
+        if (usedHits.find(pCaloHitU) != usedHits.end())
+            continue;
+        LArTriplet bestTriplet({nullptr, nullptr, nullptr});
+        float bestChi2{std::numeric_limits<float>::max()};
+        const CartesianVector &posU{pCaloHitU->GetPositionVector()};
+        for (const CaloHit *const pCaloHitV : caloHitListV)
+        {
+            if (usedHits.find(pCaloHitV) != usedHits.end())
+                continue;
+            const CartesianVector &posV{pCaloHitV->GetPositionVector()};
+            for (const CaloHit *const pCaloHitW : caloHitListW)
+            {
+                if (usedHits.find(pCaloHitW) != usedHits.end())
+                    continue;
+                const CartesianVector &posW{pCaloHitW->GetPositionVector()};
+                float chi2{0.f};
+                LArGeometryHelper::MergeThreePositions3D(this->GetPandora(), TPC_VIEW_U, TPC_VIEW_V, TPC_VIEW_W, posU, posV, posW, pos3D, chi2);
+                if (chi2 < 0.1f)
+                {
+                    if (chi2 < bestChi2)
+                    {
+                        bestTriplet = std::make_tuple(pCaloHitU, pCaloHitV, pCaloHitW);
+                        bestChi2 = chi2;
+                    }
+                }
+            }
+        }
+        if (bestChi2 < std::numeric_limits<float>::max())
+        {
+            usedHits[std::get<0>(bestTriplet)] = true;
+            usedHits[std::get<1>(bestTriplet)] = true;
+            usedHits[std::get<2>(bestTriplet)] = true;
+            hitTriplets.emplace_back(bestTriplet);
+        }
+    }
+
+    // Need to consider leftover hits and whether they can form 2 hit combos
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------

@@ -11,6 +11,7 @@
 #include "Pandora/Algorithm.h"
 
 #include <unordered_map>
+#include <tuple>
 
 namespace lar_content
 {
@@ -34,7 +35,7 @@ private:
     typedef std::map<const pandora::CaloHit *, bool> HitTable;
     typedef std::set<const pandora::CaloHit *> LArSet;
     typedef std::tuple<const pandora::CaloHit *, const pandora::CaloHit *, const pandora::CaloHit *> LArTriplet;
-    typedef std::vector<const LArTriplet> LArTripletVector;
+    typedef std::vector<LArTriplet> LArTripletVector;
 
     /**
      *  @brief  Find pairs of 2D hits that might originate from the same 3D hit
@@ -57,11 +58,11 @@ private:
     /**
      *  @brief  Determine which hits should form 3D hits
      *
-     *  @param  caloHitList The set of hits for which triplets should be made
+     *  @param  caloHitSet The set of hits for which triplets should be made
      *  @param  usedHits A map indicating which hits have already been used
      *  @param  hitTriplets The output vector of hit triplets
      **/
-    void MakeHitTriplets(const pandora::CaloHitList &caloHitList, HitTable &usedHits, LArTripletVector &hitTriplets) const;
+    void MakeHitTriplets(const LArSet &caloHitSet, HitTable &usedHits, LArTripletVector &hitTriplets) const;
 
     pandora::StatusCode Run();
     pandora::StatusCode ReadSettings(const pandora::TiXmlHandle xmlHandle);
