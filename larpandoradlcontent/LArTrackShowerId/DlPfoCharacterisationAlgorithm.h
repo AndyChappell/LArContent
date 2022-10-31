@@ -43,23 +43,12 @@ private:
     pandora::StatusCode PrepareTrainingSample();
 
     /**
-     *  @brief  Add calo hits to the input for the network
+     *  @brief  Prepares input for the network based on the provided PfoList
      *
-     *  @param  caloHitList The calo hits to be added
+     *  @param  pfoList The calo hits to be added
      *  @param  input The network input tensor to be populated
      */
-    void PrepareNetworkInput(const pandora::CaloHitList &caloHitList, LArDLHelper::TorchInput &input) const;
-
-    /**
-     *  @brief  Identify the XZ range containing the hits for an event
-     *
-     *  @param  caloHitList The list of CaloHits for which the range is to be found
-     *  @param  xMin The output minimum x-coordinate
-     *  @param  xMax The output maximum x-coordinate
-     *  @param  zMin The output minimum z-coordinate
-     *  @param  zMax The output maximum z-coordinate
-     */
-    void GetHitRegion(const pandora::CaloHitList &caloHitList, double &xMin, double &xMax, double &zMin, double &zMax) const;
+    void PrepareNetworkInput(const pandora::PfoList &pfoList, LArDLHelper::TorchInput &input) const;
 
     /**
      *  @brief  Process a single PFO list
@@ -99,19 +88,13 @@ private:
 
     pandora::StatusCode ReadSettings(const pandora::TiXmlHandle xmlHandle);
 
+    bool m_visualize;   ///< Wehter or not to visualize the charactierisation
     bool m_training;    ///< Whether or not to run in training mode
-    int m_imageWidth; ///< The width of event images
-    int m_imageHeight; ///< The height of event images
-    int m_minHitsForGoodView; ///< The minimum number of hits for a good view
     std::string m_trackPfoListName; ///< Name of input track PFO list
     std::string m_showerPfoListName; ///< Name of input shower PFO list
     std::string m_trainingFileName; ///< Name of the output training file
-    std::string m_modelFileNameU; ///< Model file name for U view
-    std::string m_modelFileNameV; ///< Model file name for V view
-    std::string m_modelFileNameW; ///< Model file name for W view
-    LArDLHelper::TorchModel m_modelU; ///< Model for the U view
-    LArDLHelper::TorchModel m_modelV; ///< Model for the V view
-    LArDLHelper::TorchModel m_modelW; ///< Model for the W view
+    std::string m_modelFileName; ///< Model file name
+    LArDLHelper::TorchModel m_model; ///< Model
 };
 
 } // namespace lar_dl_content
