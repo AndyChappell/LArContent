@@ -24,14 +24,16 @@ public:
      */
     PfoValidationAlgorithm();
 
+    /**
+     *  @brief  Destructor
+     */
+    ~PfoValidationAlgorithm();
+
 private:
     pandora::StatusCode Run();
     pandora::StatusCode ReadSettings(const pandora::TiXmlHandle xmlHandle);
 
-    std::string m_caloHitListName;                       ///< Name of input calo hit list
-    std::string m_pfoListName;                           ///< Name of input pfo list
-    LArMCParticleHelper::PrimaryParameters m_parameters; ///< Parameters used to decide when an MCParticle is reconstructable
-    unsigned int m_nMatchesToShow;                       ///< The maximum number of MCParticle to Pfo matches to show
+    pandora::StringVector m_pfoListNames; ///< Name of input pfo lists
 };
 
 } // namespace lar_content
