@@ -154,17 +154,20 @@ void HitCorrelationAlgorithm::Correlate(const CaloHitList &caloHitList1, const C
     while (iter1 != caloHitList1.end())
     {
         const CaloHit *const pCaloHit1{*iter1};
+        const float hitWidth1{0.5f * pCaloHit1->GetCellSize1()};
         const float x1{pCaloHit1->GetPositionVector().GetX()};
         if (x1 > maxX)
             break;
-        // Make this half the wire pitch for W
-        const float lowX{x1 - 0.025f};
-        const float highX{x1 + 0.025f};
+        const float lowX1{x1 - hitWidth1};
+        const float highX1{x1 + hitWidth1};
 
         for (const CaloHit *pCaloHit2 : caloHitList2)
         {
             const float x2{pCaloHit2->GetPositionVector().GetX()};
-            if ((x2 >= lowX) && (x2 <= highX))
+            const float hitWidth2{0.5f * pCaloHit2->GetCellSize1()};
+            const float lowX2{x2 - hitWidth2};
+            const float highX2{x2 + hitWidth2};
+            if (((x2 >= lowX1) && (x2 <= highX1)) || ((x1 >= lowX2) && (x1 <= highX2)))
             {
                 hitMap[pCaloHit1].emplace_back(pCaloHit2);
                 hitMap[pCaloHit2].emplace_back(pCaloHit1);
