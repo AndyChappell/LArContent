@@ -56,6 +56,14 @@ private:
     pandora::StatusCode ProcessPfoList(const std::string &pfoListName) const;
 
     /**
+     *  @brief  Process a single PFO view
+     *
+     *  @param  caloHitList The CaloHitList from a single view
+     *  @param  featureVector The feature vector to populate
+     */
+    void ProcessPfoView(const pandora::CaloHitList &caloHitList, lar_content::LArMvaHelper::MvaFeatureVector &featureVector) const;
+
+    /**
      *  @brief  Produce training output for PFO image generation
      *
      *  @param  pfoList The list of PFOs for which a training images should be made

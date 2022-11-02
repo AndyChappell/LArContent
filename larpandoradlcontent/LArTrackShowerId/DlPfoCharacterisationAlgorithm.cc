@@ -62,7 +62,7 @@ StatusCode DlPfoCharacterisationAlgorithm::Infer()
             continue;
 
         LArDLHelper::TorchInput input;
-        LArDLHelper::InitialiseInput({static_cast<int>(pPfoList->size()), 81}, input);
+        LArDLHelper::InitialiseInput({static_cast<int>(pPfoList->size()), 243}, input);
         this->PrepareNetworkInput(*pPfoList, input);
 
         // Run the input through the trained model and get the output accessor
@@ -118,8 +118,8 @@ StatusCode DlPfoCharacterisationAlgorithm::Infer()
 
 StatusCode DlPfoCharacterisationAlgorithm::PrepareTrainingSample()
 {
-    PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, this->ProcessPfoList(m_trackPfoListName));
-    PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, this->ProcessPfoList(m_showerPfoListName));
+    this->ProcessPfoList(m_trackPfoListName);
+    this->ProcessPfoList(m_showerPfoListName);
 
     return STATUS_CODE_SUCCESS;
 }
@@ -129,57 +129,67 @@ StatusCode DlPfoCharacterisationAlgorithm::PrepareTrainingSample()
 void DlPfoCharacterisationAlgorithm::PrepareNetworkInput(const PfoList& pfoList, LArDLHelper::TorchInput &input) const
 {
     int p{0};
+    auto accessor = input.accessor<float, 2>();
     for (const ParticleFlowObject *const pPfo : pfoList)
     {
-        CaloHitList caloHitList;
-        LArPfoHelper::GetCaloHits(pPfo, HitType::TPC_VIEW_W, caloHitList);
-
-        CartesianVector origin(0.f, 0.f, 0.f), longitudinal(0.f, 0.f, 0.f), transverse(0.f, 0.f, 0.f);
-        LArCalorimetryHelper::GetPrincipalAxes(caloHitList, origin, longitudinal, transverse);
-        FloatVector longitudinalProfile{LArCalorimetryHelper::GetLongitudinalAdcProfile(caloHitList, origin, longitudinal, 0.1f, 14.f)};
-        FloatVector transverseProfile{LArCalorimetryHelper::GetTransverseAdcProfile(caloHitList, origin, transverse, 0.15f, 9.f)};
-
-        FloatVector startProfile(30), endProfile(30);
-        int i{0};
-        // Starting profile
-        for (const float adc : longitudinalProfile)
+        int e{0};
+        for (const HitType view : {TPC_VIEW_U, TPC_VIEW_V, TPC_VIEW_W})
         {
-            startProfile[i] = adc;
-            ++i;
-            if (i == 30)
-                break;
-        }
-        // Ending profile
-        i = 29;
-        for (auto iter = longitudinalProfile.rbegin(); iter != longitudinalProfile.rend(); ++iter)
-        {
-            endProfile[i] = *iter;
-            --i;
-            if (i < 0)
-                break;
-        }
-        // Transverse profile
-        size_t length{transverseProfile.size()};
-        size_t midPoint{length / 2};
-        const int nRadialBins{10};
-        FloatVector tProfile(2 * nRadialBins + 1);
-        for (i = -nRadialBins; i <= nRadialBins; ++i)
-        {
-            if ((i + static_cast<long>(midPoint)) < 0)
-                continue;
-            if ((i + static_cast<long>(midPoint)) >= static_cast<long>(transverseProfile.size()))
-                break;
-            tProfile[i + nRadialBins] = transverseProfile[i + midPoint];
-        }
+            CaloHitList caloHitList;
+            LArPfoHelper::GetCaloHits(pPfo, view, caloHitList);
 
-        auto accessor = input.accessor<float, 2>();
-        i = 0;
-        for (float deposit : startProfile)
-            accessor[p][i++] = deposit;
-        for (float deposit : endProfile)
-            accessor[p][i++] = deposit;
-        for (float deposit : tProfile)
-            accessor[p][i++] = deposit;
+            FloatVector longitudinalProfile, transverseProfile;
+            try
+            {
+                CartesianVector origin(0.f, 0.f, 0.f), longitudinal(0.f, 0.f, 0.f), transverse(0.f, 0.f, 0.f);
+                LArCalorimetryHelper::GetPrincipalAxes(caloHitList, origin, longitudinal, transverse);
+                longitudinalProfile = LArCalorimetryHelper::GetLongitudinalAdcProfile(caloHitList, origin, longitudinal, 0.1f, 14.f);
+                transverseProfile = LArCalorimetryHelper::GetTransverseAdcProfile(caloHitList, origin, transverse, 0.15f, 9.f);
+            }
+            catch (...)
+            {
+            }
+
+            FloatVector startProfile(30), endProfile(30);
+            int i{0};
+            // Starting profile
+            for (const float adc : longitudinalProfile)
+            {
+                startProfile[i] = adc;
+                ++i;
+                if (i == 30)
+                    break;
+            }
+            // Ending profile
+            i = 29;
+            for (auto iter = longitudinalProfile.rbegin(); iter != longitudinalProfile.rend(); ++iter)
+            {
+                endProfile[i] = *iter;
+                --i;
+                if (i < 0)
+                    break;
+            }
+            // Transverse profile
+            size_t length{transverseProfile.size()};
+            size_t midPoint{length / 2};
+            const int nRadialBins{10};
+            FloatVector tProfile(2 * nRadialBins + 1);
+            for (i = -nRadialBins; i <= nRadialBins; ++i)
+            {
+                if ((i + static_cast<long>(midPoint)) < 0)
+                    continue;
+                if ((i + static_cast<long>(midPoint)) >= static_cast<long>(transverseProfile.size()))
+                    break;
+                tProfile[i + nRadialBins] = transverseProfile[i + midPoint];
+            }
+
+            for (float deposit : startProfile)
+                accessor[p][e++] = deposit;
+            for (float deposit : endProfile)
+                accessor[p][e++] = deposit;
+            for (float deposit : tProfile)
+                accessor[p][e++] = deposit;
+        }
         ++p;
     }
 }
@@ -194,15 +204,18 @@ StatusCode DlPfoCharacterisationAlgorithm::ProcessPfoList(const std::string &pfo
 
     for (const ParticleFlowObject *const pPfo : *pPfoList)
     {
-        CaloHitList caloHitList;
-        LArPfoHelper::GetCaloHits(pPfo, HitType::TPC_VIEW_W, caloHitList);
-        if (caloHitList.size() < 15)
-            continue;
+        CaloHitList caloHitList, caloHitListU, caloHitListV, caloHitListW;
+        LArPfoHelper::GetAllCaloHits(pPfo, caloHitList);
+        LArPfoHelper::GetCaloHits(pPfo, HitType::TPC_VIEW_U, caloHitListU);
+        LArPfoHelper::GetCaloHits(pPfo, HitType::TPC_VIEW_V, caloHitListV);
+        LArPfoHelper::GetCaloHits(pPfo, HitType::TPC_VIEW_W, caloHitListW);
+        int nGoodViews{0};
+        nGoodViews += caloHitListU.size() >= 15 ? 1 : 0;
+        nGoodViews += caloHitListV.size() >= 15 ? 1 : 0;
+        nGoodViews += caloHitListW.size() >= 15 ? 1 : 0;
 
-        CartesianVector origin(0.f, 0.f, 0.f), longitudinal(0.f, 0.f, 0.f), transverse(0.f, 0.f, 0.f);
-        LArCalorimetryHelper::GetPrincipalAxes(caloHitList, origin, longitudinal, transverse);
-        FloatVector longitudinalProfile{LArCalorimetryHelper::GetLongitudinalAdcProfile(caloHitList, origin, longitudinal, 0.1f, 14.f)};
-        FloatVector transverseProfile{LArCalorimetryHelper::GetTransverseAdcProfile(caloHitList, origin, transverse, 0.15f, 9.f)};
+        if (caloHitList.size() < 15 || nGoodViews < 2)
+            continue;
 
         float showerContribution{0.f}, trackContribution{0.f}, neutronContribution{0.f}, totalContribution{0.f};
         for (const CaloHit *pCaloHit : caloHitList)
@@ -245,7 +258,10 @@ StatusCode DlPfoCharacterisationAlgorithm::ProcessPfoList(const std::string &pfo
         featureVector.emplace_back(static_cast<double>(trackFraction));
         const int cls{trackFraction > 0.5f ? 1 : 2};
         featureVector.emplace_back(static_cast<double>(cls));
-        this->PopulateFeatureVector(longitudinalProfile, transverseProfile, featureVector);
+
+        this->ProcessPfoView(caloHitListU, featureVector);
+        this->ProcessPfoView(caloHitListV, featureVector);
+        this->ProcessPfoView(caloHitListW, featureVector);
         PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, LArMvaHelper::ProduceTrainingExample(m_trainingFileName, true, featureVector));
 
         //std::cout << "NHits " << caloHitList.size() << " Neutron " << isDownstreamNeutron << " Track Frac " << trackFraction << " CLS " << cls << std::endl;
@@ -255,6 +271,26 @@ StatusCode DlPfoCharacterisationAlgorithm::ProcessPfoList(const std::string &pfo
     }
 
     return STATUS_CODE_SUCCESS;
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+void DlPfoCharacterisationAlgorithm::ProcessPfoView(const CaloHitList &caloHitList, LArMvaHelper::MvaFeatureVector &featureVector) const
+{
+    CartesianVector origin(0.f, 0.f, 0.f), longitudinal(0.f, 0.f, 0.f), transverse(0.f, 0.f, 0.f);
+    try
+    {
+        LArCalorimetryHelper::GetPrincipalAxes(caloHitList, origin, longitudinal, transverse);
+        FloatVector longitudinalProfile{LArCalorimetryHelper::GetLongitudinalAdcProfile(caloHitList, origin, longitudinal, 0.1f, 14.f)};
+        FloatVector transverseProfile{LArCalorimetryHelper::GetTransverseAdcProfile(caloHitList, origin, transverse, 0.15f, 9.f)};
+        this->PopulateFeatureVector(longitudinalProfile, transverseProfile, featureVector);
+    }
+    catch (...)
+    {
+        // Still need to produce empty profiles if a view has insuffient hits for PCA
+        FloatVector longitudinalProfile, transverseProfile;
+        this->PopulateFeatureVector(longitudinalProfile, transverseProfile, featureVector);
+    }
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
