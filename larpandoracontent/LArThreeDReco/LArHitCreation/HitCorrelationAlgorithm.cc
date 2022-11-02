@@ -14,6 +14,7 @@
 #include "larpandoracontent/LArHelpers/LArGeometryHelper.h"
 #include "larpandoracontent/LArObjects/LArCaloHit.h"
 
+#include <chrono>
 using namespace pandora;
 
 namespace lar_content
@@ -53,26 +54,32 @@ StatusCode HitCorrelationAlgorithm::Run()
     CaloHitList caloHitList3D;
     for (const auto & [ key, volume ] : m_volumeMap)
     {
-        std::cout << "Volume " << key << std::endl; 
+        std::cout << "Volume " << key;
         const CaloHitList caloHitListU{volume.GetCaloHits(HitType::TPC_VIEW_U)};
         const CaloHitList caloHitListV{volume.GetCaloHits(HitType::TPC_VIEW_V)};
         const CaloHitList caloHitListW{volume.GetCaloHits(HitType::TPC_VIEW_W)};
+        std::cout << " Hits: " << (caloHitListU.size() + caloHitListV.size() + caloHitListW.size()) << std::endl;
         HitMap hitMap;
+        auto start{std::chrono::high_resolution_clock::now()};
         this->Correlate(caloHitListU, caloHitListV, hitMap);
         this->Correlate(caloHitListU, caloHitListW, hitMap);
         this->Correlate(caloHitListV, caloHitListW, hitMap);
+        auto stop{std::chrono::high_resolution_clock::now()};
+        std::cout << "Correlate " << std::chrono::duration_cast<std::chrono::microseconds>(stop - start).count() << std::endl;
 
+        start = std::chrono::high_resolution_clock::now();
         HitTable usedHits;
         LArTripletVector hitTriplets;
-        LArDoubletVector hitDoublets;
         for (const auto & [pCaloHit, caloHits] : hitMap)
         {
             LArSet hitSet{pCaloHit};
-            this->FindRelationships(caloHits, hitMap, hitSet);
+            this->FindRelationships(caloHits, hitMap, 2, hitSet);
             this->MakeHitTriplets(hitSet, usedHits, hitTriplets);
-            this->MakeHitDoublets(hitSet, usedHits, hitDoublets);
         }
+        stop = std::chrono::high_resolution_clock::now();
+        std::cout << "Find and Make " << std::chrono::duration_cast<std::chrono::microseconds>(stop - start).count() << std::endl;
 
+        start = std::chrono::high_resolution_clock::now();
         for (const LArTriplet &triplet : hitTriplets)
         {
             const CaloHit *const pCaloHitU{std::get<0>(triplet)};
@@ -84,8 +91,8 @@ StatusCode HitCorrelationAlgorithm::Run()
             CartesianVector pos3D(0, 0, 0);
             float chi2{0.f};
             LArGeometryHelper::MergeThreePositions3D(this->GetPandora(), TPC_VIEW_U, TPC_VIEW_V, TPC_VIEW_W, posU, posV, posW, pos3D, chi2);
-            std::cout << "In [(" << posU.GetX() << "," << posU.GetZ() << ") (" << posV.GetX() << "," << posV.GetZ() << ") (" <<
-                posW.GetX() << "," << posW.GetZ() << ")] Out (" << pos3D.GetX() << "," << pos3D.GetZ() << ") chi2: " << chi2 << std::endl;
+            //std::cout << "In [(" << posU.GetX() << "," << posU.GetZ() << ") (" << posV.GetX() << "," << posV.GetZ() << ") (" <<
+            //    posW.GetX() << "," << posW.GetZ() << ")] Out (" << pos3D.GetX() << "," << pos3D.GetZ() << ") chi2: " << chi2 << std::endl;
             const CaloHit *pCaloHit3D{nullptr};
             this->Create3DHit(triplet, pos3D, pCaloHit3D);
 
@@ -94,12 +101,11 @@ StatusCode HitCorrelationAlgorithm::Run()
 
             caloHitList3D.emplace_back(pCaloHit3D);
         }
+        stop = std::chrono::high_resolution_clock::now();
+        std::cout << "Merge " << std::chrono::duration_cast<std::chrono::microseconds>(stop - start).count() << std::endl;
 
         std::cout << "Inputs: " << caloHitListU.size() << " " << caloHitListV.size() << " " << caloHitListW.size() << std::endl;
         std::cout << "Triplets: " << hitTriplets.size() << std::endl;
-        // Doublets probably aren't any good without context. Should try to connect them to nearby 3D hits for some constraints
-        // Or perhaps relax the 3 hit distance constraint for a second pass
-        std::cout << "Doublets: " << hitDoublets.size() << std::endl;
     }
 
     const ClusterList *pClusterList{nullptr};
@@ -122,14 +128,15 @@ StatusCode HitCorrelationAlgorithm::Run()
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-void HitCorrelationAlgorithm::FindRelationships(const CaloHitList &caloHitList, const HitMap &hitMap, LArSet &hitSet) const
+void HitCorrelationAlgorithm::FindRelationships(const CaloHitList &caloHitList, const HitMap &hitMap, const int depth, LArSet &hitSet) const
 {
     for (const CaloHit *pCaloHit : caloHitList)
     {
         if (hitSet.find(pCaloHit) == hitSet.end())
         {
             hitSet.insert(pCaloHit);
-            this->FindRelationships(hitMap.at(pCaloHit), hitMap, hitSet);
+            if (depth > 1)
+                this->FindRelationships(hitMap.at(pCaloHit), hitMap, depth - 1, hitSet);
         }
     }
 }
@@ -235,108 +242,6 @@ void HitCorrelationAlgorithm::MakeHitTriplets(const LArSet &caloHitSet, HitTable
             usedHits[std::get<1>(bestTriplet)] = true;
             usedHits[std::get<2>(bestTriplet)] = true;
             hitTriplets.emplace_back(bestTriplet);
-        }
-    }
-}
-
-//------------------------------------------------------------------------------------------------------------------------------------------
-
-void HitCorrelationAlgorithm::MakeHitDoublets(const LArSet &caloHitSet, HitTable &usedHits, LArDoubletVector &hitDoublets) const
-{
-    CaloHitList caloHitListU, caloHitListV, caloHitListW;
-
-    for (const CaloHit *const pCaloHit : caloHitSet)
-    {
-        switch (pCaloHit->GetHitType())
-        {
-            case TPC_VIEW_U:
-                caloHitListU.emplace_back(pCaloHit);
-                break;
-            case TPC_VIEW_V:
-                caloHitListV.emplace_back(pCaloHit);
-                break;
-            default:
-                caloHitListW.emplace_back(pCaloHit);
-                break;
-        }
-    }
-
-    CartesianVector pos3D(0, 0, 0);
-    for (const CaloHit *const pCaloHitU : caloHitListU)
-    {
-        if (usedHits.find(pCaloHitU) != usedHits.end())
-            continue;
-        LArDoublet bestDoublet({nullptr, nullptr});
-        float bestChi2{std::numeric_limits<float>::max()};
-        const CartesianVector &posU{pCaloHitU->GetPositionVector()};
-        for (const CaloHit *const pCaloHitV : caloHitListV)
-        {
-            if (usedHits.find(pCaloHitV) != usedHits.end())
-                continue;
-            const CartesianVector &posV{pCaloHitV->GetPositionVector()};
-            float chi2{0.f};
-            LArGeometryHelper::MergeTwoPositions3D(this->GetPandora(), TPC_VIEW_U, TPC_VIEW_V, posU, posV, pos3D, chi2);
-            if (chi2 < 1e-4f)
-            {
-                if (chi2 < bestChi2)
-                {
-                    bestDoublet = std::make_pair(pCaloHitU, pCaloHitV);
-                    bestChi2 = chi2;
-                }
-            }
-        }
-        for (const CaloHit *const pCaloHitW : caloHitListW)
-        {
-            if (usedHits.find(pCaloHitW) != usedHits.end())
-                continue;
-            const CartesianVector &posW{pCaloHitW->GetPositionVector()};
-            float chi2{0.f};
-            LArGeometryHelper::MergeTwoPositions3D(this->GetPandora(), TPC_VIEW_U, TPC_VIEW_W, posU, posW, pos3D, chi2);
-            if (chi2 < 1e-4f)
-            {
-                if (chi2 < bestChi2)
-                {
-                    bestDoublet = std::make_pair(pCaloHitU, pCaloHitW);
-                    bestChi2 = chi2;
-                }
-            }
-        }
-        if (bestChi2 < std::numeric_limits<float>::max())
-        {
-            usedHits[std::get<0>(bestDoublet)] = true;
-            usedHits[std::get<1>(bestDoublet)] = true;
-            hitDoublets.emplace_back(bestDoublet);
-        }
-    }
-
-    for (const CaloHit *const pCaloHitV : caloHitListV)
-    {
-        if (usedHits.find(pCaloHitV) != usedHits.end())
-            continue;
-        LArDoublet bestDoublet({nullptr, nullptr});
-        float bestChi2{std::numeric_limits<float>::max()};
-        const CartesianVector &posV{pCaloHitV->GetPositionVector()};
-        for (const CaloHit *const pCaloHitW : caloHitListW)
-        {
-            if (usedHits.find(pCaloHitW) != usedHits.end())
-                continue;
-            const CartesianVector &posW{pCaloHitW->GetPositionVector()};
-            float chi2{0.f};
-            LArGeometryHelper::MergeTwoPositions3D(this->GetPandora(), TPC_VIEW_V, TPC_VIEW_W, posV, posW, pos3D, chi2);
-            if (chi2 < 0.1f)
-            {
-                if (chi2 < bestChi2)
-                {
-                    bestDoublet = std::make_pair(pCaloHitV, pCaloHitW);
-                    bestChi2 = chi2;
-                }
-            }
-        }
-        if (bestChi2 < std::numeric_limits<float>::max())
-        {
-            usedHits[std::get<0>(bestDoublet)] = true;
-            usedHits[std::get<1>(bestDoublet)] = true;
-            hitDoublets.emplace_back(bestDoublet);
         }
     }
 }

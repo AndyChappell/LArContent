@@ -35,9 +35,7 @@ private:
     typedef std::map<const pandora::CaloHit *, bool> HitTable;
     typedef std::set<const pandora::CaloHit *> LArSet;
     typedef std::tuple<const pandora::CaloHit *, const pandora::CaloHit *, const pandora::CaloHit *> LArTriplet;
-    typedef std::pair<const pandora::CaloHit *, const pandora::CaloHit *> LArDoublet;
     typedef std::vector<LArTriplet> LArTripletVector;
-    typedef std::vector<LArDoublet> LArDoubletVector;
 
     /**
      *  @brief  Find pairs of 2D hits that might originate from the same 3D hit
@@ -53,9 +51,10 @@ private:
      *
      *  @param  caloHitList The seed set of hits
      *  @param  hitMap A map from CaloHits in one view to CaloHits in the other
+     *  @param  depth The depth to which relationships should be followed
      *  @param  hitSet The output set of related hits
      **/
-    void FindRelationships(const pandora::CaloHitList &caloHitList, const HitMap &hitMap, LArSet &hitSet) const;
+    void FindRelationships(const pandora::CaloHitList &caloHitList, const HitMap &hitMap, const int depth, LArSet &hitSet) const;
 
     /**
      *  @brief  Determine which hits should form 3D hits
@@ -65,15 +64,6 @@ private:
      *  @param  hitTriplets The output vector of hit triplets
      **/
     void MakeHitTriplets(const LArSet &caloHitSet, HitTable &usedHits, LArTripletVector &hitTriplets) const;
-
-    /**
-     *  @brief  Determine which hits should form 3D hits
-     *
-     *  @param  caloHitSet The set of hits for which doublets should be made
-     *  @param  usedHits A map indicating which hits have already been used
-     *  @param  hitDoublets The output vector of hit doublets
-     **/
-    void MakeHitDoublets(const LArSet &caloHitSet, HitTable &usedHits, LArDoubletVector &hitDoublets) const;
 
     pandora::StatusCode Create3DHit(const LArTriplet &hitTriplet, const pandora::CartesianVector &pos, const pandora::CaloHit *&pCaloHit3D) const;
 
