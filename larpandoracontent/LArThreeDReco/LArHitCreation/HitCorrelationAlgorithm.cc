@@ -58,7 +58,7 @@ StatusCode HitCorrelationAlgorithm::Run()
         CaloHitList caloHitListU{volume.GetCaloHits(HitType::TPC_VIEW_U)};
         CaloHitList caloHitListV{volume.GetCaloHits(HitType::TPC_VIEW_V)};
         CaloHitList caloHitListW{volume.GetCaloHits(HitType::TPC_VIEW_W)};
-        for (float scale : {0.1f, 0.33f, 1.0f})
+        for (float scale : {0.1f, 0.25f, 0.5f, 1.0f})
         {
             std::cout << " Scale " << scale << std::endl;
             std::cout << " Hits: " << (caloHitListU.size() + caloHitListV.size() + caloHitListW.size()) << std::endl;
