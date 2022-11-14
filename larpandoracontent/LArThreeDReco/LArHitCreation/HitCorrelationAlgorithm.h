@@ -42,9 +42,10 @@ private:
      *
      *  @param  caloHitList1 A list of CaloHits in a view, sorted by x position
      *  @param  caloHitList2 A second  list of CaloHits in a view, sorted by x position
+     *  @param  scale The scale to apply to the search region
      *  @param  hitMap A map from CaloHits in one view to CaloHits in the other
      **/
-    void Correlate(const pandora::CaloHitList &caloHitList1, const pandora::CaloHitList &caloHitList2, HitMap &hitMap) const;
+    void Correlate(const pandora::CaloHitList &caloHitList1, const pandora::CaloHitList &caloHitList2, const float scale, HitMap &hitMap) const;
 
     /**
      *  @brief  Find all of the potentially related hits associated to a list of hits
