@@ -229,18 +229,19 @@ StatusCode DlVertexingAlgorithm::Infer()
             canvas[row] = new float[canvasWidth]{};
 
         // we want the maximum value in the num_classes dimension (1) for every pixel
-        auto classes{torch::argmax(output, 1)};
+        //auto classes{torch::argmax(output, 1)};
         // the argmax result is a 1 x height x width tensor where each element is a class id
-        auto classesAccessor{classes.accessor<long, 3>()};
+        //auto classesAccessor{classes.accessor<long, 3>()};
+        auto accessor{output.accessor<float, 4>()};
         const double scaleFactor{std::sqrt(m_height * m_height + m_width * m_width)};
         std::map<int, bool> haveSeenMap;
         for (const auto [row, col] : pixelVector)
         {
-            const auto cls{classesAccessor[0][row][col]};
-            if (cls > 0 && cls < m_nClasses)
+            const auto distance{accessor[0][0][row][col]};
+            if (distance > 0 && distance < 0.7f)
             {
-                const int inner{static_cast<int>(std::round(std::ceil(scaleFactor * m_thresholds[cls - 1])))};
-                const int outer{static_cast<int>(std::round(std::ceil(scaleFactor * m_thresholds[cls])))};
+                const int inner{static_cast<int>(std::round(std::max(0., std::ceil(scaleFactor * distance - 7))))};
+                const int outer{static_cast<int>(std::round(std::ceil(scaleFactor * distance + 7)))};
                 this->DrawRing(canvas, row + rowOffset, col + colOffset, inner, outer, 1.f / (outer * outer - inner * inner));
             }
         }
@@ -484,19 +485,14 @@ void DlVertexingAlgorithm::GetCanvasParameters(const LArDLHelper::TorchOutput &n
     int &colOffset, int &rowOffset, int &width, int &height) const
 {
     const double scaleFactor{std::sqrt(m_height * m_height + m_width * m_width)};
-    // output is a 1 x num_classes x height x width tensor
-    // we want the maximum value in the num_classes dimension (1) for every pixel
-    auto classes{torch::argmax(networkOutput, 1)};
-    // the argmax result is a 1 x height x width tensor where each element is a class id
-    auto classesAccessor{classes.accessor<long, 3>()};
+    auto accessor{networkOutput.accessor<float, 4>()};
     int colOffsetMin{0}, colOffsetMax{0}, rowOffsetMin{0}, rowOffsetMax{0};
     for (const auto [row, col] : pixelVector)
     {
-        const auto cls{classesAccessor[0][row][col]};
-        const double threshold{m_thresholds[cls]};
-        if (threshold > 0. && threshold < 1.)
+        const auto loci{accessor[0][0][row][col]};
+        if (loci > 0 && loci < 0.7f)
         {
-            const int distance = static_cast<int>(std::round(std::ceil(scaleFactor * threshold)));
+            const int distance = static_cast<int>(std::round(std::ceil(scaleFactor * loci + 7)));
             if ((row - distance) < rowOffsetMin)
                 rowOffsetMin = row - distance;
             if ((row + distance) > rowOffsetMax)
