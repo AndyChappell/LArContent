@@ -74,7 +74,41 @@ StatusCode DlVertexingAlgorithm::PrepareTrainingSample()
     PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, this->GetMCToHitsMap(mcToHitsMap));
     MCParticleList hierarchy;
     PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, this->CompleteMCHierarchy(mcToHitsMap, hierarchy));
-    std::normal_distribution<> gauss(0.f, 15.f);
+    std::uniform_real_distribution<> uniform(-5.f, +5.f);
+
+    CartesianPointVector vertices;
+    for (const MCParticle *mc : hierarchy)
+    {
+        if (LArMCParticleHelper::IsNeutrino(mc))
+            vertices.push_back(mc->GetVertex());
+    }
+    if (vertices.empty())
+        return STATUS_CODE_NOT_FOUND;
+    const CartesianVector &vertex{vertices.front()};
+    const double xJitter{m_pass > 1 ? uniform(m_rng) : 0.};
+    const double xVtx{vertex.GetX() + xJitter};
+
+    // Get hit distribution left/right asymmetry
+    int nHitsLeft{0}, nHitsRight{0};
+    for (const std::string &listname : m_caloHitListNames)
+    {
+        const CaloHitList *pCaloHitList(nullptr);
+        PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetList(*this, listname, pCaloHitList));
+        if (pCaloHitList->empty())
+            continue;
+        for (const CaloHit *const pCaloHit : *pCaloHitList)
+        {
+            const CartesianVector &pos{pCaloHit->GetPositionVector()};
+            if (pos.GetX() <= xVtx)
+                ++nHitsLeft;
+            else
+                ++nHitsRight;
+        }
+    }
+    const int nHitsTotal{nHitsLeft + nHitsRight};
+    if (nHitsTotal == 0)
+        return STATUS_CODE_NOT_FOUND;
+    const float xAsymmetry{nHitsLeft / static_cast<float>(nHitsTotal)};
 
     for (const std::string &listname : m_caloHitListNames)
     {
@@ -89,15 +123,6 @@ StatusCode DlVertexingAlgorithm::PrepareTrainingSample()
         if (!(isU || isV || isW))
             return STATUS_CODE_NOT_ALLOWED;
 
-        CartesianPointVector vertices;
-        for (const MCParticle *mc : hierarchy)
-        {
-            if (LArMCParticleHelper::IsNeutrino(mc))
-                vertices.push_back(mc->GetVertex());
-        }
-        if (vertices.empty())
-            continue;
-        const CartesianVector &vertex{vertices.front()};
         const std::string trainingFilename{m_trainingOutputFile + "_" + listname + ".csv"};
         const unsigned long nVertices{1};
         unsigned long nHits{0};
@@ -105,25 +130,37 @@ StatusCode DlVertexingAlgorithm::PrepareTrainingSample()
 
         // Vertices
         const LArTransformationPlugin *transform{this->GetPandora().GetPlugins()->GetLArTransformationPlugin()};
-        const double xVtx{vertex.GetX()};
-        double zVtx{0.};
+        double zVtx{m_pass > 1 ? uniform(m_rng) : 0.};
         if (isW)
-            zVtx = transform->YZtoW(vertex.GetY(), vertex.GetZ());
+            zVtx += transform->YZtoW(vertex.GetY(), vertex.GetZ());
         else if (isV)
-            zVtx = transform->YZtoV(vertex.GetY(), vertex.GetZ());
+            zVtx += transform->YZtoV(vertex.GetY(), vertex.GetZ());
         else
             zVtx = transform->YZtoU(vertex.GetY(), vertex.GetZ());
 
-        // Calo hits
+        // Get hit distribution upstream/downstream asymmetry
+        int nHitsUpstream{0}, nHitsDownstream{0};
+        for (const CaloHit *const pCaloHit : *pCaloHitList)
+        {
+            const CartesianVector &pos{pCaloHit->GetPositionVector()};
+            if (pos.GetZ() <= zVtx)
+                ++nHitsUpstream;
+            else
+                ++nHitsDownstream;
+        }
+        const int nHitsViewTotal{nHitsUpstream + nHitsDownstream};
+        if (nHitsViewTotal == 0)
+            continue;
+        const float zAsymmetry{nHitsUpstream / static_cast<float>(nHitsViewTotal)};
+
         double xMin{0.f}, xMax{0.f}, zMin{0.f}, zMax{0.f};
-        // If we're on a refinement pass, constrain the region of interest
+        // If we're on a refinement pass, constrain the region of interest, but try to ensure the hit dense region is preferred
         if (m_pass > 1)
         {
-            const double xJitter{gauss(m_rng)}, zJitter{gauss(m_rng)};
-            xMin = (xVtx + xJitter) - m_regionSize;
-            xMax = (xVtx + xJitter) + m_regionSize;
-            zMin = (zVtx + zJitter) - m_regionSize;
-            zMax = (zVtx + zJitter) + m_regionSize;
+            xMin = xVtx - 2 * xAsymmetry * m_regionSize;
+            xMax = xMin + 2 * m_regionSize;
+            zMin = zVtx - 2 * zAsymmetry * m_regionSize;
+            zMax = zMin + 2 * m_regionSize;
         }
 
         LArMvaHelper::MvaFeatureVector featureVector;
