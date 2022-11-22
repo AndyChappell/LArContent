@@ -111,13 +111,14 @@ private:
      *
      *  @param  networkOutput The TorchOutput object populated by the network inference step
      *  @param  pixelVector The vector of populated pixels
+     *  @param  view Thew view under consideration
      *  @param  columnOffset The output column offset for the canvas
      *  @param  rowOffset The output row offset for the canvas
      *  @param  width The output width for the canvas
      *  @param  height The output height for the canvas
      */
-    void GetCanvasParameters(const LArDLHelper::TorchOutput &networkOutput, const PixelVector &pixelVector, int &columnOffset,
-        int &rowOffset, int &width, int &height) const;
+    void GetCanvasParameters(const LArDLHelper::TorchOutput &networkOutput, const PixelVector &pixelVector, const pandora::HitType view,
+        int &columnOffset, int &rowOffset, int &width, int &height) const;
 
     /**
      *  @brief  Add a filled ring to the specified canvas.
@@ -237,7 +238,8 @@ private:
     std::string m_rootTreeName;               ///< The ROOT tree name
     std::string m_rootFileName;               ///< The ROOT file name
     std::mt19937 m_rng;                       ///< The random number generator
-    std::vector<double> m_thresholds;         ///< Distance class thresholds
+    std::map<pandora::HitType, std::vector<double>> m_bias; ///< Bias associated with network inference
+    std::map<pandora::HitType, std::vector<double>> m_errors; ///< Errors associated with network inference
     const double PY_EPSILON{1.1920929e-7};    ///< The value of epsilon in Python
 };
 

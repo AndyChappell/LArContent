@@ -222,7 +222,7 @@ StatusCode DlVertexingAlgorithm::Infer()
             LArDLHelper::Forward(m_modelW, inputs, output);
 
         int colOffset{0}, rowOffset{0}, canvasWidth{m_width}, canvasHeight{m_height};
-        this->GetCanvasParameters(output, pixelVector, colOffset, rowOffset, canvasWidth, canvasHeight);
+        this->GetCanvasParameters(output, pixelVector, view, colOffset, rowOffset, canvasWidth, canvasHeight);
 
         float **canvas{new float *[canvasHeight]};
         for (int row = 0; row < canvasHeight; ++row)
@@ -237,11 +237,15 @@ StatusCode DlVertexingAlgorithm::Infer()
         std::map<int, bool> haveSeenMap;
         for (const auto [row, col] : pixelVector)
         {
-            const auto distance{accessor[0][0][row][col]};
-            if (distance > 0 && distance < 0.7f)
+            const auto loci{accessor[0][0][row][col]};
+            if (loci > 0.05f && loci < 0.7f)
             {
-                const int inner{static_cast<int>(std::round(std::max(0., std::ceil(scaleFactor * distance - 7))))};
-                const int outer{static_cast<int>(std::round(std::ceil(scaleFactor * distance + 7)))};
+                const int idx{static_cast<int>(std::floor(loci / 0.05f))};
+                const double bias{m_bias.at(view).at(idx)};
+                const double error{m_errors.at(view).at(idx) * scaleFactor};
+                const double distance{scaleFactor * (loci - bias)};
+                const int inner{static_cast<int>(std::round(std::max(0., std::ceil(distance - error))))};
+                const int outer{static_cast<int>(std::round(std::ceil(distance + error)))};
                 this->DrawRing(canvas, row + rowOffset, col + colOffset, inner, outer, 1.f / (outer * outer - inner * inner));
             }
         }
@@ -481,7 +485,7 @@ StatusCode DlVertexingAlgorithm::MakeWirePlaneCoordinatesFromCanvas(const CaloHi
 
 //-----------------------------------------------------------------------------------------------------------------------------------------
 
-void DlVertexingAlgorithm::GetCanvasParameters(const LArDLHelper::TorchOutput &networkOutput, const PixelVector &pixelVector,
+void DlVertexingAlgorithm::GetCanvasParameters(const LArDLHelper::TorchOutput &networkOutput, const PixelVector &pixelVector, const HitType view,
     int &colOffset, int &rowOffset, int &width, int &height) const
 {
     const double scaleFactor{std::sqrt(m_height * m_height + m_width * m_width)};
@@ -492,7 +496,11 @@ void DlVertexingAlgorithm::GetCanvasParameters(const LArDLHelper::TorchOutput &n
         const auto loci{accessor[0][0][row][col]};
         if (loci > 0 && loci < 0.7f)
         {
-            const int distance = static_cast<int>(std::round(std::ceil(scaleFactor * loci + 7)));
+            const int idx{static_cast<int>(std::floor(loci / 0.05f))};
+            const double bias{m_bias.at(view).at(idx)};
+            const double error{m_errors.at(view).at(idx) * scaleFactor};
+            const double adjust{scaleFactor * (loci - bias)};
+            const int distance{static_cast<int>(std::round(std::ceil(adjust + error)))};
             if ((row - distance) < rowOffsetMin)
                 rowOffsetMin = row - distance;
             if ((row + distance) > rowOffsetMax)
@@ -873,8 +881,6 @@ StatusCode DlVertexingAlgorithm::ReadSettings(const TiXmlHandle xmlHandle)
     PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "Pass", m_pass));
     PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "ImageHeight", m_height));
     PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "ImageWidth", m_width));
-    PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadVectorOfValues(xmlHandle, "DistanceThresholds", m_thresholds));
-    m_nClasses = m_thresholds.size() - 1;
 
     if (m_trainingMode)
     {
@@ -905,6 +911,13 @@ StatusCode DlVertexingAlgorithm::ReadSettings(const TiXmlHandle xmlHandle)
         {
             PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadValue(xmlHandle, "InputVertexListName", m_inputVertexListName));
         }
+
+        PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadVectorOfValues(xmlHandle, "BiasU", m_bias[TPC_VIEW_U]));
+        PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadVectorOfValues(xmlHandle, "BiasV", m_bias[TPC_VIEW_V]));
+        PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadVectorOfValues(xmlHandle, "BiasW", m_bias[TPC_VIEW_W]));
+        PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadVectorOfValues(xmlHandle, "ErrorsU", m_errors[TPC_VIEW_U]));
+        PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadVectorOfValues(xmlHandle, "ErrorsV", m_errors[TPC_VIEW_V]));
+        PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadVectorOfValues(xmlHandle, "ErrorsW", m_errors[TPC_VIEW_W]));
     }
 
     PANDORA_RETURN_RESULT_IF_AND_IF(
