@@ -651,35 +651,72 @@ void DlVertexingAlgorithm::GetHitRegion(const CaloHitList &caloHitList, float &x
 
     if (m_pass > 1)
     {
-        // Constrain the hits to the allowed region if needed
         const VertexList *pVertexList(nullptr);
         PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetList(*this, m_inputVertexListName, pVertexList));
-        if (pVertexList->empty() || caloHitList.empty())
+        if (pVertexList->empty())
             throw StatusCodeException(STATUS_CODE_NOT_FOUND);
-        const CartesianVector &centroid{pVertexList->front()->GetPosition()};
-        const HitType view{caloHitList.front()->GetHitType()};
-        float xCentroid{centroid.GetX()}, zCentroid{0.f};
-        const LArTransformationPlugin *transform{this->GetPandora().GetPlugins()->GetLArTransformationPlugin()};
-        switch (view)
-        {
-            case TPC_VIEW_U:
-                zCentroid = transform->YZtoU(centroid.GetY(), centroid.GetZ());
-                break;
-            case TPC_VIEW_V:
-                zCentroid = transform->YZtoV(centroid.GetY(), centroid.GetZ());
-                break;
-            case TPC_VIEW_W:
-                zCentroid = transform->YZtoW(centroid.GetY(), centroid.GetZ());
-                break;
-            default:
-                throw StatusCodeException(STATUS_CODE_INVALID_PARAMETER);
-                break;
-        }
+        const CartesianVector &vertex{pVertexList->front()->GetPosition()};
 
-        xMin = std::max(xMin, xCentroid - m_regionSize);
-        xMax = std::min(xMax, xCentroid + m_regionSize);
-        zMin = std::max(zMin, zCentroid - m_regionSize);
-        zMax = std::min(zMax, zCentroid + m_regionSize);
+        // Get hit distribution left/right asymmetry
+        int nHitsLeft{0}, nHitsRight{0};
+        const double xVtx{vertex.GetX()};
+        for (const std::string &listname : m_caloHitListNames)
+        {
+            const CaloHitList *pCaloHitList(nullptr);
+            PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetList(*this, listname, pCaloHitList));
+            if (pCaloHitList->empty())
+                continue;
+            for (const CaloHit *const pCaloHit : *pCaloHitList)
+            {
+                const CartesianVector &pos{pCaloHit->GetPositionVector()};
+                if (pos.GetX() <= xVtx)
+                    ++nHitsLeft;
+                else
+                    ++nHitsRight;
+            }
+        }
+        const int nHitsTotal{nHitsLeft + nHitsRight};
+        if (nHitsTotal == 0)
+            throw StatusCodeException(STATUS_CODE_NOT_FOUND);
+        const float xAsymmetry{nHitsLeft / static_cast<float>(nHitsTotal)};
+
+        if (caloHitList.empty())
+            throw StatusCodeException(STATUS_CODE_NOT_FOUND);
+
+        HitType view{caloHitList.front()->GetHitType()};
+        const bool isU{view == TPC_VIEW_U}, isV{view == TPC_VIEW_V}, isW{view == TPC_VIEW_W};
+        if (!(isU || isV || isW))
+            throw StatusCodeException(STATUS_CODE_NOT_ALLOWED);
+
+        // Vertices
+        const LArTransformationPlugin *transform{this->GetPandora().GetPlugins()->GetLArTransformationPlugin()};
+        double zVtx{0.};
+        if (isW)
+            zVtx += transform->YZtoW(vertex.GetY(), vertex.GetZ());
+        else if (isV)
+            zVtx += transform->YZtoV(vertex.GetY(), vertex.GetZ());
+        else
+            zVtx = transform->YZtoU(vertex.GetY(), vertex.GetZ());
+
+        // Get hit distribution upstream/downstream asymmetry
+        int nHitsUpstream{0}, nHitsDownstream{0};
+        for (const CaloHit *const pCaloHit : caloHitList)
+        {
+            const CartesianVector &pos{pCaloHit->GetPositionVector()};
+            if (pos.GetZ() <= zVtx)
+                ++nHitsUpstream;
+            else
+                ++nHitsDownstream;
+        }
+        const int nHitsViewTotal{nHitsUpstream + nHitsDownstream};
+        if (nHitsViewTotal == 0)
+            throw StatusCodeException(STATUS_CODE_NOT_FOUND);
+        const float zAsymmetry{nHitsUpstream / static_cast<float>(nHitsViewTotal)};
+
+        xMin = xVtx - 2 * xAsymmetry * m_regionSize;
+        xMax = xMin + 2 * m_regionSize;
+        zMin = zVtx - 2 * zAsymmetry * m_regionSize;
+        zMax = zMin + 2 * m_regionSize;
     }
 
     // Avoid unreasonable rescaling of very small hit regions
