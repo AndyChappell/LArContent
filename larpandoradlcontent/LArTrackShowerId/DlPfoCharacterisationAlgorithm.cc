@@ -9,11 +9,13 @@
 #include "Pandora/AlgorithmHeaders.h"
 
 #include "larpandoracontent/LArHelpers/LArCalorimetryHelper.h"
+#include "larpandoracontent/LArHelpers/LArClusterHelper.h"
 #include "larpandoracontent/LArHelpers/LArFileHelper.h"
+#include "larpandoracontent/LArHelpers/LArGeometryHelper.h"
 #include "larpandoracontent/LArHelpers/LArPcaHelper.h"
 #include "larpandoracontent/LArHelpers/LArPfoHelper.h"
 #include "larpandoracontent/LArObjects/LArCaloHit.h"
-#include "larpandoracontent/LArUtility/KDTreeLinkerAlgoT.h"
+#include "larpandoracontent/LArUtility/QuadTree.h"
 
 #include "larpandoradlcontent/LArTrackShowerId/DlPfoCharacterisationAlgorithm.h"
 
@@ -200,7 +202,7 @@ StatusCode DlPfoCharacterisationAlgorithm::ProcessPfoList(const std::string &pfo
 {
     const PfoList *pPfoList(nullptr);
     PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetList(*this, pfoListName, pPfoList));
-    //this->MakeTrainingImage(*pPfoList);
+    this->MakeTrainingImage(*pPfoList);
 
     for (const ParticleFlowObject *const pPfo : *pPfoList)
     {
@@ -250,7 +252,8 @@ StatusCode DlPfoCharacterisationAlgorithm::ProcessPfoList(const std::string &pfo
         if (totalContribution <= std::numeric_limits<float>::epsilon())
             continue;
         const float trackFraction{trackContribution / totalContribution};
-        const bool isDownstreamNeutron{neutronContribution > 0.5f ? true : false};
+        const float neutronFraction{neutronContribution / totalContribution};
+        const bool isDownstreamNeutron{neutronFraction > 0.5f ? true : false};
         if (isDownstreamNeutron)
             continue;
 
@@ -262,7 +265,10 @@ StatusCode DlPfoCharacterisationAlgorithm::ProcessPfoList(const std::string &pfo
         this->ProcessPfoView(caloHitListU, featureVector);
         this->ProcessPfoView(caloHitListV, featureVector);
         this->ProcessPfoView(caloHitListW, featureVector);
-        PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, LArMvaHelper::ProduceTrainingExample(m_trainingFileName, true, featureVector));
+        // Temporarily stop producing calorimetric output. Need to figure out how to combine this with image info
+        // Probably need to alter image production to process one PFO-at-a-time and pass in global info from a preprocessing
+        // step to ensure everything can be added to the same feature vector
+        //PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, LArMvaHelper::ProduceTrainingExample(m_trainingFileName, true, featureVector));
 
         //std::cout << "NHits " << caloHitList.size() << " Neutron " << isDownstreamNeutron << " Track Frac " << trackFraction << " CLS " << cls << std::endl;
         //PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1.f, 1.f, 1.f));
@@ -297,9 +303,11 @@ void DlPfoCharacterisationAlgorithm::ProcessPfoView(const CaloHitList &caloHitLi
 
 StatusCode DlPfoCharacterisationAlgorithm::MakeTrainingImage(const PfoList &pfoList) const
 {
-    /*typedef KDTreeLinkerAlgo<const CaloHit *, 2> KDTree;
-    typedef KDTreeNodeInfoT<const pandora::CaloHit *, 2> KDNode;
-    typedef std::vector<KDNode> KDNodeList;*/
+    if (m_visualize)
+    {
+        PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1.f, 1.f, 1.f));
+    }
+
     CaloHitList caloHitListU, caloHitListV, caloHitListW;
     for (const ParticleFlowObject *const pPfo : pfoList)
     {
@@ -307,45 +315,258 @@ StatusCode DlPfoCharacterisationAlgorithm::MakeTrainingImage(const PfoList &pfoL
         LArPfoHelper::GetCaloHits(pPfo, HitType::TPC_VIEW_V, caloHitListV);
         LArPfoHelper::GetCaloHits(pPfo, HitType::TPC_VIEW_W, caloHitListW);
     }
+    QuadTree quadTreeU(caloHitListU);
+    QuadTree quadTreeV(caloHitListV);
+    QuadTree quadTreeW(caloHitListW);
 
     for (const ParticleFlowObject *const pPfo : pfoList)
     {
-        const Vertex *pVertex{LArPfoHelper::GetVertex(pPfo)};
-        const CartesianVector &vertexPos{pVertex->GetPosition()};
-        std::cout << "Vertex: " << vertexPos << std::endl;
+        LArMvaHelper::MvaFeatureVector featureVector;
+        CaloHitList pfoHitListU, pfoHitListV, pfoHitListW, pfoHitList3D, pfoHitListAll;
+        LArPfoHelper::GetAllCaloHits(pPfo, pfoHitListAll);
+        LArPfoHelper::GetCaloHits(pPfo, HitType::TPC_VIEW_U, pfoHitListU);
+        LArPfoHelper::GetCaloHits(pPfo, HitType::TPC_VIEW_V, pfoHitListV);
+        LArPfoHelper::GetCaloHits(pPfo, HitType::TPC_VIEW_W, pfoHitListW);
+        LArPfoHelper::GetCaloHits(pPfo, HitType::TPC_3D, pfoHitList3D);
+        if (pfoHitList3D.empty())
+            continue;
 
+        int nGoodViews{0};
+        nGoodViews += pfoHitListU.size() >= 15 ? 1 : 0;
+        nGoodViews += pfoHitListV.size() >= 15 ? 1 : 0;
+        nGoodViews += pfoHitListW.size() >= 15 ? 1 : 0;
+
+        if (pfoHitListAll.size() < 15 || nGoodViews < 2)
+            continue;
+
+        float showerContribution{0.f}, trackContribution{0.f}, neutronContribution{0.f}, totalContribution{0.f};
+        for (const CaloHit *pCaloHit : pfoHitListAll)
+        {
+            try
+            {
+                const MCParticle *pMCParticle{MCParticleHelper::GetMainMCParticle(pCaloHit)};
+                if (!pMCParticle)
+                    continue;
+                const int absPdg{static_cast<int>(std::abs(pMCParticle->GetParticleId()))};
+                const float adc{pCaloHit->GetInputEnergy()};
+                const MCParticle *pParent{pMCParticle};
+                while (!pParent->GetParentList().empty())
+                {
+                    pParent = pParent->GetParentList().front();
+                    if (std::abs(pParent->GetParticleId()) == NEUTRON)
+                    {
+                        neutronContribution += adc;
+                        break;
+                    }
+                }
+                totalContribution += adc;
+                if (absPdg == E_MINUS || absPdg == PHOTON)
+                    showerContribution += adc;
+                else
+                    trackContribution += adc;
+            }
+            catch (const StatusCodeException &)
+            {
+            }
+        }
+        if (totalContribution <= std::numeric_limits<float>::epsilon())
+            continue;
+        const float trackFraction{trackContribution / totalContribution};
+        const float neutronFraction{neutronContribution / totalContribution};
+        const bool isDownstreamNeutron{neutronFraction > 0.5f ? true : false};
+        if (isDownstreamNeutron)
+            continue;
+
+        featureVector.emplace_back(static_cast<double>(trackFraction));
+        const int cls{trackFraction > 0.5f ? 1 : 2};
+        featureVector.emplace_back(static_cast<double>(cls));
+
+        float xMin{std::numeric_limits<float>::max()}, xMax{-std::numeric_limits<float>::max()};
+        float zMinU{std::numeric_limits<float>::max()}, zMaxU{-std::numeric_limits<float>::max()};
+        for (const CaloHit *pCaloHit : pfoHitListU)
+        {
+            const CartesianVector &pos{pCaloHit->GetPositionVector()};
+            xMin = std::min(pos.GetX(), xMin);
+            xMax = std::max(pos.GetX(), xMax);
+            zMinU = std::min(pos.GetZ(), zMinU);
+            zMaxU = std::max(pos.GetZ(), zMaxU);
+        }
+        float zMinV{std::numeric_limits<float>::max()}, zMaxV{-std::numeric_limits<float>::max()};
+        for (const CaloHit *pCaloHit : pfoHitListV)
+        {
+            const CartesianVector &pos{pCaloHit->GetPositionVector()};
+            xMin = std::min(pos.GetX(), xMin);
+            xMax = std::max(pos.GetX(), xMax);
+            zMinV = std::min(pos.GetZ(), zMinV);
+            zMaxV = std::max(pos.GetZ(), zMaxV);
+        }
+        float zMinW{std::numeric_limits<float>::max()}, zMaxW{-std::numeric_limits<float>::max()};
+        for (const CaloHit *pCaloHit : pfoHitListW)
+        {
+            const CartesianVector &pos{pCaloHit->GetPositionVector()};
+            xMin = std::min(pos.GetX(), xMin);
+            xMax = std::max(pos.GetX(), xMax);
+            zMinW = std::min(pos.GetZ(), zMinW);
+            zMaxW = std::max(pos.GetZ(), zMaxW);
+        }
+        CartesianPointVector pointVector;
+        for (const CaloHit *pCaloHit : pfoHitList3D)
+            pointVector.emplace_back(pCaloHit->GetPositionVector());
+
+        ClusterList clusters3D;
+        LArPfoHelper::GetClusters(pPfo, TPC_3D, clusters3D);
+        CartesianVector vertex(0, 0, 0), endpoint(0, 0, 0);
+        const Cluster* pCluster{clusters3D.front()};
+        LArClusterHelper::GetExtremalCoordinates(pCluster, vertex, endpoint);
         const LArTPC *const pLArTPC(this->GetPandora().GetGeometry()->GetLArTPCMap().begin()->second);
         const float wirePitch(pLArTPC->GetWirePitchW());
         LArTrackStateVector trackTraj;
-        LArPfoHelper::GetSlidingFitTrajectory(pPfo, pVertex, 20.f, wirePitch, trackTraj);
+        LArPfoHelper::GetSlidingFitTrajectory(pointVector, vertex, 20.f, wirePitch, trackTraj);
         if (!trackTraj.empty())
         {
-            const CartesianVector &trackDirection{(trackTraj.begin())->GetDirection()};
-            std::cout << "Track Direction " << trackDirection << std::endl;
+            const CartesianVector &direction{(trackTraj.begin())->GetDirection()};
+            const CartesianVector &dirU{LArGeometryHelper::ProjectDirection(this->GetPandora(), direction, TPC_VIEW_U)};
+            const CartesianVector &dirV{LArGeometryHelper::ProjectDirection(this->GetPandora(), direction, TPC_VIEW_V)};
+            const CartesianVector &dirW{LArGeometryHelper::ProjectDirection(this->GetPandora(), direction, TPC_VIEW_W)};
+
+            // We want a 64 x 64 region, so if it's too small expand it in the downstream direction and if it's too large maintain the upstream portion
+            if (direction.GetX() < 0.f)
+                xMin = xMax - 64.f;
+            else
+                xMax = xMin + 64.f;
+            xMin -= 0.5f; xMax += 0.5f;
+            if (!pfoHitListU.empty())
+            {
+                if (dirU.GetZ() < 0.f)
+                    zMinU = zMaxU - 64.f;
+                else
+                    zMaxU = zMinU + 64.f;
+                zMinU -= 0.5f; zMaxU += 0.5f;
+            }
+            if (!pfoHitListV.empty())
+            {
+                if (dirV.GetZ() < 0.f)
+                    zMinV = zMaxV - 64.f;
+                else
+                    zMaxV = zMinV + 64.f;
+                zMinV -= 0.5f; zMaxV += 0.5f;
+            }
+            if (!pfoHitListW.empty())
+            {
+                if (dirW.GetZ() < 0.f)
+                    zMinW = zMaxW - 64.f;
+                else
+                    zMaxW = zMinW + 64.f;
+                zMinW -= 0.5f; zMaxW += 0.5f;
+            }
+
+            CaloHitList backgroundHitListU;
+            if (!pfoHitListU.empty())
+                quadTreeU.Find(xMin, zMinU, xMax, zMaxU, backgroundHitListU);
+
+            CaloHitList backgroundHitListV;
+            if (!pfoHitListV.empty())
+                quadTreeV.Find(xMin, zMinV, xMax, zMaxV, backgroundHitListV);
+           
+            CaloHitList backgroundHitListW;
+                quadTreeW.Find(xMin, zMinW, xMax, zMaxW, backgroundHitListW);
+
+            CaloHitList retainedPfoHitListU, retainedPfoHitListV, retainedPfoHitListW;
+            CaloHitList rejectedPfoHitListU, rejectedPfoHitListV, rejectedPfoHitListW;
+            for (const CaloHit *const pCaloHit : pfoHitListU)
+            {
+                const CartesianVector &pos{pCaloHit->GetPositionVector()};
+                if (xMin <= pos.GetX() && pos.GetX() <= xMax && zMinU <= pos.GetZ() && pos.GetZ() <= zMaxU)
+                    retainedPfoHitListU.emplace_back(pCaloHit);
+                else
+                    rejectedPfoHitListU.emplace_back(pCaloHit);
+            }
+            for (const CaloHit *const pCaloHit : pfoHitListV)
+            {
+                const CartesianVector &pos{pCaloHit->GetPositionVector()};
+                if (xMin <= pos.GetX() && pos.GetX() <= xMax && zMinV <= pos.GetZ() && pos.GetZ() <= zMaxV)
+                    retainedPfoHitListV.emplace_back(pCaloHit);
+                else
+                    rejectedPfoHitListV.emplace_back(pCaloHit);
+            }
+            for (const CaloHit *const pCaloHit : pfoHitListW)
+            {
+                const CartesianVector &pos{pCaloHit->GetPositionVector()};
+                if (xMin <= pos.GetX() && pos.GetX() <= xMax && zMinW <= pos.GetZ() && pos.GetZ() <= zMaxW)
+                    retainedPfoHitListW.emplace_back(pCaloHit);
+                else
+                    rejectedPfoHitListW.emplace_back(pCaloHit);
+            }
+
+            for (auto iter = backgroundHitListU.begin(); iter != backgroundHitListU.end(); )
+            {
+                if (std::find(retainedPfoHitListU.begin(), retainedPfoHitListU.end(), *iter) != retainedPfoHitListU.end())
+                    iter = backgroundHitListU.erase(iter);
+                else
+                    ++iter;
+            }
+            for (auto iter = backgroundHitListV.begin(); iter != backgroundHitListV.end(); )
+            {
+                if (std::find(retainedPfoHitListV.begin(), retainedPfoHitListV.end(), *iter) != retainedPfoHitListV.end())
+                    iter = backgroundHitListV.erase(iter);
+                else
+                    ++iter;
+            }
+            for (auto iter = backgroundHitListW.begin(); iter != backgroundHitListW.end(); )
+            {
+                if (std::find(retainedPfoHitListW.begin(), retainedPfoHitListW.end(), *iter) != retainedPfoHitListW.end())
+                    iter = backgroundHitListW.erase(iter);
+                else
+                    ++iter;
+            }
+
+            featureVector.emplace_back(static_cast<double>(xMin));
+            featureVector.emplace_back(static_cast<double>(xMax));
+            featureVector.emplace_back(static_cast<double>(zMinU));
+            featureVector.emplace_back(static_cast<double>(zMaxU));
+            featureVector.emplace_back(static_cast<double>(zMinV));
+            featureVector.emplace_back(static_cast<double>(zMaxV));
+            featureVector.emplace_back(static_cast<double>(zMinW));
+            featureVector.emplace_back(static_cast<double>(zMaxW));
+            for (const CaloHitList &retainedPfoHitList : {retainedPfoHitListU, retainedPfoHitListV, retainedPfoHitListW})
+            {
+                featureVector.emplace_back(static_cast<double>(retainedPfoHitList.size()));
+                for (const CaloHit *const pCaloHit : retainedPfoHitList)
+                {
+                    const CartesianVector &pos{pCaloHit->GetPositionVector()};
+                    featureVector.emplace_back(static_cast<double>(pos.GetX()));
+                    featureVector.emplace_back(static_cast<double>(pos.GetZ()));
+                    featureVector.emplace_back(static_cast<double>(pCaloHit->GetInputEnergy()));
+                }
+            }
+            for (const CaloHitList &backgroundHitList : {backgroundHitListU, backgroundHitListV, backgroundHitListW})
+            {
+                featureVector.emplace_back(static_cast<double>(backgroundHitList.size()));
+                for (const CaloHit *const pCaloHit : backgroundHitList)
+                {
+                    const CartesianVector &pos{pCaloHit->GetPositionVector()};
+                    featureVector.emplace_back(static_cast<double>(pos.GetX()));
+                    featureVector.emplace_back(static_cast<double>(pos.GetZ()));
+                    featureVector.emplace_back(static_cast<double>(-pCaloHit->GetInputEnergy()));
+                }
+            }
+            PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, LArMvaHelper::ProduceTrainingExample(m_trainingFileName, true, featureVector));
+
+            if (m_visualize)
+            {
+                PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &retainedPfoHitListW, "PFO", BLUE));
+                PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &rejectedPfoHitListW, "Rejects", GREEN));
+                PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &backgroundHitListW, "Background", RED));
+                PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
+            }
         }
 
-        const LArShowerPCA &showerPca{LArPfoHelper::GetPrincipalComponents(pPfo, pVertex)};
-        const CartesianVector &showerDirection{showerPca.GetPrimaryAxis()};
-        std::cout << "Shower Direction " << showerDirection << std::endl;
+        //const LArShowerPCA &showerPca{LArPfoHelper::GetPrincipalComponents(pPfo, pVertex)};
+        //const CartesianVector &showerDirection{showerPca.GetPrimaryAxis()};
+        //std::cout << "Shower Direction " << showerDirection << std::endl;
+        // Plot the PFO in one colour, surrounding hits in another and the full PFO ina third so we can see what decisions are being made
     }
-    /*
 
-    KDNodeList foundU, foundV, foundW;
-    // Need to specify the centre of the region, so find the vertex and then shift its position by 25 cm and use that (ensure it is included)
-    // Grab the vertex from the PFO
-    KDTreeBox regionU(build_2d_kd_search_region(*pCaloHitList.front().GetPositionVector(), 25.f, 25.f));
-    kdTree.search(regionU, foundU);
-    KDTreeBox regionV(build_2d_kd_search_region(*pCaloHitList.front().GetPositionVector(), 25.f, 25.f));
-    kdTree.search(regionV, foundV);
-    KDTreeBox regionW(build_2d_kd_search_region(*pCaloHitList.front().GetPositionVector(), 25.f, 25.f));
-    kdTree.search(regionW, foundW);
-
-
-    for (const auto &hit : foundU)
-    {
-        const CaloHit *const pCaloHit{hit.data};
-        std::cout << pCaloHit << std::endl;
-    }*/
     return STATUS_CODE_SUCCESS;
 }
 
