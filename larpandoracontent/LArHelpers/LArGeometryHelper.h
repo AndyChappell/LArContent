@@ -158,6 +158,70 @@ public:
         const pandora::CartesianVector &position3, pandora::CartesianVector &position3D, float &chiSquared);
 
     /**
+     *  @brief  Merge 2D positions from three views to give unified 2D positions for each view, factoring in hit widths
+     *
+     *  @param  pandora the associated pandora instance
+     *  @param  view1 the first view
+     *  @param  view2 the second view
+     *  @param  view3 the third view
+     *  @param  position1 the position in the first view
+     *  @param  position2 the position in the second view
+     *  @param  position3 the position in the third view
+     *  @param  driftError1 the drift error in the first view
+     *  @param  driftError2 the drift error in the second view
+     *  @param  driftError3 the drift error in the third view
+     *  @param  positionU output position in the U view
+     *  @param  positionV output position in the V view
+     *  @param  positionW output position in the W view
+     *  @param  chi-squared
+     */
+    static void MergeThreeWidePositions(const pandora::Pandora &pandora, const pandora::HitType view1, const pandora::HitType view2,
+        const pandora::HitType view3, const pandora::CartesianVector &position1, const pandora::CartesianVector &position2,
+        const pandora::CartesianVector &position3, const float driftError1, const float driftError2, const float driftError3,
+        pandora::CartesianVector &outputU, pandora::CartesianVector &outputV, pandora::CartesianVector &outputW, float &chiSquared);
+
+    /**
+     *  @brief  Merge 2D positions from three views to give unified 2D positions for each view, factoring in hit width
+     *
+     *  @param  pandora the associated pandora instance
+     *  @param  positionU input position in the U view
+     *  @param  positionV input position in the V view
+     *  @param  positionW input position in the W view
+     *  @param  driftErrorU the drift error in the U view
+     *  @param  driftErrorV the drift error in the V view
+     *  @param  driftErrorW the drift error in the W view
+     *  @param  positionU output position in the U view
+     *  @param  positionV output position in the V view
+     *  @param  positionW output position in the W view
+     *  @param  chi-squared
+     */
+    static void MergeThreeWidePositions(const pandora::Pandora &pandora, const pandora::CartesianVector &positionU,
+        const pandora::CartesianVector &positionV, const pandora::CartesianVector &positionW, const float driftErrorU,
+        const float driftErrorV, const float driftErrorW, pandora::CartesianVector &outputU, pandora::CartesianVector &outputV,
+        pandora::CartesianVector &outputW, float &chiSquared);
+
+    /**
+     *  @brief  Merge 2D positions from three views to give unified 3D position, factoring in hit width
+     *
+     *  @param  pandora the associated pandora instance
+     *  @param  view1 the first view
+     *  @param  view2 the second view
+     *  @param  view3 the third view
+     *  @param  position1 the position in the first view
+     *  @param  position2 the position in the second view
+     *  @param  position3 the position in the third view
+     *  @param  driftError1 the drift error in the first view
+     *  @param  driftError2 the drift error in the second view
+     *  @param  driftError3 the drift error in the third view
+     *  @param  position3D output position in 3D
+     *  @param  chi-squared
+     */
+    static void MergeThreeWidePositions3D(const pandora::Pandora &pandora, const pandora::HitType view1, const pandora::HitType view2,
+        const pandora::HitType view3, const pandora::CartesianVector &position1, const pandora::CartesianVector &position2,
+        const pandora::CartesianVector &position3, const float driftError1, const float driftError2, const float driftError3,
+        pandora::CartesianVector &position3D, float &chiSquared);
+
+    /**
      *  @brief  Project 3D position into a given 2D view
      *
      *  @param  pandora the associated pandora instance

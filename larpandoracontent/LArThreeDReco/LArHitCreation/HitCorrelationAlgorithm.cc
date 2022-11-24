@@ -102,7 +102,8 @@ StatusCode HitCorrelationAlgorithm::Run()
                 const CartesianVector &posW{pCaloHitW->GetPositionVector()};
                 CartesianVector pos3D(0, 0, 0);
                 float chi2{0.f};
-                LArGeometryHelper::MergeThreePositions3D(this->GetPandora(), TPC_VIEW_U, TPC_VIEW_V, TPC_VIEW_W, posU, posV, posW, pos3D, chi2);
+                LArGeometryHelper::MergeThreeWidePositions3D(this->GetPandora(), TPC_VIEW_U, TPC_VIEW_V, TPC_VIEW_W, posU, posV, posW,
+                    0.5f * pCaloHitU->GetCellSize1(), 0.5f * pCaloHitV->GetCellSize1(), 0.5f * pCaloHitW->GetCellSize1(), pos3D, chi2);
                 //std::cout << "In [(" << posU.GetX() << "," << posU.GetZ() << ") (" << posV.GetX() << "," << posV.GetZ() << ") (" <<
                 //    posW.GetX() << "," << posW.GetZ() << ")] Out (" << pos3D.GetX() << "," << pos3D.GetZ() << ") chi2: " << chi2 << std::endl;
                 const CaloHit *pCaloHit3D{nullptr};
@@ -258,8 +259,10 @@ void HitCorrelationAlgorithm::MakeHitTriplets(const LArSet &caloHitSet, HitTable
             {
                 const CartesianVector &posW{pCaloHitW->GetPositionVector()};
                 float chi2{0.f};
-                LArGeometryHelper::MergeThreePositions3D(this->GetPandora(), TPC_VIEW_U, TPC_VIEW_V, TPC_VIEW_W, posU, posV, posW, pos3D, chi2);
-                if (chi2 < 0.1f)
+                LArGeometryHelper::MergeThreeWidePositions3D(this->GetPandora(), TPC_VIEW_U, TPC_VIEW_V, TPC_VIEW_W, posU, posV, posW,
+                    0.5f * pCaloHitU->GetCellSize1(), 0.5f * pCaloHitV->GetCellSize1(), 0.5f * pCaloHitW->GetCellSize1(), pos3D, chi2);
+                //if (chi2 < 0.1f)
+                if (chi2 < 6.f)
                 {
                     if (chi2 < bestChi2)
                     {
