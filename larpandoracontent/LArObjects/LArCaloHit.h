@@ -95,11 +95,28 @@ public:
      */
     void SetShowerProbability(const float probability);
 
+    /**
+     *  @brief  Retrieve a sibling hit from a particular view
+     *
+     *  @param  view The view from which the sibling should be retrived
+     *
+     *  @return The sibling from the relevant view, or nullptr if no link was made
+     */
+    const pandora::CaloHit *GetSiblingHit(const pandora::HitType view) const;
+
+    /**
+     *  @brief  Add a related hit to this hit's siblings
+     *
+     *  @param  pCaloHit The hit to add as a sibling
+     */
+    void AddSiblingHit(const pandora::CaloHit *pCaloHit);
+
 private:
     unsigned int m_larTPCVolumeId;   ///< The lar tpc volume id
     unsigned int m_daughterVolumeId; ///< The daughter volume id
     pandora::InputFloat m_pTrack;    ///< The probability that the hit is track-like
     pandora::InputFloat m_pShower;   ///< The probability that the hit is shower-like
+    std::map<const pandora::HitType, const pandora::CaloHit *> m_siblingHits; ///< The list of hits from other wire planes that likely came from the same 3D location
 };
 
 //------------------------------------------------------------------------------------------------------------------------------------------
@@ -237,6 +254,24 @@ inline void LArCaloHit::SetShowerProbability(const float probability)
         m_pShower = probability;
     else
         throw pandora::StatusCodeException(pandora::STATUS_CODE_INVALID_PARAMETER);
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+inline const pandora::CaloHit *LArCaloHit::GetSiblingHit(const pandora::HitType view) const
+{
+    if (m_siblingHits.find(view) != m_siblingHits.end())
+        return m_siblingHits.at(view);
+
+    return nullptr;
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+inline void LArCaloHit::AddSiblingHit(const pandora::CaloHit *pCaloHit)
+{
+    const pandora::HitType view{pCaloHit->GetHitType()};
+    m_siblingHits[view] = pCaloHit;
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------

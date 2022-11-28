@@ -291,6 +291,19 @@ void HitCorrelationAlgorithm::MakeHitTriplets(const LArSet &caloHitSet, HitTable
 
 StatusCode HitCorrelationAlgorithm::Create3DHit(const LArTriplet &hitTriplet, const CartesianVector &pos, const CaloHit *&pCaloHit3D) const
 {
+    LArCaloHit *pCaloHitU{dynamic_cast<LArCaloHit *>(const_cast<CaloHit *>(std::get<0>(hitTriplet)))};
+    LArCaloHit *pCaloHitV{dynamic_cast<LArCaloHit *>(const_cast<CaloHit *>(std::get<1>(hitTriplet)))};
+    LArCaloHit *pCaloHitW{dynamic_cast<LArCaloHit *>(const_cast<CaloHit *>(std::get<2>(hitTriplet)))};
+    if (pCaloHitU && pCaloHitV && pCaloHitW)
+    {
+        pCaloHitU->AddSiblingHit(pCaloHitV);
+        pCaloHitU->AddSiblingHit(pCaloHitW);
+        pCaloHitV->AddSiblingHit(pCaloHitU);
+        pCaloHitV->AddSiblingHit(pCaloHitW);
+        pCaloHitW->AddSiblingHit(pCaloHitU);
+        pCaloHitW->AddSiblingHit(pCaloHitV);
+    }
+
     PandoraContentApi::CaloHit::Parameters parameters;
     parameters.m_positionVector = pos;
     parameters.m_hitType = TPC_3D;
