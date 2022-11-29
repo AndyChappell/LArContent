@@ -200,7 +200,6 @@ StatusCode DlPfoCharacterisationAlgorithm::ProcessPfoList(const std::string &pfo
 {
     const PfoList *pPfoList(nullptr);
     PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetList(*this, pfoListName, pPfoList));
-    //this->MakeTrainingImage(*pPfoList);
 
     for (const ParticleFlowObject *const pPfo : *pPfoList)
     {
@@ -291,62 +290,16 @@ void DlPfoCharacterisationAlgorithm::ProcessPfoView(const CaloHitList &caloHitLi
         FloatVector longitudinalProfile, transverseProfile;
         this->PopulateFeatureVector(longitudinalProfile, transverseProfile, featureVector);
     }
-}
 
-//------------------------------------------------------------------------------------------------------------------------------------------
-
-StatusCode DlPfoCharacterisationAlgorithm::MakeTrainingImage(const PfoList &pfoList) const
-{
-    /*typedef KDTreeLinkerAlgo<const CaloHit *, 2> KDTree;
-    typedef KDTreeNodeInfoT<const pandora::CaloHit *, 2> KDNode;
-    typedef std::vector<KDNode> KDNodeList;*/
-    CaloHitList caloHitListU, caloHitListV, caloHitListW;
-    for (const ParticleFlowObject *const pPfo : pfoList)
+    featureVector.emplace_back(static_cast<double>(caloHitList.size()));
+    for (const CaloHit *const pCaloHit : caloHitList)
     {
-        LArPfoHelper::GetCaloHits(pPfo, HitType::TPC_VIEW_U, caloHitListU);
-        LArPfoHelper::GetCaloHits(pPfo, HitType::TPC_VIEW_V, caloHitListV);
-        LArPfoHelper::GetCaloHits(pPfo, HitType::TPC_VIEW_W, caloHitListW);
+        const CartesianVector &pos{pCaloHit->GetPositionVector()};
+        const float adc{pCaloHit->GetInputEnergy()};
+        featureVector.emplace_back(static_cast<double>(pos.GetX()));
+        featureVector.emplace_back(static_cast<double>(pos.GetZ()));
+        featureVector.emplace_back(static_cast<double>(adc));
     }
-
-    for (const ParticleFlowObject *const pPfo : pfoList)
-    {
-        const Vertex *pVertex{LArPfoHelper::GetVertex(pPfo)};
-        const CartesianVector &vertexPos{pVertex->GetPosition()};
-        std::cout << "Vertex: " << vertexPos << std::endl;
-
-        const LArTPC *const pLArTPC(this->GetPandora().GetGeometry()->GetLArTPCMap().begin()->second);
-        const float wirePitch(pLArTPC->GetWirePitchW());
-        LArTrackStateVector trackTraj;
-        LArPfoHelper::GetSlidingFitTrajectory(pPfo, pVertex, 20.f, wirePitch, trackTraj);
-        if (!trackTraj.empty())
-        {
-            const CartesianVector &trackDirection{(trackTraj.begin())->GetDirection()};
-            std::cout << "Track Direction " << trackDirection << std::endl;
-        }
-
-        const LArShowerPCA &showerPca{LArPfoHelper::GetPrincipalComponents(pPfo, pVertex)};
-        const CartesianVector &showerDirection{showerPca.GetPrimaryAxis()};
-        std::cout << "Shower Direction " << showerDirection << std::endl;
-    }
-    /*
-
-    KDNodeList foundU, foundV, foundW;
-    // Need to specify the centre of the region, so find the vertex and then shift its position by 25 cm and use that (ensure it is included)
-    // Grab the vertex from the PFO
-    KDTreeBox regionU(build_2d_kd_search_region(*pCaloHitList.front().GetPositionVector(), 25.f, 25.f));
-    kdTree.search(regionU, foundU);
-    KDTreeBox regionV(build_2d_kd_search_region(*pCaloHitList.front().GetPositionVector(), 25.f, 25.f));
-    kdTree.search(regionV, foundV);
-    KDTreeBox regionW(build_2d_kd_search_region(*pCaloHitList.front().GetPositionVector(), 25.f, 25.f));
-    kdTree.search(regionW, foundW);
-
-
-    for (const auto &hit : foundU)
-    {
-        const CaloHit *const pCaloHit{hit.data};
-        std::cout << pCaloHit << std::endl;
-    }*/
-    return STATUS_CODE_SUCCESS;
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
