@@ -85,6 +85,15 @@ private:
     void PopulateFeatureVector(const pandora::FloatVector &longitudinalProfile, const pandora::FloatVector &transverseProfile,
         lar_content::LArMvaHelper::MvaFeatureVector &featureVector) const;
 
+    /**
+     *  @brief  Convolve an image with a kernel, then normalize values to [0, 1] and flatten
+     *
+     *  @param  input The image to be prepared, in place
+     *  @param  kernel The convolution kernel (1D, assumed separable)
+     *  @param  output The output prepared image
+     */
+    void PrepareTensor(const float (&input)[64][64], const float (&kernel)[5], float (&output)[4096]) const;
+
     pandora::StatusCode ReadSettings(const pandora::TiXmlHandle xmlHandle);
 
     bool m_visualize;   ///< Wehter or not to visualize the charactierisation

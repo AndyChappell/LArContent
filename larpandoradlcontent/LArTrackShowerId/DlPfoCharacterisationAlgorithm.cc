@@ -56,13 +56,14 @@ StatusCode DlPfoCharacterisationAlgorithm::Infer()
     for (const bool inputIsTrack : {true, false})
     {
         const std::string listName{inputIsTrack ? m_trackPfoListName : m_showerPfoListName};
-        PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetList(*this, listName, pPfoList));
+        if (STATUS_CODE_SUCCESS != PandoraContentApi::GetList(*this, listName, pPfoList))
+            continue;
 
         if (pPfoList->empty())
             continue;
 
         LArDLHelper::TorchInput input;
-        LArDLHelper::InitialiseInput({static_cast<int>(pPfoList->size()), 243}, input);
+        LArDLHelper::InitialiseInput({static_cast<int>(pPfoList->size()), 3 * 4096 + 3 * 81}, input);
         this->PrepareNetworkInput(*pPfoList, input);
 
         // Run the input through the trained model and get the output accessor
@@ -130,14 +131,29 @@ void DlPfoCharacterisationAlgorithm::PrepareNetworkInput(const PfoList& pfoList,
 {
     int p{0};
     auto accessor = input.accessor<float, 2>();
+    float kernel[5]{};
+    const float sigma{1.f};
+    float sum{0.f};
+    for (int i = -2; i <= 2; ++i)
+    {
+        const float index{i / sigma};
+        kernel[i + 2] = std::exp(-0.5f * index * index);
+        sum += kernel[i + 2];
+    }
+    for (int i = -2; i <= 2; ++i)
+        kernel[i + 2] /= sum;
+
     for (const ParticleFlowObject *const pPfo : pfoList)
     {
-        int e{0};
+        // Set starting profile energy index after image components
+        int profileOffset{3 * 4096};
+        int imageOffset{0};
         for (const HitType view : {TPC_VIEW_U, TPC_VIEW_V, TPC_VIEW_W})
         {
             CaloHitList caloHitList;
             LArPfoHelper::GetCaloHits(pPfo, view, caloHitList);
 
+            // Profiles component
             FloatVector longitudinalProfile, transverseProfile;
             try
             {
@@ -184,11 +200,52 @@ void DlPfoCharacterisationAlgorithm::PrepareNetworkInput(const PfoList& pfoList,
             }
 
             for (float deposit : startProfile)
-                accessor[p][e++] = deposit;
+                accessor[p][profileOffset++] = deposit;
             for (float deposit : endProfile)
-                accessor[p][e++] = deposit;
+                accessor[p][profileOffset++] = deposit;
             for (float deposit : tProfile)
-                accessor[p][e++] = deposit;
+                accessor[p][profileOffset++] = deposit;
+
+            // Image component
+            if (!caloHitList.empty())
+            {
+                float xMin{std::numeric_limits<float>::max()}, xMax{-std::numeric_limits<float>::max()};
+                float zMin{std::numeric_limits<float>::max()}, zMax{-std::numeric_limits<float>::max()};
+                for (const CaloHit *const pCaloHit : caloHitList)
+                {
+                    const CartesianVector &pos{pCaloHit->GetPositionVector()};
+                    if (pos.GetX() < xMin)
+                        xMin = pos.GetX();
+                    if (pos.GetX() > xMax)
+                        xMax = pos.GetX();
+                    if (pos.GetZ() < zMin)
+                        zMin = pos.GetZ();
+                    if (pos.GetZ() > zMax)
+                        zMax = pos.GetZ();
+                }
+                xMin -= 0.5f; xMax += 0.5f;
+                zMin -= 0.5f, zMax += 0.5f;
+                const float xBinSize{(xMax - xMin) / 64.f};
+                const float zBinSize{(zMax - zMin) / 64.f};
+
+                float canvas[64][64]{};
+                for (const CaloHit *const pCaloHit : caloHitList)
+                {
+                    const CartesianVector &pos{pCaloHit->GetPositionVector()};
+                    const float x{pos.GetX()};
+                    const float z{pos.GetZ()};
+                    const float adc{pCaloHit->GetInputEnergy()};
+                    const int xBin{static_cast<int>(std::floor((x - xMin) / xBinSize))};
+                    const int zBin{static_cast<int>(std::floor((z - zMin) / zBinSize))};
+                    // In python np.histogram(x, z), so x is row, z is column
+                    canvas[xBin][zBin] += adc;
+                }
+
+                float output[4096]{};
+                this->PrepareTensor(canvas, kernel, output);
+                std::copy(output, output + 4096, &accessor[p][imageOffset]);
+                imageOffset += 4096;
+            }
         }
         ++p;
     }
@@ -372,6 +429,51 @@ void DlPfoCharacterisationAlgorithm::PopulateFeatureVector(const FloatVector &lo
     featureVector.emplace_back(static_cast<double>(tProfile.size()));
     for (const float adc : tProfile)
         featureVector.emplace_back(static_cast<double>(adc));
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+void DlPfoCharacterisationAlgorithm::PrepareTensor(const float (&input)[64][64], const float (&kernel)[5], float (&output)[4096]) const
+{
+    float working1[64][64]{};
+    for (int x = 0; x < 64; ++x)
+    {
+        for (int z = 0; z < 64; ++z)
+        {
+            for (int dz = -2; dz <= 2; ++dz)
+            {
+                if (((z + dz) >= 0) && ((z + dz) < 64))
+                    working1[x][z] += input[x][z + dz] * kernel[dz + 2];
+            }
+        }
+    }
+
+    float working2[64][64]{};
+    float min{std::numeric_limits<float>::max()}, max{-std::numeric_limits<float>::max()};
+    for (int x = 0; x < 64; ++x)
+    {
+        for (int z = 0; z < 64; ++z)
+        {
+            for (int dx = -2; dx <= 2; ++dx)
+            {
+                if (((x + dx) >= 0) && ((x + dx) < 64))
+                    working2[x][z] += working1[x + dx][z] * kernel[dx + 2];
+            }
+            if (working2[x][z] < min)
+                min = working2[x][z];
+            if (working2[x][z] > max)
+                max = working2[x][z];
+        }
+    }
+
+    const float scale{max > min ? 1.f / (max - min) : 1.f};
+    for (int x = 0; x < 64; ++x)
+    {
+        for (int z = 0; z < 64; ++z)
+        {
+            output[64 * x + z] = scale * (working2[x][z] - min);
+        }
+    }
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
