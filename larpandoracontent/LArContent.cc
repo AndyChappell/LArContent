@@ -99,6 +99,7 @@
 
 #include "larpandoracontent/LArThreeDReco/LArHitCreation/ClearLongitudinalTrackHitsTool.h"
 #include "larpandoracontent/LArThreeDReco/LArHitCreation/ClearTransverseTrackHitsTool.h"
+#include "larpandoracontent/LArThreeDReco/LArHitCreation/CorrelatedHitCreationTool.h"
 #include "larpandoracontent/LArThreeDReco/LArHitCreation/DeltaRayShowerHitsTool.h"
 #include "larpandoracontent/LArThreeDReco/LArHitCreation/HitCorrelationAlgorithm.h"
 #include "larpandoracontent/LArThreeDReco/LArHitCreation/MultiValuedLongitudinalTrackHitsTool.h"
@@ -360,6 +361,7 @@
     d("LArClearTrackFragments",                 ClearTrackFragmentsTool)                                                        \
     d("LArClearLongitudinalTrackHits",          ClearLongitudinalTrackHitsTool)                                                 \
     d("LArClearTransverseTrackHits",            ClearTransverseTrackHitsTool)                                                   \
+    d("LArCorrelatedHitCreation",               CorrelatedHitCreationTool)                                                      \
     d("LArDeltaRayShowerHits",                  DeltaRayShowerHitsTool)                                                         \
     d("LArMultiValuedLongitudinalTrackHits",    MultiValuedLongitudinalTrackHitsTool)                                           \
     d("LArMultiValuedTransverseTrackHits",      MultiValuedTransverseTrackHitsTool)                                             \

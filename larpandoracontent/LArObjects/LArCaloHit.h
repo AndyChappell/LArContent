@@ -271,7 +271,7 @@ inline const pandora::CaloHit *LArCaloHit::GetSiblingHit(const pandora::HitType 
 inline void LArCaloHit::AddSiblingHit(const pandora::CaloHit *pCaloHit)
 {
     const pandora::HitType view{pCaloHit->GetHitType()};
-    m_siblingHits[view] = pCaloHit;
+    m_siblingHits.insert({view, pCaloHit});
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
