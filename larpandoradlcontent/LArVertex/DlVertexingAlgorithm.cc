@@ -106,10 +106,84 @@ StatusCode DlVertexingAlgorithm::PrepareTrainingSample()
         for (const MCParticle *mc : hierarchy)
         {
             if (LArMCParticleHelper::IsNeutrino(mc))
-                vertices.push_back(mc->GetVertex());
+            {
+                vertices.emplace_back(mc->GetVertex());
+
+                const MCParticleList &primaries{mc->GetDaughterList()};
+                for (const MCParticle *pPrimary : primaries)
+                {
+                    std::cout << "Is primary visible (" << pPrimary->GetParticleId() << ") : " << mcToHitsMap[pPrimary].size() << std::endl;
+                    if (mcToHitsMap[pPrimary].empty())
+                        continue;
+
+                    // Get the endpoints of primaries with visible secondaries
+                    const MCParticleList &secondaries{pPrimary->GetDaughterList()};
+                    const MCParticle *pLastSecondary{nullptr};
+                    int numVisible{0};
+                    for (const MCParticle *pSecondary : secondaries)
+                    {
+                        for (const CaloHit *pCaloHit : *pCaloHitList)
+                        {
+                            try
+                            {
+                                const MCParticle *pMatchedMC{MCParticleHelper::GetMainMCParticle(pCaloHit)};
+                                if (pSecondary == pMatchedMC)
+                                {
+                                    pLastSecondary = pSecondary;
+                                    ++numVisible;
+                                    break;
+                                }
+                            }
+                            catch (...)
+                            {
+                            }
+                        }
+                    }
+                    std::cout << "   Num visible secondaries: " << numVisible << std::endl;
+                    if (numVisible > 0)
+                    {
+                        if (numVisible == 1 && pPrimary->GetParticleId() == pLastSecondary->GetParticleId())
+                        {
+                            const CartesianVector &a{pPrimary->GetMomentum().GetUnitVector()};
+                            const CartesianVector &b{pLastSecondary->GetMomentum().GetUnitVector()};
+                            const float costheta{a.GetDotProduct(b)};
+                            std::cout << "Elastic scatter: costheta = " << costheta << std::endl;
+                            if (costheta > 0.985f)
+                                continue;
+                        }
+                        std::cout << "Added" << std::endl;
+                        vertices.emplace_back(pPrimary->GetEndpoint());
+                    }
+                }
+            }
         }
         if (vertices.empty())
             continue;
+
+        const LArTransformationPlugin *transform{this->GetPandora().GetPlugins()->GetLArTransformationPlugin()};
+        {
+            PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1.f, 1.f, 1.f));
+            for (const CartesianVector &vtx : vertices)
+            {
+                if (isU)
+                {
+                    const CartesianVector trueVertex(vtx.GetX(), 0.f, transform->YZtoU(vtx.GetY(), vtx.GetZ()));
+                    PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &trueVertex, "U(true)", RED, 3));
+                }
+                else if (isV)
+                {
+                    const CartesianVector trueVertex(vtx.GetX(), 0.f, transform->YZtoV(vtx.GetY(), vtx.GetZ()));
+                    PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &trueVertex, "V(true)", GREEN, 3));
+                }
+                else if (isW)
+                {
+                    const CartesianVector trueVertex(vtx.GetX(), 0.f, transform->YZtoW(vtx.GetY(), vtx.GetZ()));
+                    PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &trueVertex, "W(true)", BLUE, 3));
+                }
+            }
+            PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
+        }
+
         const CartesianVector &vertex{vertices.front()};
         const std::string trainingFilename{m_trainingOutputFile + "_" + listname + ".csv"};
         const unsigned long nVertices{1};
@@ -117,7 +191,6 @@ StatusCode DlVertexingAlgorithm::PrepareTrainingSample()
         const unsigned int nuance{LArMCParticleHelper::GetNuanceCode(hierarchy.front())};
 
         // Vertices
-        const LArTransformationPlugin *transform{this->GetPandora().GetPlugins()->GetLArTransformationPlugin()};
         const double xVtx{vertex.GetX()};
         double zVtx{0.};
         if (isW)
