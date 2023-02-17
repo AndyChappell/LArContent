@@ -34,6 +34,7 @@ DlVertexingAlgorithm::DlVertexingAlgorithm() :
     m_height{256},
     m_width{256},
     m_driftStep{0.5f},
+    m_findSecondaries{false},
     m_visualise{false},
     m_writeTree{false},
     m_rng(static_cast<std::mt19937::result_type>(std::chrono::high_resolution_clock::now().time_since_epoch().count()))
@@ -112,48 +113,12 @@ StatusCode DlVertexingAlgorithm::PrepareTrainingSample()
                 const MCParticleList &primaries{mc->GetDaughterList()};
                 for (const MCParticle *pPrimary : primaries)
                 {
-                    std::cout << "Is primary visible (" << pPrimary->GetParticleId() << ") : " << mcToHitsMap[pPrimary].size() << std::endl;
                     if (mcToHitsMap[pPrimary].empty())
                         continue;
 
-                    // Get the endpoints of primaries with visible secondaries
-                    const MCParticleList &secondaries{pPrimary->GetDaughterList()};
-                    const MCParticle *pLastSecondary{nullptr};
-                    int numVisible{0};
-                    for (const MCParticle *pSecondary : secondaries)
-                    {
-                        for (const CaloHit *pCaloHit : *pCaloHitList)
-                        {
-                            try
-                            {
-                                const MCParticle *pMatchedMC{MCParticleHelper::GetMainMCParticle(pCaloHit)};
-                                if (pSecondary == pMatchedMC)
-                                {
-                                    pLastSecondary = pSecondary;
-                                    ++numVisible;
-                                    break;
-                                }
-                            }
-                            catch (...)
-                            {
-                            }
-                        }
-                    }
-                    std::cout << "   Num visible secondaries: " << numVisible << std::endl;
-                    if (numVisible > 0)
-                    {
-                        if (numVisible == 1 && pPrimary->GetParticleId() == pLastSecondary->GetParticleId())
-                        {
-                            const CartesianVector &a{pPrimary->GetMomentum().GetUnitVector()};
-                            const CartesianVector &b{pLastSecondary->GetMomentum().GetUnitVector()};
-                            const float costheta{a.GetDotProduct(b)};
-                            std::cout << "Elastic scatter: costheta = " << costheta << std::endl;
-                            if (costheta > 0.985f)
-                                continue;
-                        }
-                        std::cout << "Added" << std::endl;
-                        vertices.emplace_back(pPrimary->GetEndpoint());
-                    }
+                    CartesianVector vertex(0, 0, 0);
+                    if (this->GetClearSecondaryVertex(pPrimary, *pCaloHitList, vertex))
+                        vertices.emplace_back(vertex);
                 }
             }
         }
@@ -161,7 +126,7 @@ StatusCode DlVertexingAlgorithm::PrepareTrainingSample()
             continue;
 
         const LArTransformationPlugin *transform{this->GetPandora().GetPlugins()->GetLArTransformationPlugin()};
-        {
+        /*{
             PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1.f, 1.f, 1.f));
             for (const CartesianVector &vtx : vertices)
             {
@@ -182,36 +147,45 @@ StatusCode DlVertexingAlgorithm::PrepareTrainingSample()
                 }
             }
             PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
-        }
+        }*/
 
-        const CartesianVector &vertex{vertices.front()};
         const std::string trainingFilename{m_trainingOutputFile + "_" + listname + ".csv"};
-        const unsigned long nVertices{1};
+        const unsigned long nVertices{vertices.size()};
         unsigned long nHits{0};
         const unsigned int nuance{LArMCParticleHelper::GetNuanceCode(hierarchy.front())};
-
-        // Vertices
-        const double xVtx{vertex.GetX()};
-        double zVtx{0.};
-        if (isW)
-            zVtx = transform->YZtoW(vertex.GetY(), vertex.GetZ());
-        else if (isV)
-            zVtx = transform->YZtoV(vertex.GetY(), vertex.GetZ());
-        else
-            zVtx = transform->YZtoU(vertex.GetY(), vertex.GetZ());
 
         // Calo hits
         double xMin{driftMin}, xMax{driftMax}, zMin{wireMin[view]}, zMax{wireMax[view]};
 
-        // Only train on events where the vertex resides within the image - with a small tolerance
-        if (!(xVtx > (xMin - 1.f) && xVtx < (xMax + 1.f) && zVtx > (zMin - 1.f) && zVtx < (zMax + 1.f)))
-            continue;
-
         LArMvaHelper::MvaFeatureVector featureVector;
         featureVector.emplace_back(static_cast<double>(nuance));
         featureVector.emplace_back(static_cast<double>(nVertices));
-        featureVector.emplace_back(xVtx);
-        featureVector.emplace_back(zVtx);
+
+        // Vertices
+        bool isPrimaryVertex{true}, isVertexContained{true};
+        for (const CartesianVector &vertex : vertices)
+        {
+            const double xVtx{vertex.GetX()};
+            double zVtx{0.};
+            if (isW)
+                zVtx = transform->YZtoW(vertex.GetY(), vertex.GetZ());
+            else if (isV)
+                zVtx = transform->YZtoV(vertex.GetY(), vertex.GetZ());
+            else
+                zVtx = transform->YZtoU(vertex.GetY(), vertex.GetZ());
+
+            featureVector.emplace_back(xVtx);
+            featureVector.emplace_back(zVtx);
+            if (isPrimaryVertex)
+            {
+                // Only train on events where the vertex resides within the image - with a small tolerance
+                if (!(xVtx > (xMin - 1.f) && xVtx < (xMax + 1.f) && zVtx > (zMin - 1.f) && zVtx < (zMax + 1.f)))
+                    isVertexContained = false;
+            }
+            isPrimaryVertex = false;
+        }
+        if (!isVertexContained)
+            continue;
         // Retain the hit region
         featureVector.emplace_back(xMin);
         featureVector.emplace_back(xMax);
@@ -229,7 +203,7 @@ StatusCode DlVertexingAlgorithm::PrepareTrainingSample()
             featureVector.emplace_back(static_cast<double>(adc));
             ++nHits;
         }
-        featureVector.insert(featureVector.begin() + 8, static_cast<double>(nHits));
+        featureVector.insert(featureVector.begin() + 6 + 2 * nVertices, static_cast<double>(nHits));
         // Only write out the feature vector if there were enough hits in the region of interest
         if (nHits > 10)
             LArMvaHelper::ProduceTrainingExample(trainingFilename, true, featureVector);
@@ -505,6 +479,46 @@ StatusCode DlVertexingAlgorithm::MakeWirePlaneCoordinatesFromCanvas(float **canv
 
     CartesianVector pt(x, 0.f, z);
     positionVector.emplace_back(pt);
+
+    if (m_findSecondaries)
+    {
+        std::cout << "Best: " << x << " " << z << " " << best << std::endl;
+
+        for (int row = 0; row < canvasHeight; ++row)
+            for (int col = 0; col < canvasWidth; ++col)
+                if (canvas[row][col] > 0.5f * best)
+                {
+                    bool localMaximum{true};
+                    for (int r = -1; r <= 1; ++r)
+                    {
+                        if (0 <= (row + r) && (row + r) < canvasHeight)
+                        {
+                            for (int c = -1; c <= 1; ++c)
+                            {
+                                if (0 <= (col + c) && (col + c) < canvasWidth)
+                                {
+                                    if (canvas[row][col] < canvas[row + r][col + c])
+                                    {
+                                        localMaximum = false;
+                                        break;
+                                    }
+                                }
+                            }
+                            if (!localMaximum)
+                                break;
+                        }
+                    }
+                    if (localMaximum)
+                    {
+                        const float x0{static_cast<float>((col - columnOffset) * dx + xMin)};
+                        const float z0{static_cast<float>((row - rowOffset) * dz + zMin)};
+
+                        CartesianVector pt0(x0, 0.f, z0);
+                        positionVector.emplace_back(pt0);
+                        std::cout << "   " << row << " " << col << " : " << x0 << " " << z0 << " " << canvas[row][col] << std::endl;
+                    }
+                }
+    }
 
     return STATUS_CODE_SUCCESS;
 }
@@ -913,6 +927,63 @@ void DlVertexingAlgorithm::PopulateRootTree(const std::vector<VertexTuple> &vert
 
 //-----------------------------------------------------------------------------------------------------------------------------------------
 
+bool DlVertexingAlgorithm::GetClearSecondaryVertex(const MCParticle *const pParent, const CaloHitList &caloHitList, CartesianVector &vertex) const
+{
+    const MCParticleList &secondaries{pParent->GetDaughterList()};
+    const MCParticle *pLastSecondary{nullptr};
+    int numVisible{0};
+    for (const MCParticle *pSecondary : secondaries)
+    {
+        for (const CaloHit *pCaloHit : caloHitList)
+        {
+            try
+            {
+                const MCParticle *pMatchedMC{MCParticleHelper::GetMainMCParticle(pCaloHit)};
+                if (pSecondary == pMatchedMC)
+                {
+                    pLastSecondary = pSecondary;
+                    ++numVisible;
+                    break;
+                }
+            }
+            catch (...)
+            {
+            }
+        }
+    }
+    if (numVisible > 0)
+    {
+        if (numVisible == 1 && pParent->GetParticleId() == pLastSecondary->GetParticleId())
+        {
+            const CartesianVector &a{pParent->GetMomentum().GetUnitVector()};
+            const CartesianVector &b{pLastSecondary->GetMomentum().GetUnitVector()};
+            const float costheta{a.GetDotProduct(b)};
+            if (costheta <= 0.985f)
+            {
+                const CartesianVector &endPoint{pParent->GetEndpoint()};
+                vertex.SetValues(endPoint.GetX(), endPoint.GetY(), endPoint.GetZ());
+
+                return true;
+            }
+            else
+            {
+                return this->GetClearSecondaryVertex(pLastSecondary, caloHitList, vertex);
+            }
+        }
+        else
+        {
+            const CartesianVector &endPoint{pParent->GetEndpoint()};
+            vertex.SetValues(endPoint.GetX(), endPoint.GetY(), endPoint.GetZ());
+
+            return true;
+        }
+    }
+
+    return false;
+}
+
+//-----------------------------------------------------------------------------------------------------------------------------------------
+
 StatusCode DlVertexingAlgorithm::ReadSettings(const TiXmlHandle xmlHandle)
 {
     PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "TrainingMode", m_trainingMode));
@@ -920,6 +991,7 @@ StatusCode DlVertexingAlgorithm::ReadSettings(const TiXmlHandle xmlHandle)
     PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "Pass", m_pass));
     PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "ImageHeight", m_height));
     PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "ImageWidth", m_width));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "FindSecondaries", m_findSecondaries));
     PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadVectorOfValues(xmlHandle, "DistanceThresholds", m_thresholds));
     m_nClasses = m_thresholds.size() - 1;
     if (m_pass > 1)
@@ -997,8 +1069,6 @@ DlVertexingAlgorithm::VertexTuple::VertexTuple(
             m_chi2 = chi2VW;
         }
     }
-    //    std::cout << "Merging 3, position (" << m_pos.GetX() << ", " << m_pos.GetY() << ", " << m_pos.GetZ() << ") with chi2 " << m_chi2 <<
-    //        std::endl;
 }
 
 //-----------------------------------------------------------------------------------------------------------------------------------------
@@ -1009,7 +1079,6 @@ DlVertexingAlgorithm::VertexTuple::VertexTuple(
     m_chi2{0.f}
 {
     LArGeometryHelper::MergeTwoPositions3D(pandora, view1, view2, vertex1, vertex2, m_pos, m_chi2);
-    std::cout << "Merging 2, position (" << m_pos.GetX() << ", " << m_pos.GetY() << ", " << m_pos.GetZ() << ") with chi2 " << m_chi2 << std::endl;
 }
 
 //-----------------------------------------------------------------------------------------------------------------------------------------
