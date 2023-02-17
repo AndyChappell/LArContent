@@ -214,6 +214,20 @@ private:
     void PopulateRootTree(const std::vector<VertexTuple> &vertexTuples, const pandora::CartesianPointVector &vertexCandidatesU,
         const pandora::CartesianPointVector &vertexCandidatesV, const pandora::CartesianPointVector &vertexCandidatesW) const;
 
+    /**
+     *  @brief  Identify the secondary vertex if it exists. For a secondary vertex to exist in this case we want a visible primary to interact
+     *          and produce at least one visible secondary particle, where there is at least one secondary with a distinct PDG, or, if no
+     *          distinct PDG code, the change in trajectory must be obvious by eye.
+     *
+     *  @param  pParent The parent MC particle to use as the starting point for identifying secondaries
+     *  @param  caloHitList The list of calo hits
+     *  @param  vertex The output vertex position
+     *
+     *  @return true if a visible secondary particle was found, false otherwise
+     */
+    bool GetClearSecondaryVertex(const pandora::MCParticle *const pParent, const pandora::CaloHitList &caloHitList,
+        pandora::CartesianVector &vertex) const;
+
     bool m_trainingMode;                      ///< Training mode
     std::string m_trainingOutputFile;         ///< Output file name for training examples
     std::string m_inputVertexListName;        ///< Input vertex list name if 2nd pass
@@ -228,6 +242,7 @@ private:
     int m_height;                             ///< The height of the images
     int m_width;                              ///< The width of the images
     float m_driftStep;                        ///< The size of a pixel in the drift direction in cm (most relevant in pass 2)
+    bool m_findSecondaries;                   ///< Whether or not to consider secondary vertices
     bool m_visualise;                         ///< Whether or not to visualise the candidate vertices
     bool m_writeTree;                         ///< Whether or not to write validation details to a ROOT tree
     std::string m_rootTreeName;               ///< The ROOT tree name
