@@ -24,7 +24,12 @@ HierarchyValidationAlgorithm::HierarchyValidationAlgorithm() :
     m_foldDynamic{false},
     m_foldToLeadingShowers{false},
     m_validateEvent{false},
-    m_validateMC{false}
+    m_validateMC{false},
+    m_tier{1},
+    m_minHits{1},
+    m_minHitsForGoodView{1},
+    m_minGoodViews{2},
+    m_removeNeutrons{true}
 {
 }
 
@@ -57,7 +62,13 @@ StatusCode HierarchyValidationAlgorithm::Run()
         foldParameters.m_foldDynamic = true;
     else if (m_foldToLeadingShowers)
         foldParameters.m_foldToLeadingShowers = true;
-    LArHierarchyHelper::MCHierarchy mcHierarchy;
+    else
+    {
+        foldParameters.m_foldToTier = true;
+        foldParameters.m_tier = m_tier;
+    }
+    LArHierarchyHelper::MCHierarchy::ReconstructabilityCriteria criteria(m_minHits, m_minHitsForGoodView, m_minGoodViews, m_removeNeutrons);
+    LArHierarchyHelper::MCHierarchy mcHierarchy(criteria);
     LArHierarchyHelper::FillMCHierarchy(*pMCParticleList, *pCaloHitList, foldParameters, mcHierarchy);
     LArHierarchyHelper::RecoHierarchy recoHierarchy;
     LArHierarchyHelper::FillRecoHierarchy(*pPfoList, foldParameters, recoHierarchy);
@@ -405,6 +416,13 @@ StatusCode HierarchyValidationAlgorithm::ReadSettings(const TiXmlHandle xmlHandl
     PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "FoldDynamic", m_foldDynamic));
     PANDORA_RETURN_RESULT_IF_AND_IF(
         STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "FoldToLeadingShowers", m_foldToLeadingShowers));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "FoldingTier", m_tier));
+
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "MinHits", m_minHits));
+    PANDORA_RETURN_RESULT_IF_AND_IF(
+        STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "MinHitsForGoodView", m_minHitsForGoodView));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "MinGoodViews", m_minGoodViews));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "RemoveNeutrons", m_removeNeutrons));
 
     return STATUS_CODE_SUCCESS;
 }

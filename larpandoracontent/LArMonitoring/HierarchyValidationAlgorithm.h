@@ -58,6 +58,11 @@ private:
     bool m_foldToLeadingShowers;   ///< Whether or not to fold the hierarchy back to leading shower particles
     bool m_validateEvent;          ///< Whether to validate at the level of an event
     bool m_validateMC;             ///< Whether to validate at the level of MC nodes
+    unsigned int m_tier;           ///< The tier to fold to if folding to a specific tier
+    unsigned int m_minHits;            ///< the minimum number of primary good Hits
+    unsigned int m_minHitsForGoodView; ///< the minimum number of Hits for a good view
+    unsigned int m_minGoodViews;       ///< the minimum number of primary good views
+    bool m_removeNeutrons;             ///< whether to remove neutrons and their downstream particles
 };
 
 } // namespace lar_content
