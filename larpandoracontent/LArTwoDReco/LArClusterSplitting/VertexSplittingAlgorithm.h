@@ -32,6 +32,8 @@ private:
 
     float m_splitDisplacementSquared;  ///< Maximum displacement squared
     float m_vertexDisplacementSquared; ///< Maximum displacement squared
+    bool m_useSecondaryVertices;       ///< Whether to consider splitting based on secondary vertices
+    std::string m_vertexListName;      ///< The name of the vertex list (optional)
 };
 
 } // namespace lar_content
