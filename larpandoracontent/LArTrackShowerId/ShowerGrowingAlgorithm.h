@@ -121,6 +121,9 @@ private:
 
     AssociationType AreClustersAssociated(const pandora::Cluster *const pClusterSeed, const pandora::Cluster *const pCluster) const;
 
+    AssociationType AreClustersAssociated(const pandora::Cluster *const pClusterSeed, const pandora::Cluster *const pCluster,
+        const pandora::Vertex *const pVertex) const;
+
     /**
      *  @brief  Get a figure of merit representing the consistency of the provided seed associated list
      *
@@ -129,6 +132,16 @@ private:
      *  @return the figure of merit
      */
     float GetFigureOfMerit(const SeedAssociationList &seedAssociationList) const;
+
+    /**
+     *  @brief  Get a figure of merit representing the consistency of the provided seed associated list
+     *
+     *  @param  seedAssociationList the seed association list
+     *  @param  pVertex the vertex around which the seed associationis based
+     *
+     *  @return the figure of merit
+     */
+    float GetFigureOfMerit(const SeedAssociationList &seedAssociationList, const pandora::Vertex *const pVertex) const;
 
     /**
      *  @brief  Get the number of clusters associated with the vertex
@@ -155,6 +168,9 @@ private:
     float m_maxVertexLongitudinalDistance; ///< Vertex association check: max longitudinal distance cut
     float m_maxVertexTransverseDistance;   ///< Vertex association check: max transverse distance cut
     float m_vertexAngularAllowance;        ///< Vertex association check: pointing angular allowance in degrees
+
+    bool m_useSecondaryVertices;           ///< Whether or not to use secondary vertices for shower growing
+    std::string m_vertexListName;          ///< The name of the vertex list (optional)
 };
 
 } // namespace lar_content
