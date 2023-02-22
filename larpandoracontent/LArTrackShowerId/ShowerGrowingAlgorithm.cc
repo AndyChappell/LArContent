@@ -31,7 +31,9 @@ ShowerGrowingAlgorithm::ShowerGrowingAlgorithm() :
     m_minVertexLongitudinalDistance(-2.5f),
     m_maxVertexLongitudinalDistance(20.f),
     m_maxVertexTransverseDistance(1.5f),
-    m_vertexAngularAllowance(3.f)
+    m_vertexAngularAllowance(3.f),
+    m_useSecondaryVertices{false},
+    m_vertexListName{""}
 {
 }
 
@@ -100,21 +102,31 @@ StatusCode ShowerGrowingAlgorithm::Run()
 void ShowerGrowingAlgorithm::SimpleModeShowerGrowing(const ClusterList *const pClusterList, const std::string &clusterListName) const
 {
     const VertexList *pVertexList(nullptr);
-    PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetCurrentList(*this, pVertexList));
-    const Vertex *const pVertex(
-        ((pVertexList->size() == 1) && (VERTEX_3D == (*(pVertexList->begin()))->GetVertexType())) ? *(pVertexList->begin()) : nullptr);
+    if (m_useSecondaryVertices)
+    {
+        PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetList(*this, m_vertexListName, pVertexList));
+    }
+    else
+    {
+        PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetCurrentList(*this, pVertexList));
+    }
 
     ClusterSet usedClusters;
 
     // Pick up all showers starting at vertex
-    if (pVertex)
+    if (m_useSecondaryVertices || (!m_useSecondaryVertices && pVertexList->size() == 1))
     {
-        ClusterVector seedClusters;
-        this->GetAllVertexSeedCandidates(pClusterList, pVertex, seedClusters);
+        for (const Vertex *const pVertex : *pVertexList)
+        {
+            if (pVertex->GetVertexType() != VERTEX_3D)
+                continue;
+            ClusterVector seedClusters;
+            this->GetAllVertexSeedCandidates(pClusterList, pVertex, seedClusters);
 
-        SeedAssociationList vertexSeedAssociationList;
-        this->GetSeedAssociationList(seedClusters, pClusterList, vertexSeedAssociationList);
-        this->ProcessSeedAssociationDetails(vertexSeedAssociationList, clusterListName, usedClusters);
+            SeedAssociationList vertexSeedAssociationList;
+            this->GetSeedAssociationList(seedClusters, pClusterList, vertexSeedAssociationList);
+            this->ProcessSeedAssociationDetails(vertexSeedAssociationList, clusterListName, usedClusters);
+        }
     }
 
     // Non-vertex showers
@@ -275,11 +287,48 @@ void ShowerGrowingAlgorithm::ProcessBranchClusters(const Cluster *const pParentC
 
 ShowerGrowingAlgorithm::AssociationType ShowerGrowingAlgorithm::AreClustersAssociated(const Cluster *const pClusterSeed, const Cluster *const pCluster) const
 {
-    const VertexList *pVertexList(nullptr);
-    PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetCurrentList(*this, pVertexList));
-    const Vertex *const pVertex(
-        ((pVertexList->size() == 1) && (VERTEX_3D == (*(pVertexList->begin()))->GetVertexType())) ? *(pVertexList->begin()) : nullptr);
+    AssociationType assoc{NONE};
 
+    const VertexList *pVertexList(nullptr);
+    if (m_useSecondaryVertices)
+    {
+        PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetList(*this, m_vertexListName, pVertexList));
+        for (const Vertex *const pVertex : *pVertexList)
+        {
+            AssociationType thisAssoc{this->AreClustersAssociated(pClusterSeed, pCluster, pVertex->GetVertexType() == VERTEX_3D ? pVertex : nullptr)};
+            switch (assoc)
+            {
+                case NONE:
+                    assoc = thisAssoc;
+                    break;
+                case SINGLE_ORDER:
+                    assoc = (thisAssoc == STRONG || thisAssoc == STANDARD) ? thisAssoc : assoc;
+                    break;
+                case STANDARD:
+                    assoc = thisAssoc == STRONG ? thisAssoc : assoc;
+                    break;
+                default:
+                    break;
+            }
+            if (assoc == STRONG)
+                return STRONG;
+        }
+        return assoc;
+    }
+    else
+    {
+        PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetCurrentList(*this, pVertexList));
+        const Vertex *const pVertex{((pVertexList->size() == 1) && ((*pVertexList->begin())->GetVertexType() == VERTEX_3D)) ?
+            *pVertexList->begin() : nullptr};
+        return this->AreClustersAssociated(pClusterSeed, pCluster, pVertex);
+    }
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+ShowerGrowingAlgorithm::AssociationType ShowerGrowingAlgorithm::AreClustersAssociated(const Cluster *const pClusterSeed, const Cluster *const pCluster,
+    const Vertex *const pVertex) const
+{
     // Direction of seed cluster (cache for efficiency)
     ClusterDirectionMap::const_iterator seedIter = m_clusterDirectionMap.find(pClusterSeed);
 
@@ -358,10 +407,31 @@ ShowerGrowingAlgorithm::AssociationType ShowerGrowingAlgorithm::AreClustersAssoc
 float ShowerGrowingAlgorithm::GetFigureOfMerit(const SeedAssociationList &seedAssociationList) const
 {
     const VertexList *pVertexList(nullptr);
-    PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetCurrentList(*this, pVertexList));
-    const Vertex *const pVertex(
-        ((pVertexList->size() == 1) && (VERTEX_3D == (*(pVertexList->begin()))->GetVertexType())) ? *(pVertexList->begin()) : nullptr);
+    if (m_useSecondaryVertices)
+    {
+        float bestFigureOfMerit{-std::numeric_limits<float>::max()};
+        PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetList(*this, m_vertexListName, pVertexList));
+        for (const Vertex *const pVertex : *pVertexList)
+        {
+            const float thisFigureOfMerit{this->GetFigureOfMerit(seedAssociationList, pVertex->GetVertexType() == VERTEX_3D ? pVertex : nullptr)};
+            if (thisFigureOfMerit > bestFigureOfMerit)
+                bestFigureOfMerit = thisFigureOfMerit;
+        }
+        return bestFigureOfMerit;
+    }
+    else
+    {
+        PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetCurrentList(*this, pVertexList));
+        const Vertex *const pVertex{((pVertexList->size() == 1) && ((*pVertexList->begin())->GetVertexType() == VERTEX_3D)) ?
+            *pVertexList->begin() : nullptr};
+        return this->GetFigureOfMerit(seedAssociationList, pVertex);
+    }
+}
 
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+float ShowerGrowingAlgorithm::GetFigureOfMerit(const SeedAssociationList &seedAssociationList, const Vertex *const pVertex) const
+{
     // ATTN Consistently returning same value will accept all candidate cluster merges
     if (!pVertex)
         return -1.f;
@@ -455,6 +525,14 @@ StatusCode ShowerGrowingAlgorithm::ReadSettings(const TiXmlHandle xmlHandle)
 
     PANDORA_RETURN_RESULT_IF_AND_IF(
         STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "VertexAngularAllowance", m_vertexAngularAllowance));
+
+    PANDORA_RETURN_RESULT_IF_AND_IF(
+        STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "UseSecondaryVertices", m_useSecondaryVertices));
+
+    if (m_useSecondaryVertices)
+    {
+        PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadValue(xmlHandle, "VertexListName", m_vertexListName));
+    }
 
     return BranchGrowingAlgorithm::ReadSettings(xmlHandle);
 }
