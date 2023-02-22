@@ -69,6 +69,7 @@ StatusCode CheatingSecondaryVertexCreationAlgorithm::Run()
 
         for (const CartesianVector &vertex : vertices)
         {
+            //std::cout << "Found secondary at " << vertex << std::endl;
             PandoraContentApi::Vertex::Parameters parameters;
             parameters.m_position = vertex;
             parameters.m_vertexLabel = VERTEX_INTERACTION;
