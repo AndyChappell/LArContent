@@ -60,6 +60,7 @@
 #include "larpandoracontent/LArMonitoring/TestBeamHierarchyEventValidationAlgorithm.h"
 #include "larpandoracontent/LArMonitoring/TransverseMatrixVisualizationTool.h"
 #include "larpandoracontent/LArMonitoring/TransverseTensorVisualizationTool.h"
+#include "larpandoracontent/LArMonitoring/VertexAssociatedHitMonitoringAlgorithm.h"
 #include "larpandoracontent/LArMonitoring/VertexMonitoringAlgorithm.h"
 #include "larpandoracontent/LArMonitoring/VisualMonitoringAlgorithm.h"
 #include "larpandoracontent/LArMonitoring/VisualParticleMonitoringAlgorithm.h"
@@ -223,6 +224,7 @@
     d("LArHierarchyValidation",                 HierarchyValidationAlgorithm)                                                   \
     d("LArPfoValidation",                       PfoValidationAlgorithm)                                                         \
     d("LArMCParticleMonitoring",                MCParticleMonitoringAlgorithm)                                                  \
+    d("LArVertexAssociatedHitMonitoring",       VertexAssociatedHitMonitoringAlgorithm)                                         \
     d("LArVertexMonitoring",                    VertexMonitoringAlgorithm)                                                      \
     d("LArVisualMonitoring",                    VisualMonitoringAlgorithm)                                                      \
     d("LArVisualParticleMonitoring",            VisualParticleMonitoringAlgorithm)                                              \
