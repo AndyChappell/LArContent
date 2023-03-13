@@ -11,6 +11,7 @@
 #include "larpandoracontent/LArMonitoring/VertexAssociatedHitMonitoringAlgorithm.h"
 
 #include "larpandoracontent/LArHelpers/LArGeometryHelper.h"
+#include "larpandoracontent/LArHelpers/LArInteractionTypeHelper.h"
 #include "larpandoracontent/LArHelpers/LArMCParticleHelper.h"
 #include "larpandoracontent/LArHelpers/LArPfoHelper.h"
 #include "larpandoracontent/LArHelpers/LArVertexHelper.h"
@@ -36,6 +37,19 @@ VertexAssociatedHitMonitoringAlgorithm::VertexAssociatedHitMonitoringAlgorithm()
 
 StatusCode VertexAssociatedHitMonitoringAlgorithm::Run()
 {
+    const MCParticleList *pMCParticleList{nullptr};
+    PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetCurrentList(*this, pMCParticleList));
+
+    LArMCParticleHelper::MCContributionMap mcToHitsMap;
+    MCParticleVector primaries;
+    LArMCParticleHelper::GetPrimaryMCParticleList(pMCParticleList, primaries);
+    MCParticleList primariesList(primaries.begin(), primaries.end());
+
+    InteractionDescriptor descriptor{LArInteractionTypeHelper::GetInteractionDescriptor(primariesList)};
+    if (!descriptor.IsDIS())
+        throw StatusCodeException(STATUS_CODE_FAILURE);
+    std::cout << "Is DIS" << std::endl;
+
     const CaloHitList *pCaloHitList{nullptr};
     PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetList(*this, m_caloHitListName, pCaloHitList));
     const VertexList *pVertexList{nullptr};
@@ -76,7 +90,6 @@ StatusCode VertexAssociatedHitMonitoringAlgorithm::Run()
             PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &start, &end2, "ref", BLACK, 1, 1));
         }
 
-        PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &selectedHits, "hits", RED));
         PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &w, "vertex", BLUE, 1));
         PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
     }
@@ -125,34 +138,97 @@ void VertexAssociatedHitMonitoringAlgorithm::IdentifyTrackStubs(const CaloHitLis
     // Do this twice with a phase offset to reduce sensitivity to tracks straddling bins
     const int binAngle{8};
     const int nBins{360 / binAngle};
-    int hitBins1[nBins]{};
-    int hitBins2[nBins]{};
+    int hitBins[nBins]{};
+    float closestApproach[nBins]{};
+    CaloHitVector caloHits[nBins];
+    for (int bin = 0; bin < nBins; ++bin)
+        closestApproach[bin] = std::numeric_limits<float>::max();
     const float stepAngle{2 * M_PI * binAngle / 360.f};
-    const float phase1{0}, phase2{stepAngle / 2};
+    const float phase{0};
     for (const CaloHit *const pCaloHit : selectedHits)
     {
         const CartesianVector delta{pCaloHit->GetPositionVector() - pos};
-        float theta1{std::atan2(delta.GetZ(), delta.GetX()) + static_cast<float>(M_PI)};
-        float theta2{theta1};
-        theta1 -= phase1;
-        theta2 -= phase2;
-        if (theta1 < 0)
-            theta1 = 2 * static_cast<float>(M_PI) - theta1;
-        if (theta2 < 0)
-            theta2 = 2 * static_cast<float>(M_PI) - theta2;
+        float dr{delta.GetMagnitudeSquared()};
+        float theta{std::atan2(delta.GetZ(), delta.GetX())};
+        if (theta < 0)
+            theta += 2 * static_cast<float>(M_PI);
+        theta -= phase;
+        if (theta < 0)
+            theta = 2 * static_cast<float>(M_PI) - theta;
 
-        const int bin1{static_cast<int>(std::floor(theta1 / stepAngle))};
-        const int bin2{static_cast<int>(std::floor(theta2 / stepAngle))};
-        ++hitBins1[bin1];
-        ++hitBins2[bin2];
+        const int bin{static_cast<int>(std::floor(theta / stepAngle))};
+        ++hitBins[bin];
+        if (dr < closestApproach[bin])
+            closestApproach[bin] = dr;
+        caloHits[bin].emplace_back(pCaloHit);
     }
-
-    std::cout << "Num bins: " << nBins << std::endl;
+    IntVector sortedBins;
     for (int bin = 0; bin < nBins; ++bin)
     {
-        std::cout << bin << ": " << hitBins1[bin] << "   " << hitBins2[bin] << std::endl;
+        if (hitBins[bin] > 0)
+            sortedBins.emplace_back(bin);
     }
-    std::cout << "Done" << std::endl;
+    auto SortBinsFunc = [&hitBins] (const int bin1, const int bin2) { return hitBins[bin1] > hitBins[bin2]; };
+    std::sort(sortedBins.begin(), sortedBins.end(), SortBinsFunc);
+    auto SortCaloHitsFunc = [&pos] (const CaloHit *pCaloHit1, const CaloHit *pCaloHit2)
+    {
+        const float dr1{(pCaloHit1->GetPositionVector() - pos).GetMagnitudeSquared()};
+        const float dr2{(pCaloHit2->GetPositionVector() - pos).GetMagnitudeSquared()};
+
+        return dr1 < dr2;
+    };
+    for (CaloHitVector caloHitVector : caloHits)
+    {
+        std::sort(caloHitVector.begin(), caloHitVector.end(), SortCaloHitsFunc);
+        std::cout << "Vector:" << std::endl;
+        for (const CaloHit *const pCaloHit : caloHitVector)
+        {
+            const float dr{(pCaloHit->GetPositionVector() - pos).GetMagnitudeSquared()};
+            std::cout << "   " << dr << std::endl;
+        }
+    }
+
+    bool clusterMade{true};
+    while (clusterMade)
+    {
+        clusterMade = false;
+        for (const int bin : sortedBins)
+        {
+            int target{bin};
+            int binAlt1{bin > 0 ? bin - 1 : nBins - 1};
+            int binAlt2{bin < (nBins - 1) ? bin + 1 : 0};
+            float delta{closestApproach[bin]};
+            float deltaAlt{closestApproach[binAlt1]};
+            if (deltaAlt < delta)
+            {
+                target = binAlt1;
+                delta = deltaAlt;
+            }
+            deltaAlt = closestApproach[binAlt2];
+            if (deltaAlt < delta)
+            {
+                target = binAlt2;
+                delta = deltaAlt;
+            }
+            //clusterMade = call a function to do the work on the target hit vector
+            if (clusterMade)
+            {
+                hitBins[target] = 0;
+                std::sort(sortedBins.begin(), sortedBins.end(), SortBinsFunc);
+            }
+        }
+    }
+/*    for (int bin = 0; bin < nBins; ++bin)
+    {
+        const int count{hitBins[bin]};
+        const float angle{bin * stepAngle + phase};
+        const float approach{closestApproach[bin]};
+ 
+        std::cout << bin << ": " << count << " " << approach << " " << angle << std::endl;
+    }
+    std::cout << "Done" << std::endl;*/
+    PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &selectedHits, "hits", RED));
+
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
