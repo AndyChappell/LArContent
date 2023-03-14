@@ -29,6 +29,7 @@ public:
 private:
     pandora::StatusCode Run();
     void IdentifyTrackStubs(const pandora::CaloHitList &caloHitList, const pandora::Vertex &vertex) const;
+    bool ClusterHits(const pandora::CaloHit *const pSeedHit, const pandora::CaloHitVector &caloHitVector, const pandora::CartesianVector &vertex) const;
     pandora::StatusCode ReadSettings(const pandora::TiXmlHandle xmlHandle);
 
     std::string m_caloHitListName;  ///< The name of the calo hit list
