@@ -77,7 +77,7 @@ StatusCode VertexAssociatedHitMonitoringAlgorithm::Run()
                 selectedHits.emplace_back(pCaloHit);
         }
 
-        for (int r = 0; r < 360; r += 8)
+        /*for (int r = 0; r < 360; r += 8)
         {
             CartesianVector start(w);
             CartesianVector end1(std::cos(2 * 3.14159 * r / 360.f), 0, std::sin(2 * 3.14159 * r / 360.f));
@@ -88,7 +88,7 @@ StatusCode VertexAssociatedHitMonitoringAlgorithm::Run()
             end2 += start;
             PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &start, &end1, "ref", BLACK, 1, 1));
             PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &start, &end2, "ref", BLACK, 1, 1));
-        }
+        }*/
 
         PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &w, "vertex", BLUE, 1));
         PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
@@ -177,16 +177,10 @@ void VertexAssociatedHitMonitoringAlgorithm::IdentifyTrackStubs(const CaloHitLis
 
         return dr1 < dr2;
     };
-    for (CaloHitVector caloHitVector : caloHits)
-    {
+    for (CaloHitVector &caloHitVector : caloHits)
         std::sort(caloHitVector.begin(), caloHitVector.end(), SortCaloHitsFunc);
-        std::cout << "Vector:" << std::endl;
-        for (const CaloHit *const pCaloHit : caloHitVector)
-        {
-            const float dr{(pCaloHit->GetPositionVector() - pos).GetMagnitudeSquared()};
-            std::cout << "   " << dr << std::endl;
-        }
-    }
+
+    PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &selectedHits, "hits", RED));
 
     bool clusterMade{true};
     while (clusterMade)
@@ -210,11 +204,30 @@ void VertexAssociatedHitMonitoringAlgorithm::IdentifyTrackStubs(const CaloHitLis
                 target = binAlt2;
                 delta = deltaAlt;
             }
-            //clusterMade = call a function to do the work on the target hit vector
+            // Candidate clusters are sorted by the number of hits, if there aren't two hits there's nothing to cluster
+            if (hitBins[target] < 2)
+            {
+                hitBins[target] = 0;
+                closestApproach[target] = std::numeric_limits<float>::max();
+                // Need to allow for sparse adjacent bins that happen to be closer than the nominal bin
+                if (target != bin)
+                    clusterMade = true;
+                std::sort(sortedBins.begin(), sortedBins.end(), SortBinsFunc);
+                break;
+            }
+            CaloHitList temp;
+            for (const CaloHit *const pCaloHit : caloHits[target])
+                temp.emplace_back(pCaloHit);
+            PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &temp, "consider", GREEN));
+            PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
+            const CaloHit *const pSeedHit{caloHits[target].front()};
+            caloHits[target].erase(caloHits[target].begin());
+            clusterMade = this->ClusterHits(pSeedHit, caloHits[target], pos);
             if (clusterMade)
             {
                 hitBins[target] = 0;
                 std::sort(sortedBins.begin(), sortedBins.end(), SortBinsFunc);
+                break;
             }
         }
     }
@@ -227,8 +240,78 @@ void VertexAssociatedHitMonitoringAlgorithm::IdentifyTrackStubs(const CaloHitLis
         std::cout << bin << ": " << count << " " << approach << " " << angle << std::endl;
     }
     std::cout << "Done" << std::endl;*/
-    PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &selectedHits, "hits", RED));
+}
 
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+bool VertexAssociatedHitMonitoringAlgorithm::ClusterHits(const CaloHit *const pSeedHit, const CaloHitVector &caloHitVector,
+    const CartesianVector &vertex) const
+{
+    // We know the seed hit is not null and the hit vector must have at least one element
+    CaloHitVector clusteredHits;
+    clusteredHits.emplace_back(pSeedHit);
+    CartesianVector clusterDirection{(pSeedHit->GetPositionVector() - vertex).GetUnitVector()};
+
+    for (size_t i = 0; i < caloHitVector.size(); ++i)
+    {
+        const CaloHit *pCurrentHit{caloHitVector.at(i)};
+        const int N{static_cast<int>(clusteredHits.size())};
+        const CaloHit *pAnchorHit{nullptr};
+        float tolerance{0.9969f};
+        switch (N)
+        {
+            case 1:
+                pAnchorHit = clusteredHits[0];
+                tolerance = 0.985f;
+                break;
+            case 2:
+                pAnchorHit = clusteredHits[0];
+                tolerance = 0.9875f;
+                break;
+            case 3:
+                pAnchorHit = clusteredHits[0];
+                tolerance = 0.99f;
+                break;
+            case 4:
+                pAnchorHit = clusteredHits[0];
+                tolerance = 0.9925f;
+                break;
+            default:
+                pAnchorHit = clusteredHits[N - 5];
+                tolerance = 0.9925f;
+                break;
+        }
+        CartesianVector localDirection{(pCurrentHit->GetPositionVector() - pAnchorHit->GetPositionVector()).GetUnitVector()};
+        const float dr{(pCurrentHit->GetPositionVector() - clusteredHits[N - 1]->GetPositionVector()).GetMagnitudeSquared()};
+
+        if (dr <= 4.f)
+        {
+            std::cout << "Hit close" << " ";
+            // If we aren't too far from the last cluster and the direction is within tight angular constraints, cluster
+            // Also allow some latitude if we've only clustered the seed hit so far
+            const float dotProduct{clusterDirection.GetDotProduct(localDirection)};
+            if (dotProduct >= tolerance)
+            {
+                clusteredHits.emplace_back(pCurrentHit);
+                std::cout << "Direction maintained: " << dotProduct << std::endl;
+            }
+            else
+                std::cout << "Direction changed: " << dotProduct << std::endl;
+        }
+        else
+        {
+            std::cout << "Hit too far" << std::endl;
+            // No downstream hits can be closer than the last, we're done
+            break;
+        }
+    }
+    
+    CaloHitList clusteredHitList;
+    for (const CaloHit *const pCaloHit : clusteredHits)
+        clusteredHitList.emplace_back(pCaloHit);
+    PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &clusteredHitList, "cluster", BLUE));
+
+    return clusteredHitList.size() >= 2;
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
