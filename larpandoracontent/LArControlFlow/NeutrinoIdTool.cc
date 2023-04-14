@@ -39,6 +39,15 @@ NeutrinoIdTool<T>::NeutrinoIdTool() :
 {
 }
 
+template <typename T>
+NeutrinoIdTool<T>::~NeutrinoIdTool()
+{
+    if (m_persistFeatures)
+    {
+        PANDORA_MONITORING_API(SaveTree(this->GetPandora(), "sliceid", "sliceid.root", "UPDATE"));
+    }
+}
+
 //------------------------------------------------------------------------------------------------------------------------------------------
 
 template <typename T>
@@ -263,7 +272,14 @@ void NeutrinoIdTool<T>::SelectPfosByProbability(const pandora::Algorithm *const 
                 sliceFeaturesVector.at(sliceIndex).GetFeatureMap(featureMap);
 
                 for (auto const &[name, value] : featureMap)
+                {
                     metadata.m_propertiesToAdd[name] = value;
+                    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "sliceid", name, value));
+                    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "sliceid", "slice", 0));
+                }
+                PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "sliceid", "nu_score", nuProbability));
+                PANDORA_MONITORING_API(FillTree(this->GetPandora(), "sliceid"));
+
             }
 
             PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::ParticleFlowObject::AlterMetadata(*pAlgorithm, pPfo, metadata));
@@ -280,7 +296,13 @@ void NeutrinoIdTool<T>::SelectPfosByProbability(const pandora::Algorithm *const 
                 sliceFeaturesVector.at(sliceIndex).GetFeatureMap(featureMap);
 
                 for (auto const &[name, value] : featureMap)
+                {
                     metadata.m_propertiesToAdd[name] = value;
+                    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "sliceid", name, value));
+                    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "sliceid", "slice", 1));
+                }
+                PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "sliceid", "nu_score", nuProbability));
+                PANDORA_MONITORING_API(FillTree(this->GetPandora(), "sliceid"));
             }
 
             PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::ParticleFlowObject::AlterMetadata(*pAlgorithm, pPfo, metadata));
