@@ -12,6 +12,10 @@
 #include "Pandora/AlgorithmTool.h"
 #include "Pandora/Pandora.h"
 
+#include "larpandoracontent/LArAtmos/AdcMomentumAlgorithm.h"
+#include "larpandoracontent/LArAtmos/HitDirectionAlgorithm.h"
+#include "larpandoracontent/LArAtmos/PfoDirectionAlgorithm.h"
+
 #include "larpandoracontent/LArCheating/CheatingBeamParticleIdTool.h"
 #include "larpandoracontent/LArCheating/CheatingBeamParticleSliceSelectionTool.h"
 #include "larpandoracontent/LArCheating/CheatingClusterCharacterisationAlgorithm.h"
@@ -59,6 +63,7 @@
 #include "larpandoracontent/LArMonitoring/TestBeamHierarchyEventValidationAlgorithm.h"
 #include "larpandoracontent/LArMonitoring/TransverseMatrixVisualizationTool.h"
 #include "larpandoracontent/LArMonitoring/TransverseTensorVisualizationTool.h"
+#include "larpandoracontent/LArMonitoring/TruthMonitoringAlgorithm.h"
 #include "larpandoracontent/LArMonitoring/VertexMonitoringAlgorithm.h"
 #include "larpandoracontent/LArMonitoring/VisualMonitoringAlgorithm.h"
 #include "larpandoracontent/LArMonitoring/VisualParticleMonitoringAlgorithm.h"
@@ -214,6 +219,9 @@
 
 // clang-format off
 #define LAR_ALGORITHM_LIST(d)                                                                                                   \
+    d("LArAdcMomentum",                         AdcMomentumAlgorithm)                                                           \
+    d("LArHitDirection",                        HitDirectionAlgorithm)                                                          \
+    d("LArPfoDirection",                        PfoDirectionAlgorithm)                                                          \
     d("LArMuonLeadingEventValidation",          MuonLeadingEventValidationAlgorithm)                                            \
     d("LArNeutrinoEventValidation",             NeutrinoEventValidationAlgorithm)                                               \
     d("LArTestBeamEventValidation",             TestBeamEventValidationAlgorithm)                                               \
@@ -222,6 +230,7 @@
     d("LArHierarchyValidation",                 HierarchyValidationAlgorithm)                                                   \
     d("LArPfoValidation",                       PfoValidationAlgorithm)                                                         \
     d("LArMCParticleMonitoring",                MCParticleMonitoringAlgorithm)                                                  \
+    d("LArTruthMonitoring",                     TruthMonitoringAlgorithm)                                                       \
     d("LArVertexMonitoring",                    VertexMonitoringAlgorithm)                                                      \
     d("LArVisualMonitoring",                    VisualMonitoringAlgorithm)                                                      \
     d("LArVisualParticleMonitoring",            VisualParticleMonitoringAlgorithm)                                              \
