@@ -48,11 +48,16 @@ private:
 
         const pandora::CartesianVector &GetPosition() const;
         float GetChi2() const;
+        bool IsInput(const pandora::HitType view, const pandora::CartesianVector &vertex) const;
+        int GetNumInputs() const;
+        float GetSeparation(const VertexTuple &other) const;
         std::string ToString() const;
 
     private:
         pandora::CartesianVector m_pos; ///< Calculated 3D position
+        std::map<pandora::HitType, const pandora::CartesianVector*> m_inputs;  ///< Map of the input 2D vertices
         float m_chi2;                   ///< Chi squared of calculated position
+        int m_nInputs;                  ///< The number of 2D vertices used to create this vertex
     };
 
     typedef std::pair<int, int> Pixel; // A Pixel is a row, column pair
@@ -60,8 +65,8 @@ private:
 
     pandora::StatusCode Run();
     pandora::StatusCode ReadSettings(const pandora::TiXmlHandle xmlHandle);
-    pandora::StatusCode PrepareTrainingSample();
-    pandora::StatusCode Infer();
+    pandora::StatusCode PrepareTrainingSample(const int vertexIndex = 0);
+    pandora::StatusCode Infer(const int vertexIndex = 0);
 
     /*
      *  @brief  Create input for the network from a calo hit list
@@ -182,7 +187,20 @@ private:
      *
      *  @return The StatusCode resulting from the function
      */
-    void GetHitRegion(const pandora::CaloHitList &caloHitList, float &xMin, float &xMax, float &zMin, float &zMax) const;
+    void GetHitRegion(const pandora::CaloHitList &caloHitList, float &xMin, float &xMax, float &zMin, float &zMax, int vertexIndex = 0) const;
+
+    /*
+     *  @brief  Determine the physical bounds associated with a CaloHitList.
+     *
+     *  @param  caloHitList The calo hit list under consideration
+     *  @param  vertex The position of the vertex under consideration
+     *  @param  xMin The output minimum x value
+     *  @param  xMax The output maximum x value
+     *  @param  zMin The output minimum z value
+     *  @param  zMax The output maximum z value
+     */
+    void GetAsymmetryBounds(const pandora::CaloHitList &caloHitList, const pandora::CartesianVector &vertex, float &xMin, float &xMax, float &zMin,
+        float &zMax) const;
 
     /**
      *  @brief Create a vertex list from the candidate vertices.
