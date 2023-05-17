@@ -290,55 +290,14 @@ StatusCode DlVertexingAlgorithm::Infer(const int vertexIndex)
         int colOffset{0}, rowOffset{0}, canvasWidth{m_width}, canvasHeight{m_height};
         this->GetCanvasParameters(output, pixelVector, colOffset, rowOffset, canvasWidth, canvasHeight);
 
-        float **canvas{new float *[canvasHeight]};
-        for (int row = 0; row < canvasHeight; ++row)
-            canvas[row] = new float[canvasWidth]{};
-
-        // we want the maximum value in the num_classes dimension (1) for every pixel
-        auto classes{torch::argmax(output, 1)};
-        // the argmax result is a 1 x height x width tensor where each element is a class id
-        auto classesAccessor{classes.accessor<long, 3>()};
-        const double scaleFactor{std::sqrt(m_height * m_height + m_width * m_width)};
-        std::map<int, bool> haveSeenMap;
-        for (const auto [row, col] : pixelVector)
-        {
-            const auto cls{classesAccessor[0][row][col]};
-            if (cls > 0 && cls < m_nClasses)
-            {
-                const int inner{static_cast<int>(std::round(std::ceil(scaleFactor * m_thresholds[cls - 1])))};
-                const int outer{static_cast<int>(std::round(std::ceil(scaleFactor * m_thresholds[cls])))};
-                if (inner < 0.8f)
-                    this->DrawRing(canvas, row + rowOffset, col + colOffset, inner, outer, 1.f / (outer * outer - inner * inner));
-            }
-        }
-        if (isU)
-        {
-            LArMvaHelper::MvaFeatureVector featureVector;
-            for (int row = 0; row < m_height; ++row)
-                for (int col = 0; col < m_width; ++col)
-                    featureVector.emplace_back(static_cast<double>(canvas[rowOffset + row][colOffset + col]));
-            LArMvaHelper::ProduceTrainingExample("canvas_u.csv", true, featureVector);
-        }
-        if (isV)
-        {
-            LArMvaHelper::MvaFeatureVector featureVector;
-            for (int row = 0; row < m_height; ++row)
-                for (int col = 0; col < m_width; ++col)
-                    featureVector.emplace_back(static_cast<double>(canvas[rowOffset + row][colOffset + col]));
-            LArMvaHelper::ProduceTrainingExample("canvas_v.csv", true, featureVector);
-        }
-        if (isW)
-        {
-            LArMvaHelper::MvaFeatureVector featureVector;
-            for (int row = 0; row < m_height; ++row)
-                for (int col = 0; col < m_width; ++col)
-                    featureVector.emplace_back(static_cast<double>(canvas[rowOffset + row][colOffset + col]));
-            LArMvaHelper::ProduceTrainingExample("canvas_w.csv", true, featureVector);
-        }
+        Canvas canvas(view, m_width, m_height, canvasWidth, canvasHeight, colOffset, rowOffset);
+        canvas.GenerateHeatMap(output, pixelVector, m_thresholds, m_nClasses);
 
         CartesianPointVector positionVector;
-        this->MakeWirePlaneCoordinatesFromCanvas(
-            canvas, canvasWidth, canvasHeight, colOffset, rowOffset, view, driftMin, driftMax, wireMin[view], wireMax[view], positionVector);
+        // ATTN If wire w pitches vary between TPCs, exception will be raised in initialisation of lar pseudolayer plugin
+        const LArTPC *const pTPC(this->GetPandora().GetGeometry()->GetLArTPCMap().begin()->second);
+        const float pitch(view == TPC_VIEW_U ? pTPC->GetWirePitchU() : view == TPC_VIEW_V ? pTPC->GetWirePitchV() : pTPC->GetWirePitchW());
+        canvas.MakeWirePlaneCoordinatesFromCanvas(driftMin, driftMax, wireMin[view], wireMax[view], pitch, m_findSecondaries, positionVector);
         CartesianPointVector &vertexCandidatesPlane{isU ? vertexCandidatesU : isV ? vertexCandidatesV : vertexCandidatesW};
         if (m_findSecondaries)
         {
@@ -384,10 +343,6 @@ StatusCode DlVertexingAlgorithm::Infer(const int vertexIndex)
             }
             PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
         }
-
-        for (int row = 0; row < canvasHeight; ++row)
-            delete[] canvas[row];
-        delete[] canvas;
     }
 
     int nEmptyLists{0};
@@ -608,84 +563,6 @@ StatusCode DlVertexingAlgorithm::MakeNetworkInputFromHits(const CaloHitList &cal
 
 //-----------------------------------------------------------------------------------------------------------------------------------------
 
-StatusCode DlVertexingAlgorithm::MakeWirePlaneCoordinatesFromCanvas(float **canvas, const int canvasWidth, const int canvasHeight,
-    const int columnOffset, const int rowOffset, const HitType view, const float xMin, const float xMax, const float zMin, const float zMax,
-    CartesianPointVector &positionVector) const
-{
-    // ATTN If wire w pitches vary between TPCs, exception will be raised in initialisation of lar pseudolayer plugin
-    const LArTPC *const pTPC(this->GetPandora().GetGeometry()->GetLArTPCMap().begin()->second);
-    const float pitch(view == TPC_VIEW_U ? pTPC->GetWirePitchU() : view == TPC_VIEW_V ? pTPC->GetWirePitchV() : pTPC->GetWirePitchW());
-    const float driftStep{0.5f};
-
-    const double dx = ((xMax + 0.5f * driftStep) - (xMin - 0.5f * driftStep)) / m_width;
-    const double dz = ((zMax + 0.5f * pitch) - (zMin - 0.5f * pitch)) / m_height;
-
-    float best{-1.f};
-    int rowBest{0}, colBest{0};
-    for (int row = 0; row < canvasHeight; ++row)
-        for (int col = 0; col < canvasWidth; ++col)
-            if (canvas[row][col] > 0 && canvas[row][col] > best)
-            {
-                best = canvas[row][col];
-                rowBest = row;
-                colBest = col;
-            }
-
-    const float x{static_cast<float>((colBest - columnOffset) * dx + xMin)};
-    const float z{static_cast<float>((rowBest - rowOffset) * dz + zMin)};
-
-    CartesianVector pt(x, 0.f, z);
-    if (!m_findSecondaries)
-        positionVector.emplace_back(pt);
-
-    if (m_findSecondaries)
-    {
-        for (int row = 0; row < canvasHeight; ++row)
-            for (int col = 0; col < canvasWidth; ++col)
-            {
-                if (canvas[row][col] >= 0.25f * best)
-                {
-                    bool localMaximum{true};
-                    for (int r = -1; r <= 1; ++r)
-                    {
-                        if (0 <= (row + r) && (row + r) < canvasHeight)
-                        {
-                            for (int c = -1; c <= 1; ++c)
-                            {
-                                if ((r == 0) && (c == 0))
-                                    continue;
-                                if (0 <= (col + c) && (col + c) < canvasWidth)
-                                {
-                                    if (canvas[row][col] < canvas[row + r][col + c])
-                                    {
-                                        localMaximum = false;
-                                        break;
-                                    }
-                                }
-                            }
-                            if (!localMaximum)
-                                break;
-                        }
-                    }
-                    if (localMaximum)
-                    {
-                        const float x0{static_cast<float>((col - columnOffset) * dx + xMin)};
-                        const float z0{static_cast<float>((row - rowOffset) * dz + zMin)};
-
-                        CartesianVector pt0(x0, 0.f, z0);
-                        positionVector.emplace_back(pt0);
-                    }
-                }
-            }
-        if (positionVector.empty())
-            positionVector.emplace_back(pt);
-    }
-
-    return STATUS_CODE_SUCCESS;
-}
-
-//-----------------------------------------------------------------------------------------------------------------------------------------
-
 void DlVertexingAlgorithm::GetCanvasParameters(const LArDLHelper::TorchOutput &networkOutput, const PixelVector &pixelVector,
     int &colOffset, int &rowOffset, int &width, int &height) const
 {
@@ -717,76 +594,6 @@ void DlVertexingAlgorithm::GetCanvasParameters(const LArDLHelper::TorchOutput &n
     rowOffset = rowOffsetMin < 0 ? -rowOffsetMin : 0;
     width = std::max(colOffsetMax + colOffset + 1, m_width);
     height = std::max(rowOffsetMax + rowOffset + 1, m_height);
-}
-
-//-----------------------------------------------------------------------------------------------------------------------------------------
-
-void DlVertexingAlgorithm::DrawRing(float **canvas, const int row, const int col, const int inner, const int outer, const float weight) const
-{
-    // Set the starting position for each circle bounding the ring
-    int c1{inner}, r1{0}, c2{outer}, r2{0};
-    int inner2{inner * inner}, outer2{outer * outer};
-    while (c2 >= r2)
-    {
-        // Set the output pixel location
-        int rp2{r2}, cp2{c2};
-        // We're still within the octant for the inner ring, so use the inner pixel location (see Update comment below)
-        // Note also that the inner row is always the same as the outer row, so no need to define rp1
-        int cp1{c1};
-        if (c1 <= r1)
-        { // We've completed the arc of the inner ring already, so just move radially out from here (see Update comment below)
-            cp1 = r2;
-        }
-        // Fill the pixels from inner to outer in the current row and their mirror pixels in the other octants
-        for (int c = cp1; c <= cp2; ++c)
-        {
-            canvas[row + rp2][col + c] += weight;
-            if (rp2 != c)
-                canvas[row + c][col + rp2] += weight;
-            if (rp2 != 0 && cp2 != 0)
-            {
-                canvas[row - rp2][col - c] += weight;
-                if (rp2 != c)
-                    canvas[row - c][col - rp2] += weight;
-            }
-            if (rp2 != 0)
-            {
-                canvas[row - rp2][col + c] += weight;
-                if (rp2 != c)
-                    canvas[row + c][col - rp2] += weight;
-            }
-            if (cp2 != 0)
-            {
-                canvas[row + rp2][col - c] += weight;
-                if (rp2 != c)
-                    canvas[row - c][col + rp2] += weight;
-            }
-        }
-        // Only update the inner location while it remains in the octant (outer ring also remains in the octant of course, but the logic of
-        // the update means that the inner ring can leave its octant before the outer ring is complete, so we need to stop that)
-        if (c1 > r1)
-            this->Update(inner2, c1, r1);
-        // Update the outer location - increase the row position with every step, decrease the column position if conditions are met
-        this->Update(outer2, c2, r2);
-    }
-}
-
-//-----------------------------------------------------------------------------------------------------------------------------------------
-
-void DlVertexingAlgorithm::Update(const int radius2, int &col, int &row) const
-{
-    // Bresenham midpoint circle algorithm to determine if we should update the column position
-    // This obscure looking block of code uses bit shifts and integer arithmetic to perform this check as efficiently as possible
-    const int a{1 - (col << 2)};
-    const int b{col * col + row * row - radius2 + (row << 2) + 1};
-    const int c{(a << 2) * b + a * a};
-    if (c < 0)
-    {
-        --col;
-        ++row;
-    }
-    else
-        ++row;
 }
 
 //-----------------------------------------------------------------------------------------------------------------------------------------
@@ -1205,6 +1012,199 @@ StatusCode DlVertexingAlgorithm::ReadSettings(const TiXmlHandle xmlHandle)
         STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadVectorOfValues(xmlHandle, "CaloHitListNames", m_caloHitListNames));
 
     return STATUS_CODE_SUCCESS;
+}
+
+//-----------------------------------------------------------------------------------------------------------------------------------------
+//-----------------------------------------------------------------------------------------------------------------------------------------
+
+DlVertexingAlgorithm::Canvas::Canvas(HitType view, const int imageWidth, const int imageHeight, const int canvasWidth, const int canvasHeight,
+    const int colOffset, const int rowOffset) :
+    m_view{view},
+    m_imageWidth{imageWidth},
+    m_imageHeight{imageHeight},
+    m_canvasWidth{canvasWidth},
+    m_canvasHeight{canvasHeight},
+    m_colOffset{colOffset},
+    m_rowOffset{rowOffset}
+{
+    m_canvas = new float *[m_canvasHeight];
+    for (int row = 0; row < m_canvasHeight; ++row)
+        m_canvas[row] = new float[m_canvasWidth]{};
+}
+
+//-----------------------------------------------------------------------------------------------------------------------------------------
+
+DlVertexingAlgorithm::Canvas::~Canvas()
+{
+    for (int row = 0; row < m_canvasHeight; ++row)
+        delete[] m_canvas[row];
+    delete[] m_canvas;
+}
+
+//-----------------------------------------------------------------------------------------------------------------------------------------
+
+void DlVertexingAlgorithm::Canvas::GenerateHeatMap(const LArDLHelper::TorchOutput &networkOutput, const PixelVector &pixelVector,
+    const DoubleVector &thresholds, const int nClasses)
+{
+    // we want the maximum value in the num_classes dimension (1) for every pixel
+    auto classes{torch::argmax(networkOutput, 1)};
+    // the argmax result is a 1 x height x width tensor where each element is a class id
+    auto classesAccessor{classes.accessor<long, 3>()};
+    const double scaleFactor{std::sqrt(m_imageHeight * m_imageHeight + m_imageWidth * m_imageWidth)};
+    std::map<int, bool> haveSeenMap;
+    for (const auto [row, col] : pixelVector)
+    {
+        const auto cls{classesAccessor[0][row][col]};
+        if (cls > 0 && cls < nClasses)
+        {
+            const int inner{static_cast<int>(std::round(std::ceil(scaleFactor * thresholds[cls - 1])))};
+            const int outer{static_cast<int>(std::round(std::ceil(scaleFactor * thresholds[cls])))};
+            if (inner < 0.8f)
+                this->DrawRing(row + m_rowOffset, col + m_colOffset, inner, outer, 1.f / (outer * outer - inner * inner));
+        }
+    }
+}
+
+//-----------------------------------------------------------------------------------------------------------------------------------------
+
+void DlVertexingAlgorithm::Canvas::DrawRing(const int row, const int col, const int inner, const int outer, const float weight) const
+{
+    // Set the starting position for each circle bounding the ring
+    int c1{inner}, r1{0}, c2{outer}, r2{0};
+    int inner2{inner * inner}, outer2{outer * outer};
+    while (c2 >= r2)
+    {
+        // Set the output pixel location
+        int rp2{r2}, cp2{c2};
+        // We're still within the octant for the inner ring, so use the inner pixel location (see Update comment below)
+        // Note also that the inner row is always the same as the outer row, so no need to define rp1
+        int cp1{c1};
+        if (c1 <= r1)
+        { // We've completed the arc of the inner ring already, so just move radially out from here (see Update comment below)
+            cp1 = r2;
+        }
+        // Fill the pixels from inner to outer in the current row and their mirror pixels in the other octants
+        for (int c = cp1; c <= cp2; ++c)
+        {
+            m_canvas[row + rp2][col + c] += weight;
+            if (rp2 != c)
+                m_canvas[row + c][col + rp2] += weight;
+            if (rp2 != 0 && cp2 != 0)
+            {
+                m_canvas[row - rp2][col - c] += weight;
+                if (rp2 != c)
+                    m_canvas[row - c][col - rp2] += weight;
+            }
+            if (rp2 != 0)
+            {
+                m_canvas[row - rp2][col + c] += weight;
+                if (rp2 != c)
+                    m_canvas[row + c][col - rp2] += weight;
+            }
+            if (cp2 != 0)
+            {
+                m_canvas[row + rp2][col - c] += weight;
+                if (rp2 != c)
+                    m_canvas[row - c][col + rp2] += weight;
+            }
+        }
+        // Only update the inner location while it remains in the octant (outer ring also remains in the octant of course, but the logic of
+        // the update means that the inner ring can leave its octant before the outer ring is complete, so we need to stop that)
+        if (c1 > r1)
+            this->Update(inner2, c1, r1);
+        // Update the outer location - increase the row position with every step, decrease the column position if conditions are met
+        this->Update(outer2, c2, r2);
+    }
+}
+
+//-----------------------------------------------------------------------------------------------------------------------------------------
+
+void DlVertexingAlgorithm::Canvas::MakeWirePlaneCoordinatesFromCanvas(const float xMin, const float xMax, const float zMin, const float zMax,
+    const float pitch, const bool findSecondaries, CartesianPointVector &positionVector) const
+{
+    const float driftStep{0.5f};
+
+    const double dx = ((xMax + 0.5f * driftStep) - (xMin - 0.5f * driftStep)) / m_imageWidth;
+    const double dz = ((zMax + 0.5f * pitch) - (zMin - 0.5f * pitch)) / m_imageHeight;
+
+    float best{-1.f};
+    int rowBest{0}, colBest{0};
+    for (int row = 0; row < m_canvasHeight; ++row)
+        for (int col = 0; col < m_canvasWidth; ++col)
+            if (m_canvas[row][col] > 0 && m_canvas[row][col] > best)
+            {
+                best = m_canvas[row][col];
+                rowBest = row;
+                colBest = col;
+            }
+
+    const float x{static_cast<float>((colBest - m_colOffset) * dx + xMin)};
+    const float z{static_cast<float>((rowBest - m_rowOffset) * dz + zMin)};
+
+    CartesianVector pt(x, 0.f, z);
+    if (!findSecondaries)
+        positionVector.emplace_back(pt);
+
+    if (findSecondaries)
+    {
+        for (int row = 0; row < m_canvasHeight; ++row)
+            for (int col = 0; col < m_canvasWidth; ++col)
+            {
+                if (m_canvas[row][col] >= 0.25f * best)
+                {
+                    bool localMaximum{true};
+                    for (int r = -1; r <= 1; ++r)
+                    {
+                        if (0 <= (row + r) && (row + r) < m_canvasHeight)
+                        {
+                            for (int c = -1; c <= 1; ++c)
+                            {
+                                if ((r == 0) && (c == 0))
+                                    continue;
+                                if (0 <= (col + c) && (col + c) < m_canvasWidth)
+                                {
+                                    if (m_canvas[row][col] < m_canvas[row + r][col + c])
+                                    {
+                                        localMaximum = false;
+                                        break;
+                                    }
+                                }
+                            }
+                            if (!localMaximum)
+                                break;
+                        }
+                    }
+                    if (localMaximum)
+                    {
+                        const float x0{static_cast<float>((col - m_colOffset) * dx + xMin)};
+                        const float z0{static_cast<float>((row - m_rowOffset) * dz + zMin)};
+
+                        CartesianVector pt0(x0, 0.f, z0);
+                        positionVector.emplace_back(pt0);
+                    }
+                }
+            }
+        if (positionVector.empty())
+            positionVector.emplace_back(pt);
+    }
+}
+
+//-----------------------------------------------------------------------------------------------------------------------------------------
+
+void DlVertexingAlgorithm::Canvas::Update(const int radius2, int &col, int &row) const
+{
+    // Bresenham midpoint circle algorithm to determine if we should update the column position
+    // This obscure looking block of code uses bit shifts and integer arithmetic to perform this check as efficiently as possible
+    const int a{1 - (col << 2)};
+    const int b{col * col + row * row - radius2 + (row << 2) + 1};
+    const int c{(a << 2) * b + a * a};
+    if (c < 0)
+    {
+        --col;
+        ++row;
+    }
+    else
+        ++row;
 }
 
 //-----------------------------------------------------------------------------------------------------------------------------------------
