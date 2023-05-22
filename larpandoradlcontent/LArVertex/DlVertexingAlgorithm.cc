@@ -261,6 +261,7 @@ StatusCode DlVertexingAlgorithm::Infer(const int vertexIndex)
         driftMax = std::max(viewDriftMax, driftMax);
     }
 
+    std::map<HitType, Canvas *> canvases;
     CartesianPointVector vertexCandidatesU, vertexCandidatesV, vertexCandidatesW;
     for (const std::string listName : m_caloHitListNames)
     {
@@ -290,60 +291,36 @@ StatusCode DlVertexingAlgorithm::Infer(const int vertexIndex)
         int colOffset{0}, rowOffset{0}, canvasWidth{m_width}, canvasHeight{m_height};
         this->GetCanvasParameters(output, pixelVector, colOffset, rowOffset, canvasWidth, canvasHeight);
 
-        Canvas canvas(view, m_width, m_height, canvasWidth, canvasHeight, colOffset, rowOffset);
-        canvas.GenerateHeatMap(output, pixelVector, m_thresholds, m_nClasses);
-
-        CartesianPointVector positionVector;
-        // ATTN If wire w pitches vary between TPCs, exception will be raised in initialisation of lar pseudolayer plugin
-        const LArTPC *const pTPC(this->GetPandora().GetGeometry()->GetLArTPCMap().begin()->second);
-        const float pitch(view == TPC_VIEW_U ? pTPC->GetWirePitchU() : view == TPC_VIEW_V ? pTPC->GetWirePitchV() : pTPC->GetWirePitchW());
-        canvas.MakeWirePlaneCoordinatesFromCanvas(driftMin, driftMax, wireMin[view], wireMax[view], pitch, m_findSecondaries, positionVector);
-        CartesianPointVector &vertexCandidatesPlane{isU ? vertexCandidatesU : isV ? vertexCandidatesV : vertexCandidatesW};
-        if (m_findSecondaries)
-        {
-            for (const CartesianVector &candidate : positionVector)
-                vertexCandidatesPlane.emplace_back(candidate);
-        }
-        else if (!positionVector.empty())
-        {
-            vertexCandidatesPlane.emplace_back(positionVector.front());
-        }
-
-        if (m_visualise)
-        {
-            PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1.f, 1.f, 1.f));
-            try
-            {
-                float x{0.f}, u{0.f}, v{0.f}, w{0.f};
-                this->GetTrueVertexPosition(x, u, v, w);
-                if (isU)
-                {
-                    const CartesianVector trueVertex(x, 0.f, u);
-                    PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &trueVertex, "U(true)", BLUE, 3));
-                }
-                else if (isV)
-                {
-                    const CartesianVector trueVertex(x, 0.f, v);
-                    PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &trueVertex, "V(true)", BLUE, 3));
-                }
-                else if (isW)
-                {
-                    const CartesianVector trueVertex(x, 0.f, w);
-                    PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &trueVertex, "W(true)", BLUE, 3));
-                }
-            }
-            catch (StatusCodeException &e)
-            {
-                std::cerr << "DlVertexingAlgorithm: Warning. Couldn't find true vertex." << std::endl;
-            }
-            for (const auto pos : positionVector)
-            {
-                std::string label{isU ? "U" : isV ? "V" : "W"};
-                PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &pos, label, RED, 3));
-            }
-            PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
-        }
+        canvases[view] = new Canvas(view, m_width, m_height, canvasWidth, canvasHeight, colOffset, rowOffset, driftMin, driftMax,
+            wireMin[view], wireMax[view]);
+        canvases[view]->GenerateHeatMap(output, pixelVector, m_thresholds, m_nClasses);
     }
+    // ATTN If wire w pitches vary between TPCs, exception will be raised in initialisation of lar pseudolayer plugin
+    const LArTPC *const pTPC(this->GetPandora().GetGeometry()->GetLArTPCMap().begin()->second);
+    CartesianPointVector positionVectorU, positionVectorV, positionVectorW;
+    // Currently arbitrary choice of canvas object - make static
+    canvases[TPC_VIEW_W]->FindCandidates(*canvases[TPC_VIEW_U], *canvases[TPC_VIEW_V], *canvases[TPC_VIEW_W], pTPC,
+        this->GetPandora().GetPlugins()->GetLArTransformationPlugin(), positionVectorU, positionVectorV, positionVectorW);
+
+    PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1.f, 1.f, 1.f));
+
+    for (const CartesianVector &vec : positionVectorU)
+    {
+        //std::cout << vec.GetX() << " " << vec.GetZ() << std::endl;
+        PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &vec, "reco_u", RED, 2));
+    }
+    for (const CartesianVector &vec : positionVectorV)
+    {
+        //std::cout << vec.GetX() << " " << vec.GetZ() << std::endl;
+        PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &vec, "reco_v", GREEN, 2));
+    }
+    for (const CartesianVector &vec : positionVectorW)
+    {
+        //std::cout << vec.GetX() << " " << vec.GetZ() << std::endl;
+        PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &vec, "reco_u", BLUE, 2));
+    }
+
+    PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
 
     int nEmptyLists{0};
     if (vertexCandidatesU.empty())
@@ -505,6 +482,9 @@ StatusCode DlVertexingAlgorithm::Infer(const int vertexIndex)
     {
         PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
     }
+
+    for (HitType view : {TPC_VIEW_U, TPC_VIEW_V, TPC_VIEW_W})
+        delete canvases[view];
 
     return STATUS_CODE_SUCCESS;
 }
@@ -1017,15 +997,19 @@ StatusCode DlVertexingAlgorithm::ReadSettings(const TiXmlHandle xmlHandle)
 //-----------------------------------------------------------------------------------------------------------------------------------------
 //-----------------------------------------------------------------------------------------------------------------------------------------
 
-DlVertexingAlgorithm::Canvas::Canvas(HitType view, const int imageWidth, const int imageHeight, const int canvasWidth, const int canvasHeight,
-    const int colOffset, const int rowOffset) :
+DlVertexingAlgorithm::Canvas::Canvas(HitType view, const int imageWidth, const int imageHeight, const int canvasWidth,
+    const int canvasHeight, const int colOffset, const int rowOffset, const float xMin, const float xMax, const float zMin, const float zMax) :
     m_view{view},
     m_imageWidth{imageWidth},
     m_imageHeight{imageHeight},
     m_canvasWidth{canvasWidth},
     m_canvasHeight{canvasHeight},
     m_colOffset{colOffset},
-    m_rowOffset{rowOffset}
+    m_rowOffset{rowOffset},
+    m_xMin{xMin},
+    m_xMax{xMax},
+    m_zMin{zMin},
+    m_zMax{zMax}
 {
     m_canvas = new float *[m_canvasHeight];
     for (int row = 0; row < m_canvasHeight; ++row)
@@ -1060,7 +1044,9 @@ void DlVertexingAlgorithm::Canvas::GenerateHeatMap(const LArDLHelper::TorchOutpu
             const int inner{static_cast<int>(std::round(std::ceil(scaleFactor * thresholds[cls - 1])))};
             const int outer{static_cast<int>(std::round(std::ceil(scaleFactor * thresholds[cls])))};
             if (inner < 0.8f)
+            {
                 this->DrawRing(row + m_rowOffset, col + m_colOffset, inner, outer, 1.f / (outer * outer - inner * inner));
+            }
         }
     }
 }
@@ -1119,73 +1105,151 @@ void DlVertexingAlgorithm::Canvas::DrawRing(const int row, const int col, const 
 
 //-----------------------------------------------------------------------------------------------------------------------------------------
 
-void DlVertexingAlgorithm::Canvas::MakeWirePlaneCoordinatesFromCanvas(const float xMin, const float xMax, const float zMin, const float zMax,
-    const float pitch, const bool findSecondaries, CartesianPointVector &positionVector) const
+void DlVertexingAlgorithm::Canvas::FindCandidates(const Canvas &canvasU, const Canvas &canvasV, const Canvas &canvasW, const LArTPC *const pTPC,
+    const LArTransformationPlugin *transform, CartesianPointVector &positionVectorU, CartesianPointVector &positionVectorV,
+    CartesianPointVector &positionVectorW) const
+{
+    const float pitchU{pTPC->GetWirePitchU()}, pitchV{pTPC->GetWirePitchV()}, pitchW{pTPC->GetWirePitchW()};
+    const double dzU = ((canvasU.m_zMax + 0.5f * pitchU) - (canvasU.m_zMin - 0.5f * pitchU)) / canvasU.m_imageHeight;
+    const double dzV = ((canvasV.m_zMax + 0.5f * pitchV) - (canvasV.m_zMin - 0.5f * pitchV)) / canvasV.m_imageHeight;
+    const double dzW = ((canvasW.m_zMax + 0.5f * pitchW) - (canvasW.m_zMin - 0.5f * pitchW)) / canvasW.m_imageHeight;
+
+    float **heatMapU{new float *[canvasU.m_imageHeight]};
+    for (int row = 0; row < canvasU.m_imageHeight; ++row)
+        heatMapU[row] = new float[canvasU.m_imageWidth]{};
+    float **heatMapV{new float *[canvasV.m_imageHeight]};
+    for (int row = 0; row < canvasV.m_imageHeight; ++row)
+        heatMapV[row] = new float[canvasV.m_imageWidth]{};
+    float **heatMapW{new float *[canvasW.m_imageHeight]};
+    for (int row = 0; row < canvasW.m_imageHeight; ++row)
+        heatMapW[row] = new float[canvasW.m_imageWidth]{};
+
+    for (int ur = 0; ur < canvasU.m_imageHeight; ++ur)
+    {
+        const float uz{static_cast<float>(ur * dzU + canvasU.m_zMin)};
+        for (int vr = 0; vr < canvasV.m_imageHeight; ++vr)
+        {
+            const float vz{static_cast<float>(vr * dzV + canvasV.m_zMin)};
+            const float wEst{static_cast<float>(transform->UVtoW(uz, vz))};
+            const int wr{static_cast<int>((wEst - canvasW.m_zMin) / dzW)};
+            if (0 <= wr && wr < canvasW.m_imageWidth)
+            {
+                for (int cc = 0; cc < canvasW.m_imageWidth; ++cc)
+                {
+                    const int u{ur + canvasU.m_rowOffset};
+                    const int v{vr + canvasV.m_rowOffset};
+                    const int w{wr + canvasW.m_rowOffset};
+                    const int uc{cc + canvasU.m_colOffset};
+                    const int vc{cc + canvasV.m_colOffset};
+                    const int wc{cc + canvasW.m_colOffset};
+                    const float contribution{canvasU.m_canvas[u][uc] + canvasV.m_canvas[v][vc] + canvasW.m_canvas[w][wc]};
+                    heatMapU[ur][cc] += contribution;
+                    heatMapV[vr][cc] += contribution;
+                    heatMapW[wr][cc] += contribution;
+                }
+            }
+        }
+    }
+
+    this->FindViewCandidates(canvasU, heatMapU, dzU, positionVectorU);
+    this->FindViewCandidates(canvasV, heatMapV, dzV, positionVectorV);
+    this->FindViewCandidates(canvasW, heatMapW, dzW, positionVectorW);
+
+    for (int row = 0; row < canvasU.m_imageHeight; ++row)
+        delete[] heatMapU[row];
+    delete[] heatMapU;
+    for (int row = 0; row < canvasV.m_imageHeight; ++row)
+        delete[] heatMapV[row];
+    delete[] heatMapV;
+    for (int row = 0; row < canvasW.m_imageHeight; ++row)
+        delete[] heatMapW[row];
+    delete[] heatMapW;
+}
+
+void DlVertexingAlgorithm::Canvas::FindViewCandidates(const Canvas &canvas, float **heatMap, const float dz,
+    CartesianPointVector &positionVector) const
 {
     const float driftStep{0.5f};
-
-    const double dx = ((xMax + 0.5f * driftStep) - (xMin - 0.5f * driftStep)) / m_imageWidth;
-    const double dz = ((zMax + 0.5f * pitch) - (zMin - 0.5f * pitch)) / m_imageHeight;
+    const double dx = ((canvas.m_xMax + 0.5f * driftStep) - (canvas.m_xMin - 0.5f * driftStep)) / canvas.m_imageWidth;
 
     float best{-1.f};
-    int rowBest{0}, colBest{0};
-    for (int row = 0; row < m_canvasHeight; ++row)
-        for (int col = 0; col < m_canvasWidth; ++col)
-            if (m_canvas[row][col] > 0 && m_canvas[row][col] > best)
-            {
-                best = m_canvas[row][col];
-                rowBest = row;
-                colBest = col;
-            }
-
-    const float x{static_cast<float>((colBest - m_colOffset) * dx + xMin)};
-    const float z{static_cast<float>((rowBest - m_rowOffset) * dz + zMin)};
-
-    CartesianVector pt(x, 0.f, z);
-    if (!findSecondaries)
-        positionVector.emplace_back(pt);
-
-    if (findSecondaries)
+    for (int row = 0; row < canvas.m_imageHeight; ++row)
     {
-        for (int row = 0; row < m_canvasHeight; ++row)
-            for (int col = 0; col < m_canvasWidth; ++col)
+        for (int col = 0; col < canvas.m_imageWidth; ++col)
+        {
+            if (heatMap[row][col] > 0 && heatMap[row][col] > best)
+                best = heatMap[row][col];
+        }
+    }
+
+    for (int row = 0; row < canvas.m_imageHeight; ++row)
+    {
+        for (int col = 0; col < canvas.m_imageWidth; ++col)
+        {
+            if (heatMap[row][col] >= 0.25f * best)
             {
-                if (m_canvas[row][col] >= 0.25f * best)
+                bool localMaximum{true};
+                for (int r = -1; r <= 1; ++r)
                 {
-                    bool localMaximum{true};
-                    for (int r = -1; r <= 1; ++r)
+                    if (0 <= (row + r) && (row + r) < canvas.m_imageHeight)
                     {
-                        if (0 <= (row + r) && (row + r) < m_canvasHeight)
+                        for (int c = -1; c <= 1; ++c)
                         {
-                            for (int c = -1; c <= 1; ++c)
+                            if ((r == 0) && (c == 0))
+                                continue;
+                            if (0 <= (col + c) && (col + c) < canvas.m_imageWidth)
                             {
-                                if ((r == 0) && (c == 0))
-                                    continue;
-                                if (0 <= (col + c) && (col + c) < m_canvasWidth)
+                                if (heatMap[row][col] < heatMap[row + r][col + c])
                                 {
-                                    if (m_canvas[row][col] < m_canvas[row + r][col + c])
-                                    {
-                                        localMaximum = false;
-                                        break;
-                                    }
+                                    localMaximum = false;
+                                    break;
                                 }
                             }
-                            if (!localMaximum)
+                        }
+                        if (!localMaximum)
+                            break;
+                    }
+                }
+                if (localMaximum)
+                {
+                    const float x0{static_cast<float>(col * dx + canvas.m_xMin)};
+                    const float z0{static_cast<float>(row * dz + canvas.m_zMin)};
+                    CartesianVector pt0(x0, 0.f, z0);
+
+                    bool canAdd{true};
+                    CartesianPointVector removals;
+                    for (const CartesianVector &existing : positionVector)
+                    {
+                        if (pt0.GetDistanceSquared(existing) < 25.f)
+                        {
+                            const int row1{static_cast<int>((existing.GetZ() - canvas.m_zMin) / dz)};
+                            const int col1{static_cast<int>((existing.GetX() - canvas.m_xMin) / dx)};
+
+                            // Check heat value
+                            if (heatMap[row][col] <= heatMap[row1][col1])
+                            {
+                                canAdd = false;
                                 break;
+                            }
+                            else
+                            {
+                                removals.emplace_back(existing);
+                            }
                         }
                     }
-                    if (localMaximum)
+                    if (canAdd)
                     {
-                        const float x0{static_cast<float>((col - m_colOffset) * dx + xMin)};
-                        const float z0{static_cast<float>((row - m_rowOffset) * dz + zMin)};
-
-                        CartesianVector pt0(x0, 0.f, z0);
+                        for (const CartesianVector &r : removals)
+                        {
+                            auto iter{std::find(positionVector.begin(), positionVector.end(), r)};
+                            if (iter != positionVector.end())
+                                positionVector.erase(iter);
+                        }
                         positionVector.emplace_back(pt0);
                     }
                 }
             }
-        if (positionVector.empty())
-            positionVector.emplace_back(pt);
+        }
     }
 }
 

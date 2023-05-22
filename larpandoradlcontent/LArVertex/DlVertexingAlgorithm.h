@@ -52,9 +52,13 @@ private:
          *  @param  height The hiegh of the canvas
          *  @param  colOffset The column offset into the canvas for the underlying image
          *  @param  rowOffset The row offset into the canvas for the underlying image
+         *  @param  xMin The minimum x coordinate
+         *  @param  xMax The maximum x coordinate
+         *  @param  zMin The minimum z coordinate
+         *  @param  zMax The maximum z coordinate
          */
         Canvas(pandora::HitType view, const int imageWidth, const int imageHeight, const int canvasWidth, const int canvasHeight,
-            const int colOffset, const int rowOffset);
+            const int colOffset, const int rowOffset, const float xMin, const float xMax, const float zMin, const float zMax);
 
         /**
          *  @brief Destructor
@@ -100,14 +104,15 @@ private:
         /*
          *  @brief  Create a list of wire plane-space coordinates from a canvas
          *
-         *  @param  xMin The minimum x coordinate for the hits
-         *  @param  xMax The maximum x coordinate for the hits
-         *  @param  zMin The minimum x coordinate for the hits
-         *  @param  zMax The maximum x coordinate for the hits
+         *  @param  canvas The canvas for the view
+         *  @param  heatmap The heatmap for the view
          *  @param  positionVector The output vector of wire plane positions
          **/
-        void MakeWirePlaneCoordinatesFromCanvas(const float xMin, const float xMax, const float zMin, const float zMax, const float pitch,
-            const bool findSecondaries, pandora::CartesianPointVector &positionVector) const;
+        void FindViewCandidates(const Canvas &canvas, float **heatMap, const float dz, pandora::CartesianPointVector &positionVector) const;
+
+        void FindCandidates(const Canvas &canvasU, const Canvas &canvasV, const Canvas &canvasW, const pandora::LArTPC *const pTpc,
+            const pandora::LArTransformationPlugin *transform, pandora::CartesianPointVector &positionVectorU,
+            pandora::CartesianPointVector &positionVectorV, pandora::CartesianPointVector &positionVectorW) const;
 
     private:
         float **m_canvas;
@@ -118,6 +123,10 @@ private:
         const int m_canvasHeight;
         const int m_colOffset;
         const int m_rowOffset;
+        const float m_xMin;
+        const float m_xMax;
+        const float m_zMin;
+        const float m_zMax;
     };
 
     class VertexTuple
