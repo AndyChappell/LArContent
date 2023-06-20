@@ -34,7 +34,7 @@ private:
     typedef std::map<const pandora::CaloHit *, pandora::CaloHitList> HitMap;
     typedef std::map<const pandora::CaloHit *, bool> HitTable;
     typedef std::set<const pandora::CaloHit *> LArSet;
-    typedef std::tuple<const pandora::CaloHit *, const pandora::CaloHit *, const pandora::CaloHit *> LArTriplet;
+    typedef std::tuple<const pandora::CaloHit *, const pandora::CaloHit *, const pandora::CaloHit *, double> LArTriplet;
     typedef std::vector<LArTriplet> LArTripletVector;
 
     /**
@@ -45,7 +45,8 @@ private:
      *  @param  scale The scale to apply to the search region
      *  @param  hitMap A map from CaloHits in one view to CaloHits in the other
      **/
-    void Correlate(const pandora::CaloHitList &caloHitList1, const pandora::CaloHitList &caloHitList2, const float scale, HitMap &hitMap) const;
+    void Correlate(const pandora::CaloHitList &caloHitList1, const pandora::CaloHitList &caloHitList2, const pandora::CaloHitList &caloHitListTarget,
+        const float scale, LArTripletVector &triplets) const;
 
     /**
      *  @brief  Find all of the potentially related hits associated to a list of hits
