@@ -167,6 +167,7 @@
 #include "larpandoracontent/LArTwoDReco/LArClusterAssociation/CrossGapsExtensionAlgorithm.h"
 #include "larpandoracontent/LArTwoDReco/LArClusterAssociation/HitWidthClusterMergingAlgorithm.h"
 #include "larpandoracontent/LArTwoDReco/LArClusterAssociation/LongitudinalAssociationAlgorithm.h"
+#include "larpandoracontent/LArTwoDReco/LArClusterAssociation/LongitudinalAssociation3DAlgorithm.h"
 #include "larpandoracontent/LArTwoDReco/LArClusterAssociation/LongitudinalExtensionAlgorithm.h"
 #include "larpandoracontent/LArTwoDReco/LArClusterAssociation/SimpleClusterGrowingAlgorithm.h"
 #include "larpandoracontent/LArTwoDReco/LArClusterAssociation/SimpleClusterMergingAlgorithm.h"
@@ -176,6 +177,7 @@
 #include "larpandoracontent/LArTwoDReco/LArClusterCreation/ClusteringParentAlgorithm.h"
 #include "larpandoracontent/LArTwoDReco/LArClusterCreation/SimpleClusterCreationAlgorithm.h"
 #include "larpandoracontent/LArTwoDReco/LArClusterCreation/TrackClusterCreationAlgorithm.h"
+#include "larpandoracontent/LArTwoDReco/LArClusterCreation/Track3DClusterCreationAlgorithm.h"
 
 #include "larpandoracontent/LArTwoDReco/LArClusterMopUp/BoundedClusterMopUpAlgorithm.h"
 #include "larpandoracontent/LArTwoDReco/LArClusterMopUp/ConeClusterMopUpAlgorithm.h"
@@ -287,6 +289,7 @@
     d("LArCrossGapsExtension",                  CrossGapsExtensionAlgorithm)                                                    \
     d("LArHitWidthClusterMerging",              HitWidthClusterMergingAlgorithm)                                                \
     d("LArLongitudinalAssociation",             LongitudinalAssociationAlgorithm)                                               \
+    d("LArLongitudinalAssociation3D",           LongitudinalAssociation3DAlgorithm)                                             \
     d("LArLongitudinalExtension",               LongitudinalExtensionAlgorithm)                                                 \
     d("LArSimpleClusterGrowing",                SimpleClusterGrowingAlgorithm)                                                  \
     d("LArSimpleClusterMerging",                SimpleClusterMergingAlgorithm)                                                  \
@@ -294,6 +297,7 @@
     d("LArTransverseExtension",                 TransverseExtensionAlgorithm)                                                   \
     d("LArSimpleClusterCreation",               SimpleClusterCreationAlgorithm)                                                 \
     d("LArTrackClusterCreation",                TrackClusterCreationAlgorithm)                                                  \
+    d("LArTrack3DClusterCreation",              Track3DClusterCreationAlgorithm)                                                \
     d("LArClusteringParent",                    ClusteringParentAlgorithm)                                                      \
     d("LArBoundedClusterMopUp",                 BoundedClusterMopUpAlgorithm)                                                   \
     d("LArConeClusterMopUp",                    ConeClusterMopUpAlgorithm)                                                      \
