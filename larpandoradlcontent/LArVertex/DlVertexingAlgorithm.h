@@ -187,7 +187,8 @@ private:
      *
      *  @return The StatusCode resulting from the function
      */
-    void GetHitRegion(const pandora::CaloHitList &caloHitList, float &xMin, float &xMax, float &zMin, float &zMax, int vertexIndex = 0) const;
+    void GetHitRegion(const pandora::CaloHitList &caloHitList, float &xMin, float &xMax, float &yMin, float &yMax, float &zMin, float &zMax,
+        int vertexIndex = 0) const;
 
     /*
      *  @brief  Determine the physical bounds associated with a CaloHitList.
@@ -199,8 +200,8 @@ private:
      *  @param  zMin The output minimum z value
      *  @param  zMax The output maximum z value
      */
-    void GetAsymmetryBounds(const pandora::CaloHitList &caloHitList, const pandora::CartesianVector &vertex, float &xMin, float &xMax, float &zMin,
-        float &zMax) const;
+    void GetAsymmetryBounds(const pandora::CaloHitList &caloHitList, const pandora::CartesianVector &vertex, float &xMin, float &xMax,
+        float &yMin, float &yMax, float &zMin, float &zMax) const;
 
     /**
      *  @brief Create a vertex list from the candidate vertices.
@@ -252,6 +253,7 @@ private:
     std::string m_trainingOutputFile;         ///< Output file name for training examples
     std::string m_inputVertexListName;        ///< Input vertex list name if 2nd pass
     std::string m_outputVertexListName;       ///< Output vertex list name
+    std::string m_caloHitList3D;              ///< The name of the list contaiing the 3D hits
     pandora::StringVector m_caloHitListNames; ///< Names of input calo hit lists
     LArDLHelper::TorchModel m_modelU;         ///< The model for the U view
     LArDLHelper::TorchModel m_modelV;         ///< The model for the V view

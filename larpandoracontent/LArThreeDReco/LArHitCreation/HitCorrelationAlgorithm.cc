@@ -54,7 +54,6 @@ StatusCode HitCorrelationAlgorithm::Run()
     CaloHitList caloHitList3D;
     for (const auto & [ key, volume ] : m_volumeMap)
     {
-        std::cout << "Volume " << key << std::endl;
         CaloHitList caloHitListU{volume.GetCaloHits(HitType::TPC_VIEW_U)};
         CaloHitList caloHitListV{volume.GetCaloHits(HitType::TPC_VIEW_V)};
         CaloHitList caloHitListW{volume.GetCaloHits(HitType::TPC_VIEW_W)};
@@ -64,11 +63,8 @@ StatusCode HitCorrelationAlgorithm::Run()
             LArTripletVector triplets;
             auto start{std::chrono::high_resolution_clock::now()};
             this->Correlate(caloHitListU, caloHitListV, caloHitListW, scale, triplets);
-            std::cout << "Triplet vector size 1: " << triplets.size() << std::endl;
             this->Correlate(caloHitListU, caloHitListW, caloHitListV, scale, triplets);
-            std::cout << "Triplet vector size 2: " << triplets.size() << std::endl;
             this->Correlate(caloHitListV, caloHitListW, caloHitListU, scale, triplets);
-            std::cout << "Triplet vector size 3: " << triplets.size() << std::endl;
             auto stop{std::chrono::high_resolution_clock::now()};
             std::cout << "Correlate " << std::chrono::duration_cast<std::chrono::microseconds>(stop - start).count() << std::endl;
 
@@ -120,20 +116,8 @@ StatusCode HitCorrelationAlgorithm::Run()
         }
     }
 
-    const ClusterList *pClusterList{nullptr};
-    std::string clusterListName;
-    PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::CreateTemporaryListAndSetCurrent(*this, pClusterList, clusterListName));
-
-    PandoraContentApi::Cluster::Parameters parameters;
-    parameters.m_caloHitList.insert(parameters.m_caloHitList.end(), caloHitList3D.begin(), caloHitList3D.end());
-
-    const Cluster *pCluster3D{nullptr};
-    PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::Cluster::Create(*this, parameters, pCluster3D));
-
-    if (!pCluster3D || !pClusterList || pClusterList->empty())
-        return STATUS_CODE_FAILURE;
-
-    PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::SaveList<Cluster>(*this, "MyCluster3D"));
+    std::string caloHitListName{"CaloHitList3D"};
+    PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::SaveList(*this, caloHitList3D, caloHitListName));
 
     return STATUS_CODE_SUCCESS;
 }
@@ -153,7 +137,7 @@ void HitCorrelationAlgorithm::Correlate(const CaloHitList &caloHitList1, const C
     if (minX > maxX)
         return;
 
-    const float chi2CutOff{1.f};
+    const float chi2CutOff{0.1f};
     for (auto iter = caloHitList1.begin(); iter != caloHitList1.end(); )
     {
         if ((*iter)->GetPositionVector().GetX() < minX)

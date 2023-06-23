@@ -267,6 +267,7 @@
     d("LArTwoViewDeltaRayMatching",             TwoViewDeltaRayMatchingAlgorithm)                                               \
     d("LArOneViewDeltaRayMatching",             OneViewDeltaRayMatchingAlgorithm)                                               \
     d("LArUnattachedDeltaRays",                 UnattachedDeltaRaysAlgorithm)                                                   \
+    d("LArHitCorrelation",                      HitCorrelationAlgorithm)                                                        \
     d("LArThreeDHitCreation",                   ThreeDHitCreationAlgorithm)                                                     \
     d("LArThreeDLongitudinalTracks",            ThreeViewLongitudinalTracksAlgorithm)                                           \
     d("LArRecursivePfoMopUp",                   RecursivePfoMopUpAlgorithm)                                                     \
