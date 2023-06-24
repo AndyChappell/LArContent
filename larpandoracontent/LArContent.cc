@@ -210,6 +210,8 @@
 #include "larpandoracontent/LArVertex/MvaVertexSelectionAlgorithm.h"
 #include "larpandoracontent/LArVertex/VertexRefinementAlgorithm.h"
 
+#include "larpandoracontent/LArWorkshop/MyClusteringAlgorithm.h"
+
 #include "larpandoracontent/LArContent.h"
 
 // clang-format off
@@ -321,7 +323,8 @@
     d("LArHitAngleVertexSelection",             HitAngleVertexSelectionAlgorithm)                                               \
     d("LArBdtVertexSelection",                  BdtVertexSelectionAlgorithm)                                                    \
     d("LArSvmVertexSelection",                  SvmVertexSelectionAlgorithm)                                                    \
-    d("LArVertexRefinement",                    VertexRefinementAlgorithm)
+    d("LArVertexRefinement",                    VertexRefinementAlgorithm)                                                      \
+    d("LArMyClustering",                        MyClusteringAlgorithm)
 
 #define LAR_ALGORITHM_TOOL_LIST(d)                                                                                              \
     d("LArBdtBeamParticleId",                   BdtBeamParticleIdTool)                                                          \
