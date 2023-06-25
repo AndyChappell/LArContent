@@ -28,6 +28,10 @@ private:
     pandora::StatusCode Run();
 
     pandora::StatusCode ReadSettings(const pandora::TiXmlHandle xmlHandle);
+
+    size_t m_clusterSize;                              ///< The maximum number of hits to add to a cluster
+    pandora::StringVector m_caloHitListNames;       ///< The vector of input calo hit list names
+    std::string m_outputListPrefix;                 ///< The prefix to be used for output cluster lists - U/V/W will be added as appropriate
 };
 
 } // namespace lar_content
