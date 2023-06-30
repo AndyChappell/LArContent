@@ -28,6 +28,7 @@ class DlVertexingAlgorithm : public pandora::Algorithm
 {
 public:
     typedef std::map<std::pair<int, int>, std::vector<const pandora::CaloHit *>> PixelToCaloHitsMap;
+    enum Projection {XY, XZ, YZ};
 
     /**
      *  @brief Default constructor
@@ -37,6 +38,79 @@ public:
     virtual ~DlVertexingAlgorithm();
 
 private:
+    typedef std::pair<int, int> Pixel; // A Pixel is a row, column pair
+    typedef std::vector<Pixel> PixelVector;
+
+    class Canvas
+    {
+    public:
+        Canvas(const int m_imageSize, const float minCol, const float maxCol, const float minRow, const float maxRow);
+
+        virtual ~Canvas();
+
+        /*
+         *  @brief  Create input for the network from a calo hit list
+         *
+         *  @param  pass The current network pass
+         *  @param  caloHits The CaloHitList from which the input should be made
+         *  @param  projection The projection for which the inputs are to be made
+         *  @param  networkInput The TorchInput object to populate
+         *  @param  pixelVector The output vector of populated pixels
+         *
+         *  @return The StatusCode resulting from the function
+         **/
+        void MakeNetworkInput(const int pass, const pandora::CaloHitList &caloHits, const Projection projection, LArDLHelper::TorchInput &networkInput,
+            PixelVector &pixelVector) const;
+
+        /**
+         *  @brief  Add a filled ring to the specified canvas.
+         *          The ring has an inner radius based on the minimum predicted distance to the vertex and an outer radius based on the maximum
+         *          predicted distance to the vertex. The centre of the ring is the location of the hit used to predict the distance to the
+         *          vertex. Each pixel to be filled is augmented by the specified weight. In this way, once all hits have been considered, a
+         *          consensus view emerges of the likely vertex location based on the overlap of various rings centred at different locations.
+         *
+         *          The underlying implementation is a variant of the Bresenham midpoint circle algorithm and therefore only computes pixel
+         *          coordinates for one octant of each circle (one of radius 'inner', one of radius 'outer') and interpolates the fill between
+         *          points using integer arithmetic, guaranteeing each pixel of the ring is filled once and only once, and then mirrored to the
+         *          remaining seven octants.
+         *
+         *  @param  row The central row for the ring 
+         *  @param  col The central column for the ring
+         *  @param  inner The inner radius for the ring
+         *  @param  outer The outer radius for the ring
+         *  @param  weight The weight to apply for a single pixel in the ring
+         */
+        void DrawRing(const int row, const int col, const int inner, const int outer, const float weight) const;
+
+        /**
+         *  @brief  Extract candidate vertices from the canvas.
+         *
+         *  @param  candidateVertices An output vector of the identified vertex candidates
+         */
+        void ExtractCandidateVertices(pandora::CartesianPointVector &candidateVertices) const;
+
+    private:
+        /**
+         *  @brief  Update the coordinates along the loci of a circle.
+         *          When drawing the ring we need an efficient means to determine the next pixel defining the inner and outer loci of the ring.
+         *          This update function uses the Bresenham midpoint circle update function to determine this location. The row position is
+         *          always incremented by 1 pixel, the column position is left unchanged, or decremented by 1 pixel to best follow the arc of
+         *          the true underlying circle.
+         *
+         *  @param  radius2 The squared radius of the circle under consideration
+         *  @param  col The input/output column position to (potentially) update
+         *  @param  row The input/output row position to update
+         */
+        void Update(const int radius2, int &col, int &row) const;
+
+        int m_imageSize;
+        float m_minCol;
+        float m_maxCol;
+        float m_minRow;
+        float m_maxRow;
+        float **m_canvas;
+    };
+
     class VertexTuple
     {
     public:
@@ -60,101 +134,10 @@ private:
         int m_nInputs;                  ///< The number of 2D vertices used to create this vertex
     };
 
-    typedef std::pair<int, int> Pixel; // A Pixel is a row, column pair
-    typedef std::vector<Pixel> PixelVector;
-
     pandora::StatusCode Run();
     pandora::StatusCode ReadSettings(const pandora::TiXmlHandle xmlHandle);
     pandora::StatusCode PrepareTrainingSample(const int vertexIndex = 0);
     pandora::StatusCode Infer(const int vertexIndex = 0);
-
-    /*
-     *  @brief  Create input for the network from a calo hit list
-     *
-     *  @param  caloHits The CaloHitList from which the input should be made
-     *  @param  view The wire plane view
-     *  @param  xMin The minimum x coordinate for the hits
-     *  @param  xMax The maximum x coordinate for the hits
-     *  @param  zMin The minimum x coordinate for the hits
-     *  @param  zMax The maximum x coordinate for the hits
-     *  @param  networkInput The TorchInput object to populate
-     *  @param  pixelVector The output vector of populated pixels
-     *
-     *  @return The StatusCode resulting from the function
-     **/
-    pandora::StatusCode MakeNetworkInputFromHits(const pandora::CaloHitList &caloHits, const pandora::HitType view, const float xMin,
-        const float xMax, const float zMin, const float zMax, LArDLHelper::TorchInput &networkInput, PixelVector &pixelVector) const;
-
-    /*
-     *  @brief  Create a list of wire plane-space coordinates from a canvas
-     *
-     *  @param  canvas The input canvas
-     *  @param  canvasWidth The width of the canvas
-     *  @param  canvasHeight The height of the canvas
-     *  @param  columnOffset The column offset used when populating the canvas
-     *  @param  rowOffset The row offset used when populating the canvas
-     *  @param  xMin The minimum x coordinate for the hits
-     *  @param  xMax The maximum x coordinate for the hits
-     *  @param  zMin The minimum x coordinate for the hits
-     *  @param  zMax The maximum x coordinate for the hits
-     *  @param  positionVector The output vector of wire plane positions
-     *
-     *  @return The StatusCode resulting from the function
-     **/
-    pandora::StatusCode MakeWirePlaneCoordinatesFromCanvas(float **canvas, const int canvasWidth, const int canvasHeight,
-        const int columnOffset, const int rowOffset, const pandora::HitType view, const float xMin, const float xMax, const float zMin,
-        const float zMax, pandora::CartesianPointVector &positionVector) const;
-
-    /**
-     *  @brief  Determines the parameters of the canvas for extracting the vertex location.
-     *          The network predicts the distance that each pixel associated with a hit is located from the vertex, but says nothing about
-     *          the direction. As a result, the ring describing the potential vertices associated with that hit can extend beyond the
-     *          original canvas size. This function returns the size of the required canvas and the offset for the bottom left corner.
-     *
-     *  @param  networkOutput The TorchOutput object populated by the network inference step
-     *  @param  pixelVector The vector of populated pixels
-     *  @param  columnOffset The output column offset for the canvas
-     *  @param  rowOffset The output row offset for the canvas
-     *  @param  width The output width for the canvas
-     *  @param  height The output height for the canvas
-     */
-    void GetCanvasParameters(const LArDLHelper::TorchOutput &networkOutput, const PixelVector &pixelVector, int &columnOffset,
-        int &rowOffset, int &width, int &height) const;
-
-    /**
-     *  @brief  Add a filled ring to the specified canvas.
-     *          The ring has an inner radius based on the minimum predicted distance to the vertex and an outer radius based on the maximum
-     *          predicted distance to the vertex. The centre of the ring is the location of the hit used to predict the distance to the
-     *          vertex. Each pixel to be filled is augmented by the specified weight. In this way, once all hits have been considered, a
-     *          consensus view emerges of the likely vertex location based on the overlap of various rings centred at different locations.
-     *
-     *          The underlying implementation is a variant of the Bresenham midpoint circle algorithm and therefore only computes pixel
-     *          coordinates for one octant of each circle (one of radius 'inner', one of radius 'outer') and interpolates the fill between
-     *          points using integer arithmetic, guaranteeing each pixel of the ring is filled once and only once, and then mirrored to the
-     *          remaining seven octants.
-     *
-     *  @param  networkOutput The TorchOutput object populated by the network inference step
-     *  @param  pixelVector The vector of populated pixels
-     *  @param  thresholds The fractional distance thresholds representing the classes predicted by the network
-     *  @param  columnOffset The output column offset for the canvas
-     *  @param  rowOffset The output row offset for the canvas
-     *  @param  width The output width for the canvas
-     *  @param  height The output height for the canvas
-     */
-    void DrawRing(float **canvas, const int row, const int col, const int inner, const int outer, const float weight) const;
-
-    /**
-     *  @brief  Update the coordinates along the loci of a circle.
-     *          When drawing the ring we need an efficient means to determine the next pixel defining the inner and outer loci of the ring.
-     *          This update function uses the Bresenham midpoint circle update function to determine this location. The row position is
-     *          always incremented by 1 pixel, the column position is left unchanged, or decremented by 1 pixel to best follow the arc of
-     *          the true underlying circle.
-     *
-     *  @param  radius2 The squared radius of the circle under consideration
-     *  @param  col The input/output column position to (potentially) update
-     *  @param  row The input/output row position to update
-     */
-    void Update(const int radius, int &col, int &row) const;
 
     /*
      *  @brief  Retrieve the map from MC to calo hits for reconstructable particles
@@ -255,14 +238,13 @@ private:
     std::string m_outputVertexListName;       ///< Output vertex list name
     std::string m_caloHitList3D;              ///< The name of the list contaiing the 3D hits
     pandora::StringVector m_caloHitListNames; ///< Names of input calo hit lists
-    LArDLHelper::TorchModel m_modelU;         ///< The model for the U view
-    LArDLHelper::TorchModel m_modelV;         ///< The model for the V view
-    LArDLHelper::TorchModel m_modelW;         ///< The model for the W view
+    LArDLHelper::TorchModel m_modelXY;        ///< The model for the XY view
+    LArDLHelper::TorchModel m_modelXZ;        ///< The model for the XZ view
+    LArDLHelper::TorchModel m_modelYZ;        ///< The model for the YZ view
     int m_event;                              ///< The current event number
     int m_pass;                               ///< The pass of the train/infer step
     int m_nClasses;                           ///< The number of distance classes
-    int m_height;                             ///< The height of the images
-    int m_width;                              ///< The width of the images
+    int m_imageSize;                          ///< The height/width of the images
     float m_driftStep;                        ///< The size of a pixel in the drift direction in cm (most relevant in pass 2)
     bool m_findSecondaries;                   ///< Whether or not to consider secondary vertices
     bool m_visualise;                         ///< Whether or not to visualise the candidate vertices
