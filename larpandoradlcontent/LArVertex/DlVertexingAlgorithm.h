@@ -40,10 +40,10 @@ private:
     class VertexTuple
     {
     public:
-        VertexTuple(const pandora::Pandora &pandora, const pandora::CartesianVector &vertexU, const pandora::CartesianVector &vertexV,
+        VertexTuple(const pandora::CartesianVector &vertexU, const pandora::CartesianVector &vertexV,
             const pandora::CartesianVector &vertexW);
 
-        VertexTuple(const pandora::Pandora &pandora, const pandora::CartesianVector &vertex1, const pandora::CartesianVector &vertex2,
+        VertexTuple(const pandora::CartesianVector &vertex1, const pandora::CartesianVector &vertex2,
             const pandora::HitType view1, const pandora::HitType view2);
 
         const pandora::CartesianVector &GetPosition() const;
@@ -182,7 +182,7 @@ private:
      *
      *  @return The StatusCode resulting from the function
      */
-    void GetHitRegion(const pandora::CaloHitList &caloHitList, float &xMin, float &xMax, float &zMin, float &zMax) const;
+    void GetHitRegion(const pandora::CaloHitList &caloHitList, pandora::HitType view, float &xMin, float &xMax, float &zMin, float &zMax) const;
 
     /**
      *  @brief Create a vertex list from the candidate vertices.
