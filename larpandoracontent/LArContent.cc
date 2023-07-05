@@ -211,6 +211,7 @@
 #include "larpandoracontent/LArVertex/VertexRefinementAlgorithm.h"
 
 #include "larpandoracontent/LArWorkshop/MyClusteringAlgorithm.h"
+#include "larpandoracontent/LArWorkshop/MyClusterMergingAlgorithm.h"
 
 #include "larpandoracontent/LArContent.h"
 
@@ -324,7 +325,8 @@
     d("LArBdtVertexSelection",                  BdtVertexSelectionAlgorithm)                                                    \
     d("LArSvmVertexSelection",                  SvmVertexSelectionAlgorithm)                                                    \
     d("LArVertexRefinement",                    VertexRefinementAlgorithm)                                                      \
-    d("LArMyClustering",                        MyClusteringAlgorithm)
+    d("LArMyClustering",                        MyClusteringAlgorithm)                                                          \
+    d("LArMyClusterMerging",                    MyClusterMergingAlgorithm)
 
 #define LAR_ALGORITHM_TOOL_LIST(d)                                                                                              \
     d("LArBdtBeamParticleId",                   BdtBeamParticleIdTool)                                                          \

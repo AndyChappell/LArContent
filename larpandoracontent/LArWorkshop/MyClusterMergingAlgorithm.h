@@ -26,6 +26,7 @@ public:
 
 private:
     typedef std::map<const pandora::Cluster *, pandora::ClusterList> ClusterMergeMap;
+    typedef std::set<const pandora::Cluster *> ClusterSet;
 
     pandora::StatusCode Run();
 
@@ -42,13 +43,27 @@ private:
     /**
      *  @brief Merge together associated clusters
      *
-     *  @param clusterMergeMap The map from seed ckuster to asssociated clusters describing the merges to make
+     *  @param clusterMergeMap The map from seed cluster to asssociated clusters describing the merges to make
      *
      *  @return The status code for the merge operation
      */
-    pandora::StatusCode MergeClusters(const ClusterMergeMap &clusterMergeMap) const;
+    pandora::StatusCode MergeClusters(const ClusterMergeMap &clusterMergeMap);
+
+    /**
+     *  @brief Follow cluster associations to construct a complete set of clusters that are associated
+     *
+     *  @param clusterMergeMap The map from seed cluster to asssociated clusters describing the merges to make
+     *  @param pSeedCluster The cluster whose associations should be considered
+     *  @param usedClusters The set of clusters unavailable for merging
+     *  @param clustersToMerge The set of clusters that should be merged
+     */
+    void TraceAssociations(const ClusterMergeMap &clusterMergeMap, const pandora::Cluster *const pSeedCluster, ClusterSet &usedClusters,
+        ClusterSet &clustersToMerge);
 
     pandora::StatusCode ReadSettings(const pandora::TiXmlHandle xmlHandle);
+
+    std::string m_inputClusterListName;     ///< The name of the input cluster list
+    float m_maxClusterSeparation;           ///< The maximum separation (in cm) where two clusters might be associated
 };
 
 } // namespace lar_content
