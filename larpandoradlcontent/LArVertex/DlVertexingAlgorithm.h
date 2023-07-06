@@ -43,13 +43,15 @@ private:
         /**
          *  @brief Default constructor
          */
-        Canvas(const int width, const int height);
+        Canvas(const int width, const int height, const int colOffset, const int rowOffset);
 
         virtual ~Canvas();
 
         float **m_canvas;
         const int m_width;
         const int m_height;
+        const int m_colOffset;
+        const int m_rowOffset;
     };
 
     class VertexTuple

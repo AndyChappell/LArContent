@@ -218,7 +218,7 @@ StatusCode DlVertexingAlgorithm::Infer()
         int colOffset{0}, rowOffset{0}, canvasWidth{m_width}, canvasHeight{m_height};
         this->GetCanvasParameters(output, pixelVector, colOffset, rowOffset, canvasWidth, canvasHeight);
 
-        canvases[view] = new Canvas(canvasWidth, canvasHeight);
+        canvases[view] = new Canvas(canvasWidth, canvasHeight, colOffset, rowOffset);
 
         // we want the maximum value in the num_classes dimension (1) for every pixel
         auto classes{torch::argmax(output, 1)};
@@ -236,10 +236,13 @@ StatusCode DlVertexingAlgorithm::Infer()
                 this->DrawRing(canvases[view]->m_canvas, row + rowOffset, col + colOffset, inner, outer, 1.f / (outer * outer - inner * inner));
             }
         }
+    }
 
+    for (const HitType view : {TPC_VIEW_U, TPC_VIEW_V, TPC_VIEW_W})
+    {
         CartesianPointVector positionVector;
-        this->MakeWirePlaneCoordinatesFromCanvas(
-            canvases[view]->m_canvas, canvasWidth, canvasHeight, colOffset, rowOffset, view, driftMin, driftMax, wireMin[view], wireMax[view], positionVector);
+        this->MakeWirePlaneCoordinatesFromCanvas(canvases[view]->m_canvas, canvases[view]->m_width, canvases[view]->m_height,
+            canvases[view]->m_colOffset, canvases[view]->m_rowOffset, view, driftMin, driftMax, wireMin[view], wireMax[view], positionVector);
         std::cout << "View: " << view << " vtx: (" << positionVector.front().GetX() << "," << positionVector.front().GetY() << "," <<
             positionVector.front().GetZ() << ")" << std::endl;
         switch (view)
@@ -869,7 +872,11 @@ StatusCode DlVertexingAlgorithm::ReadSettings(const TiXmlHandle xmlHandle)
 //-----------------------------------------------------------------------------------------------------------------------------------------
 //-----------------------------------------------------------------------------------------------------------------------------------------
 
-DlVertexingAlgorithm::Canvas::Canvas(const int width, const int height) : m_width{width}, m_height{height}
+DlVertexingAlgorithm::Canvas::Canvas(const int width, const int height, const int colOffset, const int rowOffset) :
+    m_width{width},
+    m_height{height},
+    m_colOffset{colOffset},
+    m_rowOffset{rowOffset}
 {
     m_canvas = new float*[m_height];
     for (int r = 0; r < m_height; ++r)
