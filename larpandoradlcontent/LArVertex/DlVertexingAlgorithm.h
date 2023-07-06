@@ -37,6 +37,21 @@ public:
     virtual ~DlVertexingAlgorithm();
 
 private:
+    class Canvas
+    {
+    public:
+        /**
+         *  @brief Default constructor
+         */
+        Canvas(const int width, const int height);
+
+        virtual ~Canvas();
+
+        float **m_canvas;
+        const int m_width;
+        const int m_height;
+    };
+
     class VertexTuple
     {
     public:
