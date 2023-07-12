@@ -17,6 +17,8 @@
 #include "larpandoracontent/LArHelpers/LArMvaHelper.h"
 #include "larpandoracontent/LArHelpers/LArVertexHelper.h"
 
+#include "larpandoracontent/LArObjects/LArEventTopology.h"
+
 #include "larpandoradlcontent/LArVertex/DlVertexingAlgorithm.h"
 
 using namespace pandora;
@@ -69,6 +71,25 @@ StatusCode DlVertexingAlgorithm::Run()
 
 StatusCode DlVertexingAlgorithm::PrepareTrainingSample()
 {
+    PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1.f, 1.f, 1.f));
+
+    const CaloHitList *pCaloHitList2D{nullptr};
+    PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetList(*this, "CaloHitList2D", pCaloHitList2D));
+    LArEventTopology eventTopology(*pCaloHitList2D);
+    eventTopology.ConstructVisibleHierarchy();
+    eventTopology.PruneHierarchy();
+    CartesianPointVector trueVertices;
+    eventTopology.GetVertices(trueVertices);
+    for (const CartesianVector &vertex : trueVertices)
+    {
+        std::string str{"(" + std::to_string(vertex.GetX()) + "," + std::to_string(vertex.GetY()) + "," + std::to_string(vertex.GetZ()) + ")"};
+        std::cout << "(" << vertex.GetX() << "," << vertex.GetY() << "," << vertex.GetZ() << ")" << std::endl;
+        PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &vertex, str, BLUE, 2));
+    }
+    PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
+
+    eventTopology.Print();
+
     LArMCParticleHelper::MCContributionMap mcToHitsMap;
     PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, this->GetMCToHitsMap(mcToHitsMap));
     MCParticleList hierarchy;
@@ -187,7 +208,7 @@ StatusCode DlVertexingAlgorithm::Infer()
         driftMax = std::max(viewDriftMax, driftMax);
     }
 
-    std::map<HitType, Canvas *> canvases;
+    CanvasViewMap canvases;
     CartesianPointVector vertexCandidatesU, vertexCandidatesV, vertexCandidatesW;
     for (const HitType view : {TPC_VIEW_U, TPC_VIEW_V, TPC_VIEW_W})
     {
@@ -217,8 +238,9 @@ StatusCode DlVertexingAlgorithm::Infer()
 
         int colOffset{0}, rowOffset{0}, canvasWidth{m_width}, canvasHeight{m_height};
         this->GetCanvasParameters(output, pixelVector, colOffset, rowOffset, canvasWidth, canvasHeight);
+        std::cout << "View " << view << " " << canvasWidth << " " << canvasHeight << " " << colOffset << " " << rowOffset << std::endl;
 
-        canvases[view] = new Canvas(canvasWidth, canvasHeight, colOffset, rowOffset);
+        canvases[view] = new Canvas(canvasWidth, canvasHeight, colOffset, rowOffset, driftMin, driftMax, wireMin[view], wireMax[view]);
 
         // we want the maximum value in the num_classes dimension (1) for every pixel
         auto classes{torch::argmax(output, 1)};
@@ -236,74 +258,44 @@ StatusCode DlVertexingAlgorithm::Infer()
                 this->DrawRing(canvases[view]->m_canvas, row + rowOffset, col + colOffset, inner, outer, 1.f / (outer * outer - inner * inner));
             }
         }
-    }
 
-    for (const HitType view : {TPC_VIEW_U, TPC_VIEW_V, TPC_VIEW_W})
-    {
-        CartesianPointVector positionVector;
-        this->MakeWirePlaneCoordinatesFromCanvas(canvases[view]->m_canvas, canvases[view]->m_width, canvases[view]->m_height,
-            canvases[view]->m_colOffset, canvases[view]->m_rowOffset, view, driftMin, driftMax, wireMin[view], wireMax[view], positionVector);
-        std::cout << "View: " << view << " vtx: (" << positionVector.front().GetX() << "," << positionVector.front().GetY() << "," <<
-            positionVector.front().GetZ() << ")" << std::endl;
-        switch (view)
+        LArMvaHelper::MvaFeatureVector featureVector;
+        std::cout << view << " " << canvases[view]->m_width << " " << canvases[view]->m_height << " " << canvases[view]->m_colOffset << " " <<
+            canvases[view]->m_rowOffset << std::endl;
+        featureVector.emplace_back(static_cast<double>(canvases[view]->m_width));
+        featureVector.emplace_back(static_cast<double>(canvases[view]->m_height));
+        for (const Pixel &pixel : pixelVector)
         {
-            case TPC_VIEW_U:
-                vertexCandidatesU.emplace_back(positionVector.front());
-                break;
-            case TPC_VIEW_V:
-                vertexCandidatesV.emplace_back(positionVector.front());
-                break;
-            default:
-                vertexCandidatesW.emplace_back(positionVector.front());
-                break;
+            featureVector.emplace_back(static_cast<double>(pixel.first + canvases[view]->m_rowOffset));
+            featureVector.emplace_back(static_cast<double>(pixel.second + canvases[view]->m_colOffset));
         }
+
+        LArMvaHelper::ProduceTrainingExample("hits.csv", true, featureVector);
     }
 
-    int nEmptyLists{0};
-    if (vertexCandidatesU.empty())
-        ++nEmptyLists;
-    if (vertexCandidatesV.empty())
-        ++nEmptyLists;
-    if (vertexCandidatesW.empty())
-        ++nEmptyLists;
-    std::vector<VertexTuple> vertexTuples;
-    CartesianPointVector candidates3D;
-    if (nEmptyLists == 0)
+    for (HitType view : {TPC_VIEW_U, TPC_VIEW_V, TPC_VIEW_W})
     {
-        vertexTuples.emplace_back(VertexTuple(vertexCandidatesU.front(), vertexCandidatesV.front(), vertexCandidatesW.front()));
+        LArMvaHelper::MvaFeatureVector featureVector;
+        std::cout << view << " " << canvases[view]->m_width << " " << canvases[view]->m_height << " " << canvases[view]->m_colOffset << " " <<
+            canvases[view]->m_rowOffset << std::endl;
+        featureVector.emplace_back(static_cast<double>(canvases[view]->m_width));
+        featureVector.emplace_back(static_cast<double>(canvases[view]->m_height));
+        featureVector.emplace_back(static_cast<double>(canvases[view]->m_colOffset));
+        featureVector.emplace_back(static_cast<double>(canvases[view]->m_rowOffset));
+        for (int row = 0; row < canvases[view]->m_height; ++row)
+            for (int col = 0; col < canvases[view]->m_width; ++col)
+                featureVector.emplace_back(static_cast<double>(canvases[view]->m_canvas[row][col]));
+
+        LArMvaHelper::ProduceTrainingExample("canvases.csv", true, featureVector);
     }
-    else if (nEmptyLists == 1)
+
+    CartesianPointVector vertexVector;
+    this->MakeWirePlaneCoordinatesFromCanvas(canvases, vertexVector);
+
+    if (!vertexVector.empty())
     {
-        if (vertexCandidatesU.empty())
-        { // V and W available
-            vertexTuples.emplace_back(VertexTuple(vertexCandidatesV.front(), vertexCandidatesW.front(), TPC_VIEW_V, TPC_VIEW_W));
-        }
-        else if (vertexCandidatesV.empty())
-        { // U and W available
-            vertexTuples.emplace_back(VertexTuple(vertexCandidatesU.front(), vertexCandidatesW.front(), TPC_VIEW_U, TPC_VIEW_W));
-        }
-        else
-        { // U and V available
-            vertexTuples.emplace_back(VertexTuple(vertexCandidatesU.front(), vertexCandidatesV.front(), TPC_VIEW_U, TPC_VIEW_V));
-        }
-    }
-    else
-    { // Not enough views to reconstruct a 3D vertex
-        std::cout << "Insufficient 2D vertices to reconstruct a 3D vertex" << std::endl;
-
-        for (const HitType view : {TPC_VIEW_U, TPC_VIEW_V, TPC_VIEW_W})
-            delete canvases[view];
-
-        return STATUS_CODE_NOT_FOUND;
-    }
-
-    if (!vertexTuples.empty())
-    {
-        const CartesianVector &vertex{vertexTuples.front().GetPosition()};
-        CartesianPointVector vertexCandidates;
-        vertexCandidates.emplace_back(vertex);
-        std::cout << "Final: " << vertex << std::endl;
-        StatusCode status{this->MakeCandidateVertexList(vertexCandidates)};
+        std::cout << "Final: " << vertexVector.front() << std::endl;
+        StatusCode status{this->MakeCandidateVertexList(vertexVector)};
 
         for (const HitType view : {TPC_VIEW_U, TPC_VIEW_V, TPC_VIEW_W})
             delete canvases[view];
@@ -373,51 +365,55 @@ StatusCode DlVertexingAlgorithm::MakeNetworkInputFromHits(const CaloHitList &cal
 
 //-----------------------------------------------------------------------------------------------------------------------------------------
 
-StatusCode DlVertexingAlgorithm::MakeWirePlaneCoordinatesFromCanvas(float **canvas, const int canvasWidth, const int canvasHeight,
-    const int columnOffset, const int rowOffset, const HitType view, const float xMin, const float xMax, const float zMin, const float zMax,
-    CartesianPointVector &positionVector) const
+StatusCode DlVertexingAlgorithm::MakeWirePlaneCoordinatesFromCanvas(const CanvasViewMap &canvases, CartesianPointVector &positionVector) const
 {
     const float pitch(0.5f);
     const float driftStep{0.5f};
 
-    const double dx = ((xMax + 0.5f * driftStep) - (xMin - 0.5f * driftStep)) / m_width;
-    const double dz = ((zMax + 0.5f * pitch) - (zMin - 0.5f * pitch)) / m_height;
+    const double dx = ((canvases.at(TPC_VIEW_U)->m_xMax + 0.5f * driftStep) - (canvases.at(TPC_VIEW_U)->m_xMin - 0.5f * driftStep)) / m_width;
+    const double dy = ((canvases.at(TPC_VIEW_U)->m_zMax + 0.5f * driftStep) - (canvases.at(TPC_VIEW_U)->m_zMin - 0.5f * driftStep)) / m_width;
+    const double dz = ((canvases.at(TPC_VIEW_V)->m_zMax + 0.5f * pitch) - (canvases.at(TPC_VIEW_V)->m_zMin - 0.5f * pitch)) / m_height;
 
     float best{-1.f};
-    int rowBest{0}, colBest{0};
-    for (int row = 0; row < canvasHeight; ++row)
-        for (int col = 0; col < canvasWidth; ++col)
-            if (canvas[row][col] > 0 && canvas[row][col] > best)
-            {
-                best = canvas[row][col];
-                rowBest = row;
-                colBest = col;
-            }
-
-    const float x{static_cast<float>((colBest - columnOffset) * dx + xMin)};
-    const float z{static_cast<float>((rowBest - rowOffset) * dz + zMin)};
-
-    switch (view)
+    int xBest{0}, yBest{0}, zBest{0};
+    for (int xp = 0; xp < m_width; ++xp)
     {
-        case TPC_VIEW_U:
+        if ((xp + canvases.at(TPC_VIEW_U)->m_colOffset >= canvases.at(TPC_VIEW_U)->m_width) ||
+            (xp + canvases.at(TPC_VIEW_V)->m_colOffset >= canvases.at(TPC_VIEW_V)->m_width))
+            continue;
+
+        for (int yp = 0; yp < m_width; ++yp)
         {
-            CartesianVector pt(x, z, 0.f);
-            positionVector.emplace_back(pt);
-            break;
-        }
-        case TPC_VIEW_V:
-        {
-            CartesianVector pt(x, 0.f, z);
-            positionVector.emplace_back(pt);
-            break;
-        }
-        default:
-        {
-            CartesianVector pt(0.f, x, z);
-            positionVector.emplace_back(pt);
-            break;
+            if ((yp + canvases.at(TPC_VIEW_U)->m_rowOffset >= canvases.at(TPC_VIEW_U)->m_height) ||
+                (yp + canvases.at(TPC_VIEW_W)->m_colOffset >= canvases.at(TPC_VIEW_W)->m_width))
+                continue;
+
+            for (int zp = 0; zp < m_width; ++zp)
+            {
+                if ((zp + canvases.at(TPC_VIEW_V)->m_rowOffset >= canvases.at(TPC_VIEW_V)->m_height) ||
+                    (zp + canvases.at(TPC_VIEW_W)->m_rowOffset >= canvases.at(TPC_VIEW_W)->m_height))
+                    continue;
+
+                float contribution{canvases.at(TPC_VIEW_U)->m_canvas[yp + canvases.at(TPC_VIEW_U)->m_rowOffset][xp + canvases.at(TPC_VIEW_U)->m_colOffset]};
+                contribution += canvases.at(TPC_VIEW_V)->m_canvas[yp + canvases.at(TPC_VIEW_V)->m_rowOffset][xp + canvases.at(TPC_VIEW_V)->m_colOffset];
+                contribution += canvases.at(TPC_VIEW_W)->m_canvas[zp + canvases.at(TPC_VIEW_W)->m_rowOffset][yp + canvases.at(TPC_VIEW_W)->m_colOffset];
+                if (contribution > best)
+                {
+                    best = contribution;
+                    xBest = xp;
+                    yBest = yp;
+                    zBest = zp;
+                }
+            }
         }
     }
+
+    const float x{static_cast<float>(xBest * dx + canvases.at(TPC_VIEW_U)->m_xMin)};
+    const float y{static_cast<float>(yBest * dy + canvases.at(TPC_VIEW_U)->m_zMin)};
+    const float z{static_cast<float>(zBest * dz + canvases.at(TPC_VIEW_V)->m_zMin)};
+
+    CartesianVector pt(x, y, z);
+    positionVector.emplace_back(pt);
 
     return STATUS_CODE_SUCCESS;
 }
@@ -872,11 +868,16 @@ StatusCode DlVertexingAlgorithm::ReadSettings(const TiXmlHandle xmlHandle)
 //-----------------------------------------------------------------------------------------------------------------------------------------
 //-----------------------------------------------------------------------------------------------------------------------------------------
 
-DlVertexingAlgorithm::Canvas::Canvas(const int width, const int height, const int colOffset, const int rowOffset) :
+DlVertexingAlgorithm::Canvas::Canvas(const int width, const int height, const int colOffset, const int rowOffset, const float xMin,
+    const float xMax, const float zMin, const float zMax) :
     m_width{width},
     m_height{height},
     m_colOffset{colOffset},
-    m_rowOffset{rowOffset}
+    m_rowOffset{rowOffset},
+    m_xMin{xMin},
+    m_xMax{xMax},
+    m_zMin{zMin},
+    m_zMax{zMax}
 {
     m_canvas = new float*[m_height];
     for (int r = 0; r < m_height; ++r)

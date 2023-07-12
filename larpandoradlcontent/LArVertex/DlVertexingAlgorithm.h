@@ -43,7 +43,8 @@ private:
         /**
          *  @brief Default constructor
          */
-        Canvas(const int width, const int height, const int colOffset, const int rowOffset);
+        Canvas(const int width, const int height, const int colOffset, const int rowOffset, const float xMin, const float xMax,
+            const float zMin, const float zMax);
 
         virtual ~Canvas();
 
@@ -52,7 +53,13 @@ private:
         const int m_height;
         const int m_colOffset;
         const int m_rowOffset;
+        const float m_xMin;
+        const float m_xMax;
+        const float m_zMin;
+        const float m_zMax;
     };
+
+    typedef std::map<pandora::HitType, Canvas *> CanvasViewMap;
 
     class VertexTuple
     {
@@ -113,9 +120,7 @@ private:
      *
      *  @return The StatusCode resulting from the function
      **/
-    pandora::StatusCode MakeWirePlaneCoordinatesFromCanvas(float **canvas, const int canvasWidth, const int canvasHeight,
-        const int columnOffset, const int rowOffset, const pandora::HitType view, const float xMin, const float xMax, const float zMin,
-        const float zMax, pandora::CartesianPointVector &positionVector) const;
+    pandora::StatusCode MakeWirePlaneCoordinatesFromCanvas(const CanvasViewMap &canvases, pandora::CartesianPointVector &positionVector) const;
 
     /**
      *  @brief  Determines the parameters of the canvas for extracting the vertex location.
