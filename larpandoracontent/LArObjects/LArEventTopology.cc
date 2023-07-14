@@ -46,6 +46,13 @@ LArEventTopology::LArEventTopology(const CaloHitList &caloHitList2D) :
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
+LArEventTopology::~LArEventTopology()
+{
+    delete m_pParticle;
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
 void LArEventTopology::ConstructVisibleHierarchy()
 {
     m_pParticle = new Particle(m_pRoot);
@@ -138,6 +145,14 @@ LArEventTopology::Particle::Particle(const MCParticle *const pRoot, const CaloHi
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
+LArEventTopology::Particle::~Particle()
+{
+    for (Particle *pParticle : m_children)
+        delete pParticle;
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
 void LArEventTopology::Particle::AddChild(Particle *pChild)
 {
     m_children.emplace_back(pChild);
@@ -151,11 +166,7 @@ void LArEventTopology::Particle::GetVertices(CartesianPointVector &vertices) con
     if (LArMCParticleHelper::IsNeutrino(pMC))
     {
         if (std::find(vertices.begin(), vertices.end(), pMC->GetVertex()) == vertices.end())
-        {
             vertices.emplace_back(pMC->GetVertex());
-            std::cout << pMC->GetParticleId() << " (" << vertices.back().GetX() << "," << vertices.back().GetY() << "," <<
-                vertices.back().GetZ() << ")" << std::endl;
-        }
     }
     else
     {
@@ -164,11 +175,7 @@ void LArEventTopology::Particle::GetVertices(CartesianPointVector &vertices) con
         if (LArMCParticleHelper::IsNeutrino(pParentMC))
         {
             if (std::find(vertices.begin(), vertices.end(), pMC->GetVertex()) == vertices.end())
-            {
                 vertices.emplace_back(pMC->GetVertex());
-                std::cout << "Primary " << pMC->GetParticleId() << " (" << vertices.back().GetX() << "," << vertices.back().GetY() << "," <<
-                    vertices.back().GetZ() << ")" << std::endl;
-            }
         }
         else
         {
@@ -178,11 +185,7 @@ void LArEventTopology::Particle::GetVertices(CartesianPointVector &vertices) con
             {
                 // Visible photon vertices occur at the endpoint, not the vertex, so skip photons here
                 if (pMC->GetParticleId() != PHOTON && std::find(vertices.begin(), vertices.end(), pMC->GetVertex()) == vertices.end())
-                {
                     vertices.emplace_back(pMC->GetVertex());
-                    std::cout << "Non-primary " << pMC->GetParticleId() << " (" << vertices.back().GetX() << "," << vertices.back().GetY() <<
-                        "," << vertices.back().GetZ() << ")" << std::endl;
-                }
             }
         }
         // Consider end point
@@ -200,18 +203,7 @@ void LArEventTopology::Particle::GetVertices(CartesianPointVector &vertices) con
         if (nTrackLikeChildren != 1)
         {
             if (std::find(vertices.begin(), vertices.end(), pMC->GetEndpoint()) == vertices.end())
-            {
                 vertices.emplace_back(pMC->GetEndpoint());
-                std::cout << "Endpoint " << pMC->GetParticleId() << " (" << vertices.back().GetX() << "," << vertices.back().GetY() << "," <<
-                    vertices.back().GetZ() << ")" << std::endl;
-                std::cout << "   ";
-                for (const Particle *const pChild : m_children)
-                {
-                    const MCParticle *const pChildMC{pChild->m_particles.front()};
-                    std::cout << pChildMC->GetParticleId() << " ";
-                }
-                std::cout << std::endl;
-            }
         }
     }
 

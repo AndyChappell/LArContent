@@ -61,6 +61,8 @@ DlVertexingAlgorithm::~DlVertexingAlgorithm()
 
 StatusCode DlVertexingAlgorithm::Run()
 {
+    ++m_event;
+
     if (m_trainingMode)
         return this->PrepareTrainingSample();
     else
@@ -78,17 +80,19 @@ StatusCode DlVertexingAlgorithm::PrepareTrainingSample()
     LArEventTopology eventTopology(*pCaloHitList2D);
     eventTopology.ConstructVisibleHierarchy();
     eventTopology.PruneHierarchy();
-    CartesianPointVector trueVertices;
-    eventTopology.GetVertices(trueVertices);
-    for (const CartesianVector &vertex : trueVertices)
+    CartesianPointVector vertices;
+    eventTopology.GetVertices(vertices);
+
+    if (vertices.empty())
+        return STATUS_CODE_SUCCESS;
+
+/*    for (const CartesianVector &vertex : vertices)
     {
         std::string str{"(" + std::to_string(vertex.GetX()) + "," + std::to_string(vertex.GetY()) + "," + std::to_string(vertex.GetZ()) + ")"};
         std::cout << "(" << vertex.GetX() << "," << vertex.GetY() << "," << vertex.GetZ() << ")" << std::endl;
         PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &vertex, str, BLUE, 2));
     }
-    PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
-
-    eventTopology.Print();
+    PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));*/
 
     LArMCParticleHelper::MCContributionMap mcToHitsMap;
     PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, this->GetMCToHitsMap(mcToHitsMap));
@@ -96,92 +100,68 @@ StatusCode DlVertexingAlgorithm::PrepareTrainingSample()
     PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, this->CompleteMCHierarchy(mcToHitsMap, hierarchy));
 
     // Get boundaries for hits and make x dimension common
-    std::map<HitType, float> wireMin, wireMax;
-    float driftMin{std::numeric_limits<float>::max()}, driftMax{-std::numeric_limits<float>::max()};
-    for (const std::string &listname : m_caloHitListNames)
+
+    float xMin{0.f}, xMax{0.f}, yMin{0.f}, yMax{0.f}, zMin{0.f}, zMax{0.f};
+    const CaloHitList *pCaloHitList{nullptr};
+    PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetList(*this, "CaloHitList3D", pCaloHitList));
+    if (pCaloHitList->empty())
+        return STATUS_CODE_SUCCESS;
+
+    this->GetHitRegion(*pCaloHitList, xMin, xMax, yMin, yMax, zMin, zMax);
+
+    const std::string trainingFilename{m_trainingOutputFile + ".csv"};
+    const unsigned long nVertices{vertices.size()};
+    unsigned long nHits{0};
+
+    // Only train on events where there is a vertex in the fiducial volume
+    bool hasFiducialVertex{false};
+    for (const CartesianVector vertex : vertices)
     {
-        const CaloHitList *pCaloHitList{nullptr};
-        PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetList(*this, listname, pCaloHitList));
-        if (pCaloHitList->empty())
-            continue;
-
-        HitType view{pCaloHitList->front()->GetHitType()};
-        float viewDriftMin{driftMin}, viewDriftMax{driftMax};
-        this->GetHitRegion(*pCaloHitList, view, viewDriftMin, viewDriftMax, wireMin[view], wireMax[view]);
-        driftMin = std::min(viewDriftMin, driftMin);
-        driftMax = std::max(viewDriftMax, driftMax);
+        if (LArVertexHelper::IsInFiducialVolume(this->GetPandora(), vertex, "dune_fd_hd"))
+        {
+            hasFiducialVertex = true;
+            break;
+        }
     }
-    for (const std::string &listname : m_caloHitListNames)
+
+    if (!hasFiducialVertex)
+        return STATUS_CODE_SUCCESS;
+
+    LArMvaHelper::MvaFeatureVector featureVector;
+    featureVector.emplace_back(static_cast<double>(m_event));
+    featureVector.emplace_back(static_cast<double>(nVertices));
+    // Vertices
+    for (const CartesianVector &vertex : vertices)
     {
-        const CaloHitList *pCaloHitList(nullptr);
-        PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetList(*this, listname, pCaloHitList));
-        if (pCaloHitList->empty())
-            continue;
-
-        HitType view{pCaloHitList->front()->GetHitType()};
-        const bool isU{view == TPC_VIEW_U}, isV{view == TPC_VIEW_V}, isW{view == TPC_VIEW_W};
-        if (!(isU || isV || isW))
-            return STATUS_CODE_NOT_ALLOWED;
-
-        CartesianPointVector vertices;
-        for (const MCParticle *mc : hierarchy)
-        {
-            if (LArMCParticleHelper::IsNeutrino(mc))
-                vertices.push_back(mc->GetVertex());
-        }
-        if (vertices.empty())
-            continue;
-        const CartesianVector &vertex{vertices.front()};
-        const std::string trainingFilename{m_trainingOutputFile + "_" + listname + ".csv"};
-        const unsigned long nVertices{1};
-        unsigned long nHits{0};
-        const unsigned int nuance{LArMCParticleHelper::GetNuanceCode(hierarchy.front())};
-
-        // Vertices
-        const LArTransformationPlugin *transform{this->GetPandora().GetPlugins()->GetLArTransformationPlugin()};
-        const double xVtx{vertex.GetX()};
-        double zVtx{0.};
-        if (isW)
-            zVtx = transform->YZtoW(vertex.GetY(), vertex.GetZ());
-        else if (isV)
-            zVtx = transform->YZtoV(vertex.GetY(), vertex.GetZ());
-        else
-            zVtx = transform->YZtoU(vertex.GetY(), vertex.GetZ());
-
-        // Calo hits
-        double xMin{driftMin}, xMax{driftMax}, zMin{wireMin[view]}, zMax{wireMax[view]};
-
-        // Only train on events where the vertex resides within the image - with a small tolerance
-        if (!(xVtx > (xMin - 1.f) && xVtx < (xMax + 1.f) && zVtx > (zMin - 1.f) && zVtx < (zMax + 1.f)))
-            continue;
-
-        LArMvaHelper::MvaFeatureVector featureVector;
-        featureVector.emplace_back(static_cast<double>(nuance));
-        featureVector.emplace_back(static_cast<double>(nVertices));
-        featureVector.emplace_back(xVtx);
-        featureVector.emplace_back(zVtx);
-        // Retain the hit region
-        featureVector.emplace_back(xMin);
-        featureVector.emplace_back(xMax);
-        featureVector.emplace_back(zMin);
-        featureVector.emplace_back(zMax);
-
-        for (const CaloHit *pCaloHit : *pCaloHitList)
-        {
-            const float x{pCaloHit->GetPositionVector().GetX()}, z{pCaloHit->GetPositionVector().GetZ()}, adc{pCaloHit->GetMipEquivalentEnergy()};
-            // If on a refinement pass, drop hits outside the region of interest
-            if (m_pass > 1 && (x < xMin || x > xMax || z < zMin || z > zMax))
-                continue;
-            featureVector.emplace_back(static_cast<double>(x));
-            featureVector.emplace_back(static_cast<double>(z));
-            featureVector.emplace_back(static_cast<double>(adc));
-            ++nHits;
-        }
-        featureVector.insert(featureVector.begin() + 8, static_cast<double>(nHits));
-        // Only write out the feature vector if there were enough hits in the region of interest
-        if (nHits > 10)
-            LArMvaHelper::ProduceTrainingExample(trainingFilename, true, featureVector);
+        featureVector.emplace_back(vertex.GetX());
+        featureVector.emplace_back(vertex.GetY());
+        featureVector.emplace_back(vertex.GetZ());
     }
+
+    // Retain the hit region
+    featureVector.emplace_back(xMin);
+    featureVector.emplace_back(xMax);
+    featureVector.emplace_back(yMin);
+    featureVector.emplace_back(yMax);
+    featureVector.emplace_back(zMin);
+    featureVector.emplace_back(zMax);
+
+    for (const CaloHit *pCaloHit : *pCaloHitList)
+    {
+        // If on a refinement pass, drop hits outside the region of interest
+        // NEEDS RECONSIDERATION IN THE CONTEXT OF ORTHOGONAL VIEWS
+        //if (m_pass > 1 && (x < xMin || x > xMax || z < zMin || z > zMax))
+        //    continue;
+        featureVector.emplace_back(static_cast<double>(pCaloHit->GetPositionVector().GetX()));
+        featureVector.emplace_back(static_cast<double>(pCaloHit->GetPositionVector().GetY()));
+        featureVector.emplace_back(static_cast<double>(pCaloHit->GetPositionVector().GetZ()));
+        featureVector.emplace_back(static_cast<double>(pCaloHit->GetMipEquivalentEnergy()));
+        ++nHits;
+    }
+    featureVector.insert(featureVector.begin() + 2 + 3 * nVertices + 6, static_cast<double>(nHits));
+    // Only write out the feature vector if there were enough hits in the region of interest
+    if (nHits > 10)
+        LArMvaHelper::ProduceTrainingExample(trainingFilename, true, featureVector);
 
     return STATUS_CODE_SUCCESS;
 }
@@ -190,9 +170,6 @@ StatusCode DlVertexingAlgorithm::PrepareTrainingSample()
 
 StatusCode DlVertexingAlgorithm::Infer()
 {
-    if (m_pass == 1)
-        ++m_event;
-
     std::map<HitType, float> wireMin, wireMax;
     float driftMin{std::numeric_limits<float>::max()}, driftMax{-std::numeric_limits<float>::max()};
     for (const HitType view : {TPC_VIEW_U, TPC_VIEW_V, TPC_VIEW_W})
@@ -673,6 +650,71 @@ void DlVertexingAlgorithm::GetHitRegion(const CaloHitList &caloHitList, HitType 
         xMin -= padding;
         xMax += padding;
     }
+    const float minZSpan{pitch * (m_height - 1)};
+    if (zRange < minZSpan)
+    {
+        const float padding{0.5f * (minZSpan - zRange)};
+        zMin -= padding;
+        zMax += padding;
+    }
+}
+
+//-----------------------------------------------------------------------------------------------------------------------------------------
+
+void DlVertexingAlgorithm::GetHitRegion(const CaloHitList &caloHitList, float &xMin, float &xMax, float &yMin, float &yMax, float &zMin,
+    float &zMax) const
+{
+    xMin = std::numeric_limits<float>::max();
+    xMax = -std::numeric_limits<float>::max();
+    yMin = std::numeric_limits<float>::max();
+    yMax = -std::numeric_limits<float>::max();
+    zMin = std::numeric_limits<float>::max();
+    zMax = -std::numeric_limits<float>::max();
+
+    if (caloHitList.empty())
+        throw StatusCodeException(STATUS_CODE_NOT_FOUND);
+
+    // Find the range of x and z values in the view
+    for (const CaloHit *pCaloHit : caloHitList)
+    {
+        const float x{pCaloHit->GetPositionVector().GetX()};
+        const float y{pCaloHit->GetPositionVector().GetY()};
+        const float z{pCaloHit->GetPositionVector().GetZ()};
+        xMin = std::min(x, xMin);
+        xMax = std::max(x, xMax);
+        yMin = std::min(y, yMin);
+        yMax = std::max(y, yMax);
+        zMin = std::min(z, zMin);
+        zMax = std::max(z, zMax);
+    }
+
+    const float pitch(0.5f);
+
+    if (m_pass > 1)
+    {
+        // NOT YET IMPLEMENTED FOR ORTHOGONAL VIEWS
+    }
+
+    // Avoid unreasonable rescaling of very small hit regions, pixels are assumed to be 0.5cm in x and wire pitch in z
+    // ATTN: Rescaling is to a size 1 pixel smaller than the intended image to ensure all hits fit within an imaged binned
+    // to be one pixel wider than this
+    const float xRange{xMax - xMin};
+    const float minXSpan{m_driftStep * (m_width - 1)};
+    if (xRange < minXSpan)
+    {
+        const float padding{0.5f * (minXSpan - xRange)};
+        xMin -= padding;
+        xMax += padding;
+    }
+    const float yRange{yMax - yMin};
+    const float minYSpan{pitch * (m_width - 1)};
+    if (yRange < minYSpan)
+    {
+        const float padding{0.5f * (minYSpan - yRange)};
+        yMin -= padding;
+        yMax += padding;
+    }
+    const float zRange{zMax - zMin};
     const float minZSpan{pitch * (m_height - 1)};
     if (zRange < minZSpan)
     {

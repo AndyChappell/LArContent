@@ -206,6 +206,19 @@ private:
      */
     void GetHitRegion(const pandora::CaloHitList &caloHitList, pandora::HitType view, float &xMin, float &xMax, float &zMin, float &zMax) const;
 
+    /*
+     *  @brief  Determine the physical bounds associated with a CaloHitList.
+     *
+     *  @param  caloHitList The CaloHitList for which bounds should be determined
+     *  @param  xMin The output minimum x value
+     *  @param  xMax The output maximum x value
+     *  @param  zMin The output minimum z value
+     *  @param  zMax The output maximum z value
+     *
+     *  @return The StatusCode resulting from the function
+     */
+    void GetHitRegion(const pandora::CaloHitList &caloHitList, float &xMin, float &xMax, float &yMin, float &yMax, float &zMin, float &zMax) const;
+
     /**
      *  @brief Create a vertex list from the candidate vertices.
      *

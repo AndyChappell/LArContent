@@ -40,6 +40,11 @@ private:
         Particle(const pandora::MCParticle *const pRoot, const pandora::CaloHitList &caloHitList);
 
         /**
+         *  @brief  Destructor
+         */
+        virtual ~Particle();
+
+        /**
          *  @brief  Add a child particle to this particle
          *
          *  @param  pChild The child particle to add
@@ -88,6 +93,11 @@ public:
      *  @param  caloHitList2D The collection of all hits across all views
      */
     LArEventTopology(const pandora::CaloHitList &caloHitList2D);
+
+    /**
+     *  @brief  Destructor
+     */
+    virtual ~LArEventTopology();
 
     /**
      *  @brief  Construct a particle hierarchy based on the key topological features in an event
