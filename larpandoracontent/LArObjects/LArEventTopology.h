@@ -32,6 +32,14 @@ private:
         Particle(const pandora::MCParticle *const pRoot);
 
         /**
+         *  @brief  Default constructor
+         *
+         *  @param  pRoot The MC particle
+         *  @param  caloHitList The list of hits associated with this particle
+         */
+        Particle(const pandora::MCParticle *const pRoot, const pandora::CaloHitList &caloHitList);
+
+        /**
          *  @brief  Add a child particle to this particle
          *
          *  @param  pChild The child particle to add
@@ -68,6 +76,7 @@ private:
 
     private:
         pandora::MCParticleList m_particles;
+        pandora::CaloHitList m_caloHits;
         std::list<Particle *> m_children;
         bool m_fold;
     };

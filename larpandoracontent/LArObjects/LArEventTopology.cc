@@ -57,6 +57,30 @@ void LArEventTopology::ConstructVisibleHierarchy()
 void LArEventTopology::GetVertices(CartesianPointVector &vertices) const
 {
     m_pParticle->GetVertices(vertices);
+
+    CartesianPointVector forRemoval;
+    for (auto iter1 = vertices.begin(); iter1 != vertices.end(); ++iter1)
+    {
+        const CartesianVector &vertex1{*iter1};
+        if (std::find(forRemoval.begin(), forRemoval.end(), vertex1) != forRemoval.end())
+            continue;
+        for (auto iter2 = std::next(iter1); iter2 != vertices.end(); ++iter2)
+        {
+            const CartesianVector &vertex2{*iter2};
+            if (std::find(forRemoval.begin(), forRemoval.end(), vertex2) != forRemoval.end())
+                continue;
+            if (vertex1.GetDistanceSquared(vertex2) < 1)
+                forRemoval.emplace_back(vertex2);
+        }
+    }
+
+    for (auto iter = vertices.begin(); iter != vertices.end(); )
+    {
+        if (std::find(forRemoval.begin(), forRemoval.end(), *iter) != forRemoval.end())
+            iter = vertices.erase(iter);
+        else
+            ++iter;
+    }
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
@@ -76,7 +100,7 @@ void LArEventTopology::ConstructVisibleHierarchy(Particle *pParticle, const MCPa
     {
         if (m_mcHitMap.find(pMC) != m_mcHitMap.end())
         {
-            Particle *pChild{new Particle(pMC)};
+            Particle *pChild{new Particle(pMC, m_mcHitMap.at(pMC))};
             pParticle->AddChild(pChild);
             this->ConstructVisibleHierarchy(pChild, pMC);
         }
@@ -105,6 +129,15 @@ LArEventTopology::Particle::Particle(const MCParticle *const pRoot) : m_fold{fal
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
+LArEventTopology::Particle::Particle(const MCParticle *const pRoot, const CaloHitList &caloHitList) :
+    m_caloHits{caloHitList},
+    m_fold{false}
+{
+    m_particles.emplace_back(pRoot);
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
 void LArEventTopology::Particle::AddChild(Particle *pChild)
 {
     m_children.emplace_back(pChild);
@@ -118,7 +151,11 @@ void LArEventTopology::Particle::GetVertices(CartesianPointVector &vertices) con
     if (LArMCParticleHelper::IsNeutrino(pMC))
     {
         if (std::find(vertices.begin(), vertices.end(), pMC->GetVertex()) == vertices.end())
+        {
             vertices.emplace_back(pMC->GetVertex());
+            std::cout << pMC->GetParticleId() << " (" << vertices.back().GetX() << "," << vertices.back().GetY() << "," <<
+                vertices.back().GetZ() << ")" << std::endl;
+        }
     }
     else
     {
@@ -127,7 +164,11 @@ void LArEventTopology::Particle::GetVertices(CartesianPointVector &vertices) con
         if (LArMCParticleHelper::IsNeutrino(pParentMC))
         {
             if (std::find(vertices.begin(), vertices.end(), pMC->GetVertex()) == vertices.end())
+            {
                 vertices.emplace_back(pMC->GetVertex());
+                std::cout << "Primary " << pMC->GetParticleId() << " (" << vertices.back().GetX() << "," << vertices.back().GetY() << "," <<
+                    vertices.back().GetZ() << ")" << std::endl;
+            }
         }
         else
         {
@@ -137,7 +178,11 @@ void LArEventTopology::Particle::GetVertices(CartesianPointVector &vertices) con
             {
                 // Visible photon vertices occur at the endpoint, not the vertex, so skip photons here
                 if (pMC->GetParticleId() != PHOTON && std::find(vertices.begin(), vertices.end(), pMC->GetVertex()) == vertices.end())
+                {
                     vertices.emplace_back(pMC->GetVertex());
+                    std::cout << "Non-primary " << pMC->GetParticleId() << " (" << vertices.back().GetX() << "," << vertices.back().GetY() <<
+                        "," << vertices.back().GetZ() << ")" << std::endl;
+                }
             }
         }
         // Consider end point
@@ -157,6 +202,15 @@ void LArEventTopology::Particle::GetVertices(CartesianPointVector &vertices) con
             if (std::find(vertices.begin(), vertices.end(), pMC->GetEndpoint()) == vertices.end())
             {
                 vertices.emplace_back(pMC->GetEndpoint());
+                std::cout << "Endpoint " << pMC->GetParticleId() << " (" << vertices.back().GetX() << "," << vertices.back().GetY() << "," <<
+                    vertices.back().GetZ() << ")" << std::endl;
+                std::cout << "   ";
+                for (const Particle *const pChild : m_children)
+                {
+                    const MCParticle *const pChildMC{pChild->m_particles.front()};
+                    std::cout << pChildMC->GetParticleId() << " ";
+                }
+                std::cout << std::endl;
             }
         }
     }
