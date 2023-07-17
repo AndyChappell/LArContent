@@ -217,7 +217,7 @@ StatusCode DlVertexingAlgorithm::Infer()
 
         int colOffset{0}, rowOffset{0}, canvasWidth{m_width}, canvasHeight{m_height};
         this->GetCanvasParameters(output, pixelVector, colOffset, rowOffset, canvasWidth, canvasHeight);
-        std::cout << "View " << view << " " << canvasWidth << " " << canvasHeight << " " << colOffset << " " << rowOffset << std::endl;
+        //std::cout << "View " << view << " " << canvasWidth << " " << canvasHeight << " " << colOffset << " " << rowOffset << std::endl;
 
         switch (view)
         {
@@ -250,8 +250,8 @@ StatusCode DlVertexingAlgorithm::Infer()
         }
 
         LArMvaHelper::MvaFeatureVector featureVector;
-        std::cout << view << " " << canvases[view]->m_width << " " << canvases[view]->m_height << " " << canvases[view]->m_colOffset << " " <<
-            canvases[view]->m_rowOffset << std::endl;
+        //std::cout << view << " " << canvases[view]->m_width << " " << canvases[view]->m_height << " " << canvases[view]->m_colOffset << " " <<
+        //    canvases[view]->m_rowOffset << std::endl;
         featureVector.emplace_back(static_cast<double>(canvases[view]->m_width));
         featureVector.emplace_back(static_cast<double>(canvases[view]->m_height));
         for (const Pixel &pixel : pixelVector)
@@ -266,8 +266,8 @@ StatusCode DlVertexingAlgorithm::Infer()
     for (HitType view : {TPC_VIEW_U, TPC_VIEW_V, TPC_VIEW_W})
     {
         LArMvaHelper::MvaFeatureVector featureVector;
-        std::cout << view << " " << canvases[view]->m_width << " " << canvases[view]->m_height << " " << canvases[view]->m_colOffset << " " <<
-            canvases[view]->m_rowOffset << std::endl;
+        //std::cout << view << " " << canvases[view]->m_width << " " << canvases[view]->m_height << " " << canvases[view]->m_colOffset << " " <<
+        //    canvases[view]->m_rowOffset << std::endl;
         featureVector.emplace_back(static_cast<double>(canvases[view]->m_width));
         featureVector.emplace_back(static_cast<double>(canvases[view]->m_height));
         featureVector.emplace_back(static_cast<double>(canvases[view]->m_colOffset));
@@ -497,13 +497,29 @@ bool DlVertexingAlgorithm::GrowPeak(Canvas &canvas, int col, int row, float inte
     if (col < 0 || col >= canvas.m_width || row < 0 || row >= canvas.m_height || canvas.m_visited[row][col] || canvas.m_canvas[row][col] < intensity)
         return false;
 
+    // Check that no adjacent pixel is larger than this one
+    for (int i = -1; i <=1; ++i)
+    {
+        for (int j = -1; j <= 1; ++j)
+        {
+            if (i == 0 && j == 0)
+                continue;
+            if (canvas.m_canvas[row + i][col + j] > intensity)
+                return false;
+        }
+    }
+
+    //std::cout << "Checking (" << row << "," << col << "): " << canvas.m_canvas[row][col] << " v " << intensity <<std::endl;
+
     // Need to check we aren't growing into a higher peak, if we are restart from the current pixel
     if (canvas.m_canvas[row][col] > intensity)
     {
+        //std::cout << "   New high - discard " << peak.size();
         intensity = canvas.m_canvas[row][col];
         for (const auto pixel : peak)
             canvas.m_visited[pixel.second][pixel.first] = false;
         peak.clear();
+        //std::cout << ". New size " << peak.size() << " new intensity " << intensity << std::endl;
         this->GrowPeak(canvas, col, row, intensity, peak);
         return true;
     }
@@ -511,6 +527,7 @@ bool DlVertexingAlgorithm::GrowPeak(Canvas &canvas, int col, int row, float inte
     // Add pixel to the peak
     canvas.m_visited[row][col] = true;
     peak.emplace_back(std::make_pair(col, row));
+    //std::cout << "   Added" << std::endl;
 
     for (int i = -1; i <=1; ++i)
     {
@@ -518,6 +535,7 @@ bool DlVertexingAlgorithm::GrowPeak(Canvas &canvas, int col, int row, float inte
         {
             if (i == 0 && j == 0)
                 continue;
+            //std::cout << "   Adjacent (" << (row + i) << "," << (col + j) << ")" << std::endl;
             bool reset{this->GrowPeak(canvas, col + j, row + i, intensity, peak)};
             // If we started growing a non-peak region, stop looking relative to the previous peak
             if (reset)
