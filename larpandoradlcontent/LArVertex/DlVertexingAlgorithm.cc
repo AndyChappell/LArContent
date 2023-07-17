@@ -422,7 +422,7 @@ StatusCode DlVertexingAlgorithm::MakeWirePlaneCoordinatesFromCanvas(const Canvas
                 maxIntensity = canvases.at(TPC_VIEW_V)->m_canvas[zpp][xpp];
         }
     }
-    const float threshold{maxIntensity * 0.1f};
+    const float threshold{maxIntensity * 0.3f};
 
     std::vector<std::vector<std::pair<int, int>>> peaks;
     for (int xp = 0; xp < m_width; ++xp)
@@ -479,13 +479,22 @@ StatusCode DlVertexingAlgorithm::MakeWirePlaneCoordinatesFromCanvas(const Canvas
     }
     (void)dx; (void)dy; (void)dz;
     (void)positionVector;
+    for (const auto peak : peaks)
+    {
+        float row{0}, col{0};
+        for (const auto pixel : peak)
+        {
+            row += pixel.second - canvases.at(TPC_VIEW_V)->m_rowOffset;
+            col += pixel.first - canvases.at(TPC_VIEW_V)->m_colOffset;
+        }
+        row /= peak.size();
+        col /= peak.size();
 
-    //const float x{static_cast<float>(xBest * dx + canvases.at(TPC_VIEW_U)->m_xMin)};
-    //const float y{static_cast<float>(yBest * dy + canvases.at(TPC_VIEW_U)->m_zMin)};
-    //const float z{static_cast<float>(zBest * dz + canvases.at(TPC_VIEW_V)->m_zMin)};
-
-    //CartesianVector pt(x, y, z);
-    //positionVector.emplace_back(pt);
+        const float x{static_cast<float>(col * dx + canvases.at(TPC_VIEW_V)->m_xMin)};
+        const float z{static_cast<float>(row * dz + canvases.at(TPC_VIEW_V)->m_zMin)};
+        CartesianVector pt(x, 0, z);
+        positionVector.emplace_back(pt);
+    }
 
     return STATUS_CODE_SUCCESS;
 }
