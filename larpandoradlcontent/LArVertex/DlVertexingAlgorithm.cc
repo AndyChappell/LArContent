@@ -73,7 +73,7 @@ StatusCode DlVertexingAlgorithm::Run()
 
 StatusCode DlVertexingAlgorithm::PrepareTrainingSample()
 {
-    PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1.f, 1.f, 1.f));
+    //PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1.f, 1.f, 1.f));
 
     const CaloHitList *pCaloHitList2D{nullptr};
     PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetList(*this, "CaloHitList2D", pCaloHitList2D));
@@ -170,31 +170,33 @@ StatusCode DlVertexingAlgorithm::PrepareTrainingSample()
 
 StatusCode DlVertexingAlgorithm::Infer()
 {
-    std::map<HitType, float> wireMin, wireMax;
-    float driftMin{std::numeric_limits<float>::max()}, driftMax{-std::numeric_limits<float>::max()};
-    for (const HitType view : {TPC_VIEW_U, TPC_VIEW_V, TPC_VIEW_W})
-    {
-        const CaloHitList *pCaloHitList{nullptr};
-        PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetList(*this, "CaloHitList3D", pCaloHitList));
-        if (pCaloHitList->empty())
-            continue;
+    float xMin{0.f}, xMax{0.f}, yMin{0.f}, yMax{0.f}, zMin{0.f}, zMax{0.f};
+    const CaloHitList *pCaloHitList{nullptr};
+    PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetList(*this, "CaloHitList3D", pCaloHitList));
+    if (pCaloHitList->empty())
+        return STATUS_CODE_SUCCESS;
 
-        float viewDriftMin{driftMin}, viewDriftMax{driftMax};
-        this->GetHitRegion(*pCaloHitList, view, viewDriftMin, viewDriftMax, wireMin[view], wireMax[view]);
-        driftMin = std::min(viewDriftMin, driftMin);
-        driftMax = std::max(viewDriftMax, driftMax);
-    }
+    this->GetHitRegion(*pCaloHitList, xMin, xMax, yMin, yMax, zMin, zMax);
 
     CanvasViewMap canvases;
     CartesianPointVector vertexCandidatesU, vertexCandidatesV, vertexCandidatesW;
     for (const HitType view : {TPC_VIEW_U, TPC_VIEW_V, TPC_VIEW_W})
     {
-        const CaloHitList *pCaloHitList{nullptr};
-        PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetList(*this, "CaloHitList3D", pCaloHitList));
-
         LArDLHelper::TorchInput input;
         PixelVector pixelVector;
-        this->MakeNetworkInputFromHits(*pCaloHitList, view, driftMin, driftMax, wireMin[view], wireMax[view], input, pixelVector);
+
+        switch (view)
+        {
+            case TPC_VIEW_U:
+                this->MakeNetworkInputFromHits(*pCaloHitList, view, xMin, xMax, yMin, yMax, input, pixelVector);
+                break;
+            case TPC_VIEW_V:
+                this->MakeNetworkInputFromHits(*pCaloHitList, view, xMin, xMax, zMin, zMax, input, pixelVector);
+                break;
+            default:
+                this->MakeNetworkInputFromHits(*pCaloHitList, view, yMin, yMax, zMin, zMax, input, pixelVector);
+                break;
+        }
 
         // Run the input through the trained model
         LArDLHelper::TorchInputVector inputs;
@@ -217,7 +219,18 @@ StatusCode DlVertexingAlgorithm::Infer()
         this->GetCanvasParameters(output, pixelVector, colOffset, rowOffset, canvasWidth, canvasHeight);
         std::cout << "View " << view << " " << canvasWidth << " " << canvasHeight << " " << colOffset << " " << rowOffset << std::endl;
 
-        canvases[view] = new Canvas(canvasWidth, canvasHeight, colOffset, rowOffset, driftMin, driftMax, wireMin[view], wireMax[view]);
+        switch (view)
+        {
+            case TPC_VIEW_U:
+                canvases[view] = new Canvas(canvasWidth, canvasHeight, colOffset, rowOffset, xMin, xMax, yMin, yMax);
+                break;
+            case TPC_VIEW_V:
+                canvases[view] = new Canvas(canvasWidth, canvasHeight, colOffset, rowOffset, xMin, xMax, zMin, zMax);
+                break;
+            default:
+                canvases[view] = new Canvas(canvasWidth, canvasHeight, colOffset, rowOffset, yMin, yMax, zMin, zMax);
+                break;
+        }
 
         // we want the maximum value in the num_classes dimension (1) for every pixel
         auto classes{torch::argmax(output, 1)};
@@ -271,6 +284,15 @@ StatusCode DlVertexingAlgorithm::Infer()
 
     if (!vertexVector.empty())
     {
+        PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1.f, 1.f, 1.f));
+
+        for (const CartesianVector &vertex : vertexVector)
+        {
+            const CartesianVector vec2d(vertex.GetX(), 0, vertex.GetZ());
+            PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &vec2d, "vec", BLUE, 1));
+        }
+        PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
+
         std::cout << "Final: " << vertexVector.front() << std::endl;
         StatusCode status{this->MakeCandidateVertexList(vertexVector)};
 
@@ -353,7 +375,7 @@ StatusCode DlVertexingAlgorithm::MakeWirePlaneCoordinatesFromCanvas(const Canvas
 
     float best{-1.f};
     int xBest{0}, yBest{0}, zBest{0};
-    for (int xp = 0; xp < m_width; ++xp)
+/*    for (int xp = 0; xp < m_width; ++xp)
     {
         if ((xp + canvases.at(TPC_VIEW_U)->m_colOffset >= canvases.at(TPC_VIEW_U)->m_width) ||
             (xp + canvases.at(TPC_VIEW_V)->m_colOffset >= canvases.at(TPC_VIEW_V)->m_width))
@@ -383,7 +405,29 @@ StatusCode DlVertexingAlgorithm::MakeWirePlaneCoordinatesFromCanvas(const Canvas
                 }
             }
         }
+    }*/
+
+    for (int xp = 0; xp < m_width; ++xp)
+    {
+        if (xp + canvases.at(TPC_VIEW_V)->m_colOffset >= canvases.at(TPC_VIEW_V)->m_width)
+            continue;
+
+        for (int zp = 0; zp < m_width; ++zp)
+        {
+            if (zp + canvases.at(TPC_VIEW_V)->m_rowOffset >= canvases.at(TPC_VIEW_V)->m_height)
+                continue;
+
+            float contribution{canvases.at(TPC_VIEW_V)->m_canvas[zp + canvases.at(TPC_VIEW_V)->m_rowOffset][xp + canvases.at(TPC_VIEW_V)->m_colOffset]};
+            if (contribution > best)
+            {
+                best = contribution;
+                xBest = xp;
+                yBest = 0;
+                zBest = zp;
+            }
+        }
     }
+
 
     const float x{static_cast<float>(xBest * dx + canvases.at(TPC_VIEW_U)->m_xMin)};
     const float y{static_cast<float>(yBest * dy + canvases.at(TPC_VIEW_U)->m_zMin)};
