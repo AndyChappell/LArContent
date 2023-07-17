@@ -373,8 +373,6 @@ StatusCode DlVertexingAlgorithm::MakeWirePlaneCoordinatesFromCanvas(const Canvas
     const double dy = ((canvases.at(TPC_VIEW_U)->m_zMax + 0.5f * driftStep) - (canvases.at(TPC_VIEW_U)->m_zMin - 0.5f * driftStep)) / m_width;
     const double dz = ((canvases.at(TPC_VIEW_V)->m_zMax + 0.5f * pitch) - (canvases.at(TPC_VIEW_V)->m_zMin - 0.5f * pitch)) / m_height;
 
-    float best{-1.f};
-    int xBest{0}, yBest{0}, zBest{0};
 /*    for (int xp = 0; xp < m_width; ++xp)
     {
         if ((xp + canvases.at(TPC_VIEW_U)->m_colOffset >= canvases.at(TPC_VIEW_U)->m_width) ||
@@ -407,36 +405,97 @@ StatusCode DlVertexingAlgorithm::MakeWirePlaneCoordinatesFromCanvas(const Canvas
         }
     }*/
 
+    std::vector<std::vector<std::pair<int, int>>> peaks;
     for (int xp = 0; xp < m_width; ++xp)
     {
-        if (xp + canvases.at(TPC_VIEW_V)->m_colOffset >= canvases.at(TPC_VIEW_V)->m_width)
+        int xpp{xp + canvases.at(TPC_VIEW_V)->m_colOffset};
+        if (xpp >= canvases.at(TPC_VIEW_V)->m_width)
             continue;
 
         for (int zp = 0; zp < m_width; ++zp)
         {
-            if (zp + canvases.at(TPC_VIEW_V)->m_rowOffset >= canvases.at(TPC_VIEW_V)->m_height)
+            int zpp{zp + canvases.at(TPC_VIEW_V)->m_rowOffset};
+            if (zpp >= canvases.at(TPC_VIEW_V)->m_height)
                 continue;
 
-            float contribution{canvases.at(TPC_VIEW_V)->m_canvas[zp + canvases.at(TPC_VIEW_V)->m_rowOffset][xp + canvases.at(TPC_VIEW_V)->m_colOffset]};
-            if (contribution > best)
+            std::vector<std::pair<int, int>> peak;
+            bool hasLowNeighbour{false};
+            for (int dr = -1; dr <= 1; ++dr)
             {
-                best = contribution;
-                xBest = xp;
-                yBest = 0;
-                zBest = zp;
+                for (int dc = -1; dc <=1; ++dc)
+                {
+                    if (dr == 0 && dc == 0)
+                        continue;
+                    const int r{zpp + dr};
+                    const int c{xpp + dc};
+                    if (r < 0 || r >= canvases.at(TPC_VIEW_V)->m_height || c < 0 || c >= canvases.at(TPC_VIEW_V)->m_width)
+                        continue;
+                    if (canvases.at(TPC_VIEW_V)->m_canvas[zpp][xpp] > canvases.at(TPC_VIEW_V)->m_canvas[r][c])
+                    {
+                        hasLowNeighbour = true;
+                    }
+                    else if (canvases.at(TPC_VIEW_V)->m_canvas[zpp][xpp] < canvases.at(TPC_VIEW_V)->m_canvas[r][c])
+                    {
+                        hasLowNeighbour = false;
+                        break;
+                    }
+                }
             }
+            if (hasLowNeighbour)
+                this->GrowPeak(*canvases.at(TPC_VIEW_V), xpp, zpp, canvases.at(TPC_VIEW_V)->m_canvas[zpp][xpp], peak);
+            if (!peak.empty())
+                peaks.emplace_back(peak);
+        }
+    }
+    (void)dx; (void)dy; (void)dz;
+    (void)positionVector;
+
+    //const float x{static_cast<float>(xBest * dx + canvases.at(TPC_VIEW_U)->m_xMin)};
+    //const float y{static_cast<float>(yBest * dy + canvases.at(TPC_VIEW_U)->m_zMin)};
+    //const float z{static_cast<float>(zBest * dz + canvases.at(TPC_VIEW_V)->m_zMin)};
+
+    //CartesianVector pt(x, y, z);
+    //positionVector.emplace_back(pt);
+
+    return STATUS_CODE_SUCCESS;
+}
+
+//-----------------------------------------------------------------------------------------------------------------------------------------
+
+bool DlVertexingAlgorithm::GrowPeak(Canvas &canvas, int col, int row, float intensity, std::vector<std::pair<int, int>> &peak) const
+{
+    if (col < 0 || col >= canvas.m_width || row < 0 || row >= canvas.m_height || canvas.m_visited[row][col] || canvas.m_canvas[row][col] < intensity)
+        return false;
+
+    // Need to check we aren't growing into a higher peak, if we are restart from the current pixel
+    if (canvas.m_canvas[row][col] > intensity)
+    {
+        intensity = canvas.m_canvas[row][col];
+        for (const auto pixel : peak)
+            canvas.m_visited[pixel.second][pixel.first] = false;
+        peak.clear();
+        this->GrowPeak(canvas, col, row, intensity, peak);
+        return true;
+    }
+
+    // Add pixel to the peak
+    canvas.m_visited[row][col] = true;
+    peak.emplace_back(std::make_pair(col, row));
+
+    for (int i = -1; i <=1; ++i)
+    {
+        for (int j = -1; j <= 1; ++j)
+        {
+            if (i == 0 && j == 0)
+                continue;
+            bool reset{this->GrowPeak(canvas, col + j, row + i, intensity, peak)};
+            // If we started growing a non-peak region, stop looking relative to the previous peak
+            if (reset)
+                return reset;
         }
     }
 
-
-    const float x{static_cast<float>(xBest * dx + canvases.at(TPC_VIEW_U)->m_xMin)};
-    const float y{static_cast<float>(yBest * dy + canvases.at(TPC_VIEW_U)->m_zMin)};
-    const float z{static_cast<float>(zBest * dz + canvases.at(TPC_VIEW_V)->m_zMin)};
-
-    CartesianVector pt(x, y, z);
-    positionVector.emplace_back(pt);
-
-    return STATUS_CODE_SUCCESS;
+    return false;
 }
 
 //-----------------------------------------------------------------------------------------------------------------------------------------
@@ -966,8 +1025,12 @@ DlVertexingAlgorithm::Canvas::Canvas(const int width, const int height, const in
     m_zMax{zMax}
 {
     m_canvas = new float*[m_height];
+    m_visited = new bool*[m_height];
     for (int r = 0; r < m_height; ++r)
+    {
         m_canvas[r] = new float[m_width]{};
+        m_visited[r] = new bool[m_width]{false};
+    }
 }
 
 //-----------------------------------------------------------------------------------------------------------------------------------------
@@ -975,8 +1038,12 @@ DlVertexingAlgorithm::Canvas::Canvas(const int width, const int height, const in
 DlVertexingAlgorithm::Canvas::~Canvas()
 {
     for (int r = 0; r < m_height; ++r)
+    {
         delete[] m_canvas[r];
+        delete[] m_visited[r];
+    }
     delete[] m_canvas;
+    delete[] m_visited;
 }
 
 //-----------------------------------------------------------------------------------------------------------------------------------------

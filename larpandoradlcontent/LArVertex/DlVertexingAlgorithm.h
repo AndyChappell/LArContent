@@ -49,6 +49,7 @@ private:
         virtual ~Canvas();
 
         float **m_canvas;
+        bool **m_visited;
         const int m_width;
         const int m_height;
         const int m_colOffset;
@@ -121,6 +122,19 @@ private:
      *  @return The StatusCode resulting from the function
      **/
     pandora::StatusCode MakeWirePlaneCoordinatesFromCanvas(const CanvasViewMap &canvases, pandora::CartesianPointVector &positionVector) const;
+
+    /**
+     *  @brief  Determine if the pixel under consideration is part of a peak and grow that peak to include all connected pixels of equal value
+     *
+     *  @param  canvas The canvas within which peaks are sought
+     *  @param  col The column of the pixel under consideration
+     *  @param  row The row of the pixel under consideration
+     *  @param  intensity The target intensity of the candidate peak
+     *  @param  peak The output vector of pixels constituting the peak under consideration
+     *
+     *  @return true if we found a better peak while growing the current region, false otherwise
+     */
+    bool GrowPeak(Canvas &canvas, int col, int row, float intensity, std::vector<std::pair<int, int>> &peak) const;
 
     /**
      *  @brief  Determines the parameters of the canvas for extracting the vertex location.
