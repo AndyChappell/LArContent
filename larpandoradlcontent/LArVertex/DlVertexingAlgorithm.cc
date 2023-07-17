@@ -405,6 +405,25 @@ StatusCode DlVertexingAlgorithm::MakeWirePlaneCoordinatesFromCanvas(const Canvas
         }
     }*/
 
+    float maxIntensity{0.f};
+    for (int xp = 0; xp < m_width; ++xp)
+    {
+        int xpp{xp + canvases.at(TPC_VIEW_V)->m_colOffset};
+        if (xpp >= canvases.at(TPC_VIEW_V)->m_width)
+            continue;
+
+        for (int zp = 0; zp < m_width; ++zp)
+        {
+            int zpp{zp + canvases.at(TPC_VIEW_V)->m_rowOffset};
+            if (zpp >= canvases.at(TPC_VIEW_V)->m_height)
+                continue;
+
+            if (canvases.at(TPC_VIEW_V)->m_canvas[zpp][xpp] > maxIntensity)
+                maxIntensity = canvases.at(TPC_VIEW_V)->m_canvas[zpp][xpp];
+        }
+    }
+    const float threshold{maxIntensity * 0.1f};
+
     std::vector<std::vector<std::pair<int, int>>> peaks;
     for (int xp = 0; xp < m_width; ++xp)
     {
@@ -441,10 +460,21 @@ StatusCode DlVertexingAlgorithm::MakeWirePlaneCoordinatesFromCanvas(const Canvas
                     }
                 }
             }
-            if (hasLowNeighbour)
+            if (hasLowNeighbour && canvases.at(TPC_VIEW_V)->m_canvas[zpp][xpp] > threshold)
                 this->GrowPeak(*canvases.at(TPC_VIEW_V), xpp, zpp, canvases.at(TPC_VIEW_V)->m_canvas[zpp][xpp], peak);
             if (!peak.empty())
+            {
+                const auto p{peak.front()};
+                const float intensity{canvases.at(TPC_VIEW_V)->m_canvas[p.second][p.first]};
+                std::cout << "Found peak containing: " << intensity << std::endl;
+                for (const auto pixel : peak)
+                {
+                    const int row{pixel.second};
+                    const int col{pixel.first};
+                    std::cout << "   (" << row << "," << col << ")" << std::endl;
+                }
                 peaks.emplace_back(peak);
+            }
         }
     }
     (void)dx; (void)dy; (void)dz;
