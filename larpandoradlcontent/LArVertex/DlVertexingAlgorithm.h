@@ -43,11 +43,12 @@ private:
         /**
          *  @brief Default constructor
          */
-        Canvas(const int width, const int height, const int colOffset, const int rowOffset, const float xMin, const float xMax,
-            const float zMin, const float zMax);
+        Canvas(const pandora::HitType view, const int width, const int height, const int colOffset, const int rowOffset, const float xMin,
+            const float xMax, const float zMin, const float zMax);
 
         virtual ~Canvas();
 
+        pandora::HitType m_view;
         float **m_canvas;
         bool **m_visited;
         const int m_width;
@@ -106,22 +107,24 @@ private:
         const float xMax, const float zMin, const float zMax, LArDLHelper::TorchInput &networkInput, PixelVector &pixelVector) const;
 
     /*
-     *  @brief  Create a list of wire plane-space coordinates from a canvas
+     *  @brief  Create a list of vertices from canvases
      *
-     *  @param  canvas The input canvas
-     *  @param  canvasWidth The width of the canvas
-     *  @param  canvasHeight The height of the canvas
-     *  @param  columnOffset The column offset used when populating the canvas
-     *  @param  rowOffset The row offset used when populating the canvas
-     *  @param  xMin The minimum x coordinate for the hits
-     *  @param  xMax The maximum x coordinate for the hits
-     *  @param  zMin The minimum x coordinate for the hits
-     *  @param  zMax The maximum x coordinate for the hits
+     *  @param  canvases The input canvases
      *  @param  positionVector The output vector of wire plane positions
      *
      *  @return The StatusCode resulting from the function
      **/
-    pandora::StatusCode MakeWirePlaneCoordinatesFromCanvas(const CanvasViewMap &canvases, pandora::CartesianPointVector &positionVector) const;
+    pandora::StatusCode GetNetworkVertices(const CanvasViewMap &canvases, pandora::CartesianPointVector &positionVector) const;
+
+    /*
+     *  @brief  Create a list of vertices from a canvas
+     *
+     *  @param  canvases The input canvases
+     *  @param  positionVector The output vector of wire plane positions
+     *
+     *  @return The StatusCode resulting from the function
+     **/
+    pandora::StatusCode GetVerticesFromCanvas(Canvas &canvases, pandora::CartesianPointVector &positionVector) const;
 
     /**
      *  @brief  Determine if the pixel under consideration is part of a peak and grow that peak to include all connected pixels of equal value

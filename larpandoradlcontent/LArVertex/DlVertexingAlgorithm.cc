@@ -222,13 +222,13 @@ StatusCode DlVertexingAlgorithm::Infer()
         switch (view)
         {
             case TPC_VIEW_U:
-                canvases[view] = new Canvas(canvasWidth, canvasHeight, colOffset, rowOffset, xMin, xMax, yMin, yMax);
+                canvases[view] = new Canvas(view, canvasWidth, canvasHeight, colOffset, rowOffset, xMin, xMax, yMin, yMax);
                 break;
             case TPC_VIEW_V:
-                canvases[view] = new Canvas(canvasWidth, canvasHeight, colOffset, rowOffset, xMin, xMax, zMin, zMax);
+                canvases[view] = new Canvas(view, canvasWidth, canvasHeight, colOffset, rowOffset, xMin, xMax, zMin, zMax);
                 break;
             default:
-                canvases[view] = new Canvas(canvasWidth, canvasHeight, colOffset, rowOffset, yMin, yMax, zMin, zMax);
+                canvases[view] = new Canvas(view, canvasWidth, canvasHeight, colOffset, rowOffset, yMin, yMax, zMin, zMax);
                 break;
         }
 
@@ -280,7 +280,7 @@ StatusCode DlVertexingAlgorithm::Infer()
     }
 
     CartesianPointVector vertexVector;
-    this->MakeWirePlaneCoordinatesFromCanvas(canvases, vertexVector);
+    this->GetNetworkVertices(canvases, vertexVector);
 
     if (!vertexVector.empty())
     {
@@ -364,62 +364,119 @@ StatusCode DlVertexingAlgorithm::MakeNetworkInputFromHits(const CaloHitList &cal
 
 //-----------------------------------------------------------------------------------------------------------------------------------------
 
-StatusCode DlVertexingAlgorithm::MakeWirePlaneCoordinatesFromCanvas(const CanvasViewMap &canvases, CartesianPointVector &positionVector) const
+StatusCode DlVertexingAlgorithm::GetNetworkVertices(const CanvasViewMap &canvases, CartesianPointVector &positionVector) const
+{
+    // ATTN - this is a hack because CartesianVectors can't be used as keys for maps
+    typedef std::tuple<float, float, float> Triplet;
+    typedef std::tuple<Triplet, Triplet, Triplet> Combination;
+    typedef std::pair<Triplet, float> VertexScore;
+    typedef std::map<Combination, VertexScore> CombinationScoreMap;
+    std::map<HitType, CartesianPointVector> viewToVertexMap;
+    for (const HitType view : {TPC_VIEW_U, TPC_VIEW_V, TPC_VIEW_W})
+    {
+        CartesianPointVector vertices;
+        this->GetVerticesFromCanvas(*canvases.at(view), vertices);
+        viewToVertexMap[view] = vertices;
+
+        //std::cout << "View " << view << std::endl;
+        //for (CartesianVector vertex : vertices)
+        //{
+        //    std::cout << "   (" << vertex.GetX() << "," << vertex.GetY() << "," << vertex.GetZ() << ")" << std::endl;
+        //    if (view == TPC_VIEW_V)
+        //        positionVector.emplace_back(vertex);
+        //}
+    }
+
+    CombinationScoreMap vertexScores;
+    for (const CartesianVector &uVector : viewToVertexMap[TPC_VIEW_U])
+    {
+        Triplet uTriplet{uVector.GetX(), uVector.GetY(), uVector.GetZ()};
+        for (const CartesianVector &vVector : viewToVertexMap[TPC_VIEW_V])
+        {
+            Triplet vTriplet{vVector.GetX(), vVector.GetY(), vVector.GetZ()};
+            const float xu{uVector.GetX()}, xv{vVector.GetX()};
+            const float xDisplacement{std::abs(xu - xv)};
+            if (xDisplacement > 5.f)
+                continue;
+            for (const CartesianVector &wVector : viewToVertexMap[TPC_VIEW_W])
+            {
+                Triplet wTriplet{wVector.GetX(), wVector.GetY(), wVector.GetZ()};
+                const float yu{uVector.GetY()}, yw{wVector.GetY()};
+                const float yDisplacement{std::abs(yu - yw)};
+                if (yDisplacement > 5.f)
+                    continue;
+                const float zv{vVector.GetZ()}, zw{wVector.GetZ()};
+                const float zDisplacement{std::abs(zv - zw)};
+                if (zDisplacement > 5.f)
+                    continue;
+
+                const float x{0.5f * (xu + xv)}, y{0.5f * (yu + yw)}, z{0.5f * (zv + zw)};
+                const Triplet combinedVertex(x, y, z);
+                const float chi2{(x - xu) * (x - xu) + (x - xv) * (x - xv) + (y - yu) * (y - yu) + (y - yw) * (y - yw) + (z - zv) * (z - zv) +
+                    (z - zw) * (z - zw)};
+                VertexScore score{std::make_pair(combinedVertex, chi2)};
+                Combination combination{std::make_tuple(uTriplet, vTriplet, wTriplet)};
+                vertexScores[combination] = score;
+            }
+        }
+    }
+
+    while (!vertexScores.empty())
+    {
+        float bestScore{std::numeric_limits<float>::max()};
+        Triplet bestVertex;
+        Combination bestCombination;
+        for (const auto &[combination, score] : vertexScores)
+        {
+            if (score.second < bestScore)
+            {
+                bestScore = score.second;
+                bestVertex = score.first;
+                bestCombination = combination;
+            }
+        }
+        Triplet coords{bestVertex};
+        positionVector.emplace_back(CartesianVector(std::get<0>(bestVertex), std::get<1>(bestVertex), std::get<2>(bestVertex)));
+
+        Triplet uTriplet{std::get<0>(bestCombination)}, vTriplet{std::get<1>(bestCombination)}, wTriplet{{std::get<2>(bestCombination)}};
+        for (auto iter = vertexScores.begin(); iter != vertexScores.end(); )
+        {
+            Combination c(iter->first);
+            if (std::get<0>(c) == uTriplet || std::get<1>(c) == vTriplet || std::get<2>(c) == wTriplet)
+                iter = vertexScores.erase(iter);
+            else
+                ++iter;
+        }
+    }
+
+    return STATUS_CODE_SUCCESS;
+}
+
+//-----------------------------------------------------------------------------------------------------------------------------------------
+
+StatusCode DlVertexingAlgorithm::GetVerticesFromCanvas(Canvas &canvas, CartesianPointVector &positionVector) const
 {
     const float pitch(0.5f);
     const float driftStep{0.5f};
 
-    const double dx = ((canvases.at(TPC_VIEW_U)->m_xMax + 0.5f * driftStep) - (canvases.at(TPC_VIEW_U)->m_xMin - 0.5f * driftStep)) / m_width;
-    const double dy = ((canvases.at(TPC_VIEW_U)->m_zMax + 0.5f * driftStep) - (canvases.at(TPC_VIEW_U)->m_zMin - 0.5f * driftStep)) / m_width;
-    const double dz = ((canvases.at(TPC_VIEW_V)->m_zMax + 0.5f * pitch) - (canvases.at(TPC_VIEW_V)->m_zMin - 0.5f * pitch)) / m_height;
-
-/*    for (int xp = 0; xp < m_width; ++xp)
-    {
-        if ((xp + canvases.at(TPC_VIEW_U)->m_colOffset >= canvases.at(TPC_VIEW_U)->m_width) ||
-            (xp + canvases.at(TPC_VIEW_V)->m_colOffset >= canvases.at(TPC_VIEW_V)->m_width))
-            continue;
-
-        for (int yp = 0; yp < m_width; ++yp)
-        {
-            if ((yp + canvases.at(TPC_VIEW_U)->m_rowOffset >= canvases.at(TPC_VIEW_U)->m_height) ||
-                (yp + canvases.at(TPC_VIEW_W)->m_colOffset >= canvases.at(TPC_VIEW_W)->m_width))
-                continue;
-
-            for (int zp = 0; zp < m_width; ++zp)
-            {
-                if ((zp + canvases.at(TPC_VIEW_V)->m_rowOffset >= canvases.at(TPC_VIEW_V)->m_height) ||
-                    (zp + canvases.at(TPC_VIEW_W)->m_rowOffset >= canvases.at(TPC_VIEW_W)->m_height))
-                    continue;
-
-                float contribution{canvases.at(TPC_VIEW_U)->m_canvas[yp + canvases.at(TPC_VIEW_U)->m_rowOffset][xp + canvases.at(TPC_VIEW_U)->m_colOffset]};
-                contribution += canvases.at(TPC_VIEW_V)->m_canvas[yp + canvases.at(TPC_VIEW_V)->m_rowOffset][xp + canvases.at(TPC_VIEW_V)->m_colOffset];
-                contribution += canvases.at(TPC_VIEW_W)->m_canvas[zp + canvases.at(TPC_VIEW_W)->m_rowOffset][yp + canvases.at(TPC_VIEW_W)->m_colOffset];
-                if (contribution > best)
-                {
-                    best = contribution;
-                    xBest = xp;
-                    yBest = yp;
-                    zBest = zp;
-                }
-            }
-        }
-    }*/
+    const double dx{((canvas.m_xMax + 0.5f * driftStep) - (canvas.m_xMin - 0.5f * driftStep)) / m_width};
+    const double dz{((canvas.m_zMax + 0.5f * pitch) - (canvas.m_zMin - 0.5f * pitch)) / m_height};
 
     float maxIntensity{0.f};
     for (int xp = 0; xp < m_width; ++xp)
     {
-        int xpp{xp + canvases.at(TPC_VIEW_V)->m_colOffset};
-        if (xpp >= canvases.at(TPC_VIEW_V)->m_width)
+        int xpp{xp + canvas.m_colOffset};
+        if (xpp >= canvas.m_width)
             continue;
 
         for (int zp = 0; zp < m_width; ++zp)
         {
-            int zpp{zp + canvases.at(TPC_VIEW_V)->m_rowOffset};
-            if (zpp >= canvases.at(TPC_VIEW_V)->m_height)
+            int zpp{zp + canvas.m_rowOffset};
+            if (zpp >= canvas.m_height)
                 continue;
 
-            if (canvases.at(TPC_VIEW_V)->m_canvas[zpp][xpp] > maxIntensity)
-                maxIntensity = canvases.at(TPC_VIEW_V)->m_canvas[zpp][xpp];
+            if (canvas.m_canvas[zpp][xpp] > maxIntensity)
+                maxIntensity = canvas.m_canvas[zpp][xpp];
         }
     }
     const float threshold{maxIntensity * 0.3f};
@@ -427,14 +484,14 @@ StatusCode DlVertexingAlgorithm::MakeWirePlaneCoordinatesFromCanvas(const Canvas
     std::vector<std::vector<std::pair<int, int>>> peaks;
     for (int xp = 0; xp < m_width; ++xp)
     {
-        int xpp{xp + canvases.at(TPC_VIEW_V)->m_colOffset};
-        if (xpp >= canvases.at(TPC_VIEW_V)->m_width)
+        int xpp{xp + canvas.m_colOffset};
+        if (xpp >= canvas.m_width)
             continue;
 
         for (int zp = 0; zp < m_width; ++zp)
         {
-            int zpp{zp + canvases.at(TPC_VIEW_V)->m_rowOffset};
-            if (zpp >= canvases.at(TPC_VIEW_V)->m_height)
+            int zpp{zp + canvas.m_rowOffset};
+            if (zpp >= canvas.m_height)
                 continue;
 
             std::vector<std::pair<int, int>> peak;
@@ -447,53 +504,64 @@ StatusCode DlVertexingAlgorithm::MakeWirePlaneCoordinatesFromCanvas(const Canvas
                         continue;
                     const int r{zpp + dr};
                     const int c{xpp + dc};
-                    if (r < 0 || r >= canvases.at(TPC_VIEW_V)->m_height || c < 0 || c >= canvases.at(TPC_VIEW_V)->m_width)
+                    if (r < 0 || r >= canvas.m_height || c < 0 || c >= canvas.m_width)
                         continue;
-                    if (canvases.at(TPC_VIEW_V)->m_canvas[zpp][xpp] > canvases.at(TPC_VIEW_V)->m_canvas[r][c])
+                    if (canvas.m_canvas[zpp][xpp] > canvas.m_canvas[r][c])
                     {
                         hasLowNeighbour = true;
                     }
-                    else if (canvases.at(TPC_VIEW_V)->m_canvas[zpp][xpp] < canvases.at(TPC_VIEW_V)->m_canvas[r][c])
+                    else if (canvas.m_canvas[zpp][xpp] < canvas.m_canvas[r][c])
                     {
                         hasLowNeighbour = false;
                         break;
                     }
                 }
             }
-            if (hasLowNeighbour && canvases.at(TPC_VIEW_V)->m_canvas[zpp][xpp] > threshold)
-                this->GrowPeak(*canvases.at(TPC_VIEW_V), xpp, zpp, canvases.at(TPC_VIEW_V)->m_canvas[zpp][xpp], peak);
+            if (hasLowNeighbour && canvas.m_canvas[zpp][xpp] > threshold)
+                this->GrowPeak(canvas, xpp, zpp, canvas.m_canvas[zpp][xpp], peak);
             if (!peak.empty())
-            {
-                const auto p{peak.front()};
-                const float intensity{canvases.at(TPC_VIEW_V)->m_canvas[p.second][p.first]};
-                std::cout << "Found peak containing: " << intensity << std::endl;
-                for (const auto pixel : peak)
-                {
-                    const int row{pixel.second};
-                    const int col{pixel.first};
-                    std::cout << "   (" << row << "," << col << ")" << std::endl;
-                }
                 peaks.emplace_back(peak);
-            }
         }
     }
-    (void)dx; (void)dy; (void)dz;
-    (void)positionVector;
+    
     for (const auto peak : peaks)
     {
         float row{0}, col{0};
         for (const auto pixel : peak)
         {
-            row += pixel.second - canvases.at(TPC_VIEW_V)->m_rowOffset;
-            col += pixel.first - canvases.at(TPC_VIEW_V)->m_colOffset;
+            row += pixel.second - canvas.m_rowOffset;
+            col += pixel.first - canvas.m_colOffset;
         }
         row /= peak.size();
         col /= peak.size();
 
-        const float x{static_cast<float>(col * dx + canvases.at(TPC_VIEW_V)->m_xMin)};
-        const float z{static_cast<float>(row * dz + canvases.at(TPC_VIEW_V)->m_zMin)};
-        CartesianVector pt(x, 0, z);
-        positionVector.emplace_back(pt);
+        switch (canvas.m_view)
+        {
+            case TPC_VIEW_U:
+            {
+                const float x{static_cast<float>(col * dx + canvas.m_xMin)};
+                const float y{static_cast<float>(row * dz + canvas.m_zMin)};
+                CartesianVector pt(x, y, 0);
+                positionVector.emplace_back(pt);
+                break;
+            }
+            case TPC_VIEW_V:
+            {
+                const float x{static_cast<float>(col * dx + canvas.m_xMin)};
+                const float z{static_cast<float>(row * dz + canvas.m_zMin)};
+                CartesianVector pt(x, 0, z);
+                positionVector.emplace_back(pt);
+                break;
+            }
+            default:
+            {
+                const float y{static_cast<float>(col * dx + canvas.m_xMin)};
+                const float z{static_cast<float>(row * dz + canvas.m_zMin)};
+                CartesianVector pt(0, y, z);
+                positionVector.emplace_back(pt);
+                break;
+            }
+        }
     }
 
     return STATUS_CODE_SUCCESS;
@@ -1070,8 +1138,9 @@ StatusCode DlVertexingAlgorithm::ReadSettings(const TiXmlHandle xmlHandle)
 //-----------------------------------------------------------------------------------------------------------------------------------------
 //-----------------------------------------------------------------------------------------------------------------------------------------
 
-DlVertexingAlgorithm::Canvas::Canvas(const int width, const int height, const int colOffset, const int rowOffset, const float xMin,
-    const float xMax, const float zMin, const float zMax) :
+DlVertexingAlgorithm::Canvas::Canvas(const HitType view, const int width, const int height, const int colOffset, const int rowOffset,
+    const float xMin, const float xMax, const float zMin, const float zMax) :
+    m_view{view},
     m_width{width},
     m_height{height},
     m_colOffset{colOffset},
