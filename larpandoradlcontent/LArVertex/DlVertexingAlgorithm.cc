@@ -366,202 +366,141 @@ StatusCode DlVertexingAlgorithm::MakeNetworkInputFromHits(const CaloHitList &cal
 
 StatusCode DlVertexingAlgorithm::GetNetworkVertices(const CanvasViewMap &canvases, CartesianPointVector &positionVector) const
 {
-    // ATTN - this is a hack because CartesianVectors can't be used as keys for maps
-    typedef std::tuple<float, float, float> Triplet;
-    typedef std::tuple<Triplet, Triplet, Triplet> Combination;
-    typedef std::pair<Triplet, float> VertexScore;
-    typedef std::map<Combination, VertexScore> CombinationScoreMap;
-    std::map<HitType, CartesianPointVector> viewToVertexMap;
-    for (const HitType view : {TPC_VIEW_U, TPC_VIEW_V, TPC_VIEW_W})
-    {
-        CartesianPointVector vertices;
-        this->GetVerticesFromCanvas(*canvases.at(view), vertices);
-        viewToVertexMap[view] = vertices;
-
-        //std::cout << "View " << view << std::endl;
-        //for (CartesianVector vertex : vertices)
-        //{
-        //    std::cout << "   (" << vertex.GetX() << "," << vertex.GetY() << "," << vertex.GetZ() << ")" << std::endl;
-        //    if (view == TPC_VIEW_V)
-        //        positionVector.emplace_back(vertex);
-        //}
-    }
-
-    CombinationScoreMap vertexScores;
-    for (const CartesianVector &uVector : viewToVertexMap[TPC_VIEW_U])
-    {
-        Triplet uTriplet{uVector.GetX(), uVector.GetY(), uVector.GetZ()};
-        for (const CartesianVector &vVector : viewToVertexMap[TPC_VIEW_V])
-        {
-            Triplet vTriplet{vVector.GetX(), vVector.GetY(), vVector.GetZ()};
-            const float xu{uVector.GetX()}, xv{vVector.GetX()};
-            const float xDisplacement{std::abs(xu - xv)};
-            if (xDisplacement > 5.f)
-                continue;
-            for (const CartesianVector &wVector : viewToVertexMap[TPC_VIEW_W])
-            {
-                Triplet wTriplet{wVector.GetX(), wVector.GetY(), wVector.GetZ()};
-                const float yu{uVector.GetY()}, yw{wVector.GetY()};
-                const float yDisplacement{std::abs(yu - yw)};
-                if (yDisplacement > 5.f)
-                    continue;
-                const float zv{vVector.GetZ()}, zw{wVector.GetZ()};
-                const float zDisplacement{std::abs(zv - zw)};
-                if (zDisplacement > 5.f)
-                    continue;
-
-                const float x{0.5f * (xu + xv)}, y{0.5f * (yu + yw)}, z{0.5f * (zv + zw)};
-                const Triplet combinedVertex(x, y, z);
-                const float chi2{(x - xu) * (x - xu) + (x - xv) * (x - xv) + (y - yu) * (y - yu) + (y - yw) * (y - yw) + (z - zv) * (z - zv) +
-                    (z - zw) * (z - zw)};
-                VertexScore score{std::make_pair(combinedVertex, chi2)};
-                Combination combination{std::make_tuple(uTriplet, vTriplet, wTriplet)};
-                vertexScores[combination] = score;
-            }
-        }
-    }
-
-    while (!vertexScores.empty())
-    {
-        float bestScore{std::numeric_limits<float>::max()};
-        Triplet bestVertex;
-        Combination bestCombination;
-        for (const auto &[combination, score] : vertexScores)
-        {
-            if (score.second < bestScore)
-            {
-                bestScore = score.second;
-                bestVertex = score.first;
-                bestCombination = combination;
-            }
-        }
-        Triplet coords{bestVertex};
-        positionVector.emplace_back(CartesianVector(std::get<0>(bestVertex), std::get<1>(bestVertex), std::get<2>(bestVertex)));
-
-        Triplet uTriplet{std::get<0>(bestCombination)}, vTriplet{std::get<1>(bestCombination)}, wTriplet{{std::get<2>(bestCombination)}};
-        for (auto iter = vertexScores.begin(); iter != vertexScores.end(); )
-        {
-            Combination c(iter->first);
-            if (std::get<0>(c) == uTriplet || std::get<1>(c) == vTriplet || std::get<2>(c) == wTriplet)
-                iter = vertexScores.erase(iter);
-            else
-                ++iter;
-        }
-    }
+    this->GetVerticesFromCanvases(canvases, positionVector);
 
     return STATUS_CODE_SUCCESS;
 }
 
 //-----------------------------------------------------------------------------------------------------------------------------------------
 
-StatusCode DlVertexingAlgorithm::GetVerticesFromCanvas(Canvas &canvas, CartesianPointVector &positionVector) const
+StatusCode DlVertexingAlgorithm::GetVerticesFromCanvases(const CanvasViewMap &canvases, CartesianPointVector &positionVector) const
 {
     const float pitch(0.5f);
     const float driftStep{0.5f};
-
-    const double dx{((canvas.m_xMax + 0.5f * driftStep) - (canvas.m_xMin - 0.5f * driftStep)) / m_width};
-    const double dz{((canvas.m_zMax + 0.5f * pitch) - (canvas.m_zMin - 0.5f * pitch)) / m_height};
+    Canvas &xyCanvas{*canvases.at(TPC_VIEW_U)};
+    Canvas &xzCanvas{*canvases.at(TPC_VIEW_V)};
+    Canvas &yzCanvas{*canvases.at(TPC_VIEW_W)};
 
     float maxIntensity{0.f};
     for (int xp = 0; xp < m_width; ++xp)
     {
-        int xpp{xp + canvas.m_colOffset};
-        if (xpp >= canvas.m_width)
+        int xxy{xp + xyCanvas.m_colOffset}, xxz{xp + xzCanvas.m_colOffset};
+        if (xxy >= xyCanvas.m_width || xxz >= xzCanvas.m_width)
             continue;
 
-        for (int zp = 0; zp < m_width; ++zp)
+        for (int yp = 0; yp < m_width; ++yp)
         {
-            int zpp{zp + canvas.m_rowOffset};
-            if (zpp >= canvas.m_height)
+            int yxy{yp + xyCanvas.m_rowOffset}, yyz{yp + yzCanvas.m_colOffset};
+            if (yxy >= xyCanvas.m_height || yyz >= yzCanvas.m_width)
                 continue;
 
-            if (canvas.m_canvas[zpp][xpp] > maxIntensity)
-                maxIntensity = canvas.m_canvas[zpp][xpp];
+            for (int zp = 0; zp < m_width; ++zp)
+            {
+                int zxz{zp + xzCanvas.m_rowOffset}, zyz{zp + yzCanvas.m_rowOffset};
+                if (zxz >= xzCanvas.m_height || zyz >= yzCanvas.m_height)
+                    continue;
+
+                float localIntensity{xyCanvas.m_canvas[yxy][xxy] + xzCanvas.m_canvas[zxz][xxz] + yzCanvas.m_canvas[zyz][yyz]};
+                if (localIntensity > maxIntensity)
+                    maxIntensity = localIntensity;
+            }
         }
     }
-    const float threshold{maxIntensity * 0.3f};
+    const float threshold{maxIntensity * 0.6f};
+    std::cout << "Max intensity: " << maxIntensity << std::endl;
 
-    std::vector<std::vector<std::pair<int, int>>> peaks;
+    std::vector<std::vector<std::tuple<int, int, int>>> peaks;
     for (int xp = 0; xp < m_width; ++xp)
     {
-        int xpp{xp + canvas.m_colOffset};
-        if (xpp >= canvas.m_width)
+        int xxy{xp + xyCanvas.m_colOffset}, xxz{xp + xzCanvas.m_colOffset};
+        if (xxy >= xyCanvas.m_width || xxz >= xzCanvas.m_width)
             continue;
 
-        for (int zp = 0; zp < m_width; ++zp)
+        for (int yp = 0; yp < m_width; ++yp)
         {
-            int zpp{zp + canvas.m_rowOffset};
-            if (zpp >= canvas.m_height)
+            int yxy{yp + xyCanvas.m_rowOffset}, yyz{yp + yzCanvas.m_colOffset};
+            if (yxy >= xyCanvas.m_height || yyz >= yzCanvas.m_width)
                 continue;
 
-            std::vector<std::pair<int, int>> peak;
-            bool hasLowNeighbour{false};
-            for (int dr = -1; dr <= 1; ++dr)
+            for (int zp = 0; zp < m_width; ++zp)
             {
-                for (int dc = -1; dc <=1; ++dc)
+                int zxz{zp + xzCanvas.m_rowOffset}, zyz{zp + yzCanvas.m_rowOffset};
+                if (zxz >= xzCanvas.m_height || zyz >= yzCanvas.m_height)
+                    continue;
+
+                const float contributionThreshold{0.33f * std::max({xyCanvas.m_canvas[yxy][xxy], xzCanvas.m_canvas[zxz][xxz],
+                    yzCanvas.m_canvas[zyz][yyz]})};
+                int nContributions{0};
+                nContributions += xyCanvas.m_canvas[yxy][xxy] > contributionThreshold ? 1 : 0;
+                nContributions += xzCanvas.m_canvas[zxz][xxz] > contributionThreshold ? 1 : 0;
+                nContributions += yzCanvas.m_canvas[zyz][yyz] > contributionThreshold ? 1 : 0;
+                float localIntensity{nContributions >= 2 ? xyCanvas.m_canvas[yxy][xxy] + xzCanvas.m_canvas[zxz][xxz] + yzCanvas.m_canvas[zyz][yyz] : 0.f};
+                if (localIntensity < std::numeric_limits<float>::epsilon())
+                    continue;
+                std::vector<std::tuple<int, int, int>> peak;
+                bool hasLowNeighbour{false};
+                for (int dx = -1; dx <= 1; ++dx)
                 {
-                    if (dr == 0 && dc == 0)
+                    const int xnxy{xxy + dx}, xnxz{xxz + dx};
+                    if (xnxy < 0 || xnxy >= xyCanvas.m_width || xnxz < 0 || xnxz >= xzCanvas.m_width)
                         continue;
-                    const int r{zpp + dr};
-                    const int c{xpp + dc};
-                    if (r < 0 || r >= canvas.m_height || c < 0 || c >= canvas.m_width)
-                        continue;
-                    if (canvas.m_canvas[zpp][xpp] > canvas.m_canvas[r][c])
+                    for (int dy = -1; dy <=1; ++dy)
                     {
-                        hasLowNeighbour = true;
-                    }
-                    else if (canvas.m_canvas[zpp][xpp] < canvas.m_canvas[r][c])
-                    {
-                        hasLowNeighbour = false;
-                        break;
+                        const int ynxy{yxy + dy}, ynyz{yyz + dy};
+                        if (ynxy < 0 || ynxy >= xyCanvas.m_height || ynyz < 0 || ynyz >= yzCanvas.m_width)
+                            continue;
+                        for (int dz = -1; dz <= 1; ++dz)
+                        {
+                            const int znxz{zxz + dz}, znyz{zyz + dz};
+                            if (znxz < 0 || znxz >= xzCanvas.m_height || znyz < 0 || znyz >= yzCanvas.m_height)
+                                continue;
+                            if (dx == 0 && dy == 0 && dz == 0)
+                                continue;
+
+                            const float neighborIntensity{xyCanvas.m_canvas[ynxy][xnxy] + xzCanvas.m_canvas[znxz][xnxz] + yzCanvas.m_canvas[znyz][ynyz]};
+                            if (localIntensity > neighborIntensity)
+                            {
+                                hasLowNeighbour = true;
+                            }
+                            else if (localIntensity < neighborIntensity)
+                            {
+                                hasLowNeighbour = false;
+                                break;
+                            }
+                        }
                     }
                 }
+                if (hasLowNeighbour && localIntensity > threshold)
+                    this->GrowPeak(canvases, xp, yp, zp, localIntensity, peak);
+                if (!peak.empty())
+                    peaks.emplace_back(peak);
             }
-            if (hasLowNeighbour && canvas.m_canvas[zpp][xpp] > threshold)
-                this->GrowPeak(canvas, xpp, zpp, canvas.m_canvas[zpp][xpp], peak);
-            if (!peak.empty())
-                peaks.emplace_back(peak);
         }
     }
-    
+
+    const double dx{((xyCanvas.m_xMax + 0.5f * driftStep) - (xyCanvas.m_xMin - 0.5f * driftStep)) / m_width};
+    const double dy{((xyCanvas.m_zMax + 0.5f * driftStep) - (xyCanvas.m_zMin - 0.5f * driftStep)) / m_height};
+    const double dz{((xzCanvas.m_zMax + 0.5f * pitch) - (xzCanvas.m_zMin - 0.5f * pitch)) / m_height};
+    std::cout << "Peaks: " << peaks.size() << std::endl;
+
     for (const auto peak : peaks)
     {
-        float row{0}, col{0};
+        float x{0}, y{0}, z{0};
         for (const auto pixel : peak)
         {
-            row += pixel.second - canvas.m_rowOffset;
-            col += pixel.first - canvas.m_colOffset;
+            x += std::get<0>(pixel);
+            y += std::get<1>(pixel);
+            z += std::get<2>(pixel);
         }
-        row /= peak.size();
-        col /= peak.size();
+        x /= peak.size();
+        y /= peak.size();
+        z /= peak.size();
 
-        switch (canvas.m_view)
-        {
-            case TPC_VIEW_U:
-            {
-                const float x{static_cast<float>(col * dx + canvas.m_xMin)};
-                const float y{static_cast<float>(row * dz + canvas.m_zMin)};
-                CartesianVector pt(x, y, 0);
-                positionVector.emplace_back(pt);
-                break;
-            }
-            case TPC_VIEW_V:
-            {
-                const float x{static_cast<float>(col * dx + canvas.m_xMin)};
-                const float z{static_cast<float>(row * dz + canvas.m_zMin)};
-                CartesianVector pt(x, 0, z);
-                positionVector.emplace_back(pt);
-                break;
-            }
-            default:
-            {
-                const float y{static_cast<float>(col * dx + canvas.m_xMin)};
-                const float z{static_cast<float>(row * dz + canvas.m_zMin)};
-                CartesianVector pt(0, y, z);
-                positionVector.emplace_back(pt);
-                break;
-            }
-        }
+        x = x * dx + xzCanvas.m_xMin;
+        y = y * dy + xyCanvas.m_zMin;
+        z = z * dz + xzCanvas.m_zMin;
+        CartesianVector pt(x, y, z);
+        positionVector.emplace_back(pt);
     }
 
     return STATUS_CODE_SUCCESS;
@@ -569,54 +508,93 @@ StatusCode DlVertexingAlgorithm::GetVerticesFromCanvas(Canvas &canvas, Cartesian
 
 //-----------------------------------------------------------------------------------------------------------------------------------------
 
-bool DlVertexingAlgorithm::GrowPeak(Canvas &canvas, int col, int row, float intensity, std::vector<std::pair<int, int>> &peak) const
+bool DlVertexingAlgorithm::GrowPeak(const CanvasViewMap &canvases, int x, int y, int z, float intensity,
+    std::vector<std::tuple<int, int, int>> &peak) const
 {
-    if (col < 0 || col >= canvas.m_width || row < 0 || row >= canvas.m_height || canvas.m_visited[row][col] || canvas.m_canvas[row][col] < intensity)
+    Canvas &xyCanvas{*canvases.at(TPC_VIEW_U)};
+    Canvas &xzCanvas{*canvases.at(TPC_VIEW_V)};
+    Canvas &yzCanvas{*canvases.at(TPC_VIEW_W)};
+    const int xxy{x + xyCanvas.m_colOffset}, xxz{x + xzCanvas.m_colOffset}, yxy{y + xyCanvas.m_rowOffset}, yyz{y + yzCanvas.m_colOffset},
+        zxz{z + xzCanvas.m_rowOffset}, zyz{z + yzCanvas.m_rowOffset};
+    // Need to think through whether the visited conditional is adequate - these will be updated somewhat independently, so is it
+    // possible that the triplet combination could be set when the specific triplet hasn't been visited?
+    if (xxy < 0 || xxy >= xyCanvas.m_width || xxz < 0 || xxz >= xzCanvas.m_width || yxy < 0 || yxy >= xyCanvas.m_height ||
+        yyz < 0 || yyz >= yzCanvas.m_width || zxz < 0 || zxz >= xzCanvas.m_height || zyz < 0 || zyz >= yzCanvas.m_height ||
+        (xyCanvas.m_visited[yxy][xxy] && xzCanvas.m_visited[zxz][xxz] && yzCanvas.m_visited[zyz][yyz]) ||
+        ((xyCanvas.m_canvas[yxy][xxy] + xzCanvas.m_canvas[zxz][xxz] + yzCanvas.m_canvas[zyz][yyz]) < intensity))
         return false;
 
     // Check that no adjacent pixel is larger than this one
-    for (int i = -1; i <=1; ++i)
+    for (int dx = -1; dx <= 1; ++dx)
     {
-        for (int j = -1; j <= 1; ++j)
+        const int xnxy{xxy + dx}, xnxz{xxz + dx};
+        if (xnxy < 0 || xnxy >= xyCanvas.m_width || xnxz < 0 || xnxz >= xzCanvas.m_width)
+            continue;
+
+        for (int dy = -1; dy <= 1; ++dy)
         {
-            if (i == 0 && j == 0)
+            const int ynxy{yxy + dy}, ynyz{yyz + dy};
+            if (ynxy < 0 || ynxy >= xyCanvas.m_height || ynyz < 0 || ynyz >= yzCanvas.m_width)
                 continue;
-            if (canvas.m_canvas[row + i][col + j] > intensity)
-                return false;
+
+            for (int dz = -1; dz <= 1; ++dz)
+            {
+                const int znxz{zxz + dz}, znyz{zyz + dz};
+                if (znxz < 0 || znxz >= xzCanvas.m_height || znyz < 0 || znyz >= yzCanvas.m_height)
+                    continue;
+
+                if (dx == 0 && dy == 0 && dz == 0)
+                    continue;
+
+                const float neighborIntensity{xyCanvas.m_canvas[ynxy][xnxy] + xzCanvas.m_canvas[znxz][xnxz] + yzCanvas.m_canvas[znyz][ynyz]};
+                if (neighborIntensity > intensity)
+                    return false;
+            }
         }
     }
 
-    //std::cout << "Checking (" << row << "," << col << "): " << canvas.m_canvas[row][col] << " v " << intensity <<std::endl;
-
     // Need to check we aren't growing into a higher peak, if we are restart from the current pixel
-    if (canvas.m_canvas[row][col] > intensity)
+    float localIntensity{xyCanvas.m_canvas[yxy][xxy] + xzCanvas.m_canvas[zxz][xxz] + yzCanvas.m_canvas[zyz][yyz]};
+    if (localIntensity > intensity)
     {
         //std::cout << "   New high - discard " << peak.size();
-        intensity = canvas.m_canvas[row][col];
+        intensity = localIntensity;
         for (const auto pixel : peak)
-            canvas.m_visited[pixel.second][pixel.first] = false;
+        {
+            // It seems unlikely that this is a viable approach - likely need a map of visited tuples instead
+            // Also need to re-establish canvas coordinates from image coordinates???
+            const int xx{std::get<0>(pixel)}, yy{std::get<1>(pixel)}, zz{std::get<2>(pixel)};
+            xyCanvas.m_visited[yy + xyCanvas.m_rowOffset][xx + xyCanvas.m_colOffset] = false;
+            xzCanvas.m_visited[zz + xzCanvas.m_rowOffset][xx + xzCanvas.m_colOffset] = false;
+            yzCanvas.m_visited[zz + yzCanvas.m_rowOffset][yy + yzCanvas.m_colOffset] = false;
+        }
         peak.clear();
         //std::cout << ". New size " << peak.size() << " new intensity " << intensity << std::endl;
-        this->GrowPeak(canvas, col, row, intensity, peak);
+        this->GrowPeak(canvases, x, y, z, intensity, peak);
         return true;
     }
 
     // Add pixel to the peak
-    canvas.m_visited[row][col] = true;
-    peak.emplace_back(std::make_pair(col, row));
+    xyCanvas.m_visited[yxy][xxy] = true;
+    xzCanvas.m_visited[zxz][xxz] = true;
+    yzCanvas.m_visited[zyz][yyz] = true;
+    peak.emplace_back(std::make_tuple(x, y, z));
     //std::cout << "   Added" << std::endl;
 
-    for (int i = -1; i <=1; ++i)
+    for (int dx = -1; dx <= 1; ++dx)
     {
-        for (int j = -1; j <= 1; ++j)
+        for (int dy = -1; dy <= 1; ++dy)
         {
-            if (i == 0 && j == 0)
-                continue;
-            //std::cout << "   Adjacent (" << (row + i) << "," << (col + j) << ")" << std::endl;
-            bool reset{this->GrowPeak(canvas, col + j, row + i, intensity, peak)};
-            // If we started growing a non-peak region, stop looking relative to the previous peak
-            if (reset)
-                return reset;
+            for (int dz = -1; dz <= 1; ++dz)
+            {
+                if (dx == 0 && dy == 0 && dz == 0)
+                    continue;
+                //std::cout << "   Adjacent (" << (row + i) << "," << (col + j) << ")" << std::endl;
+                bool reset{this->GrowPeak(canvases, x + dx, y + dy, z + dz, intensity, peak)};
+                // If we started growing a non-peak region, stop looking relative to the previous peak
+                if (reset)
+                    return reset;
+            }
         }
     }
 

@@ -124,7 +124,7 @@ private:
      *
      *  @return The StatusCode resulting from the function
      **/
-    pandora::StatusCode GetVerticesFromCanvas(Canvas &canvases, pandora::CartesianPointVector &positionVector) const;
+    pandora::StatusCode GetVerticesFromCanvases(const CanvasViewMap &canvases, pandora::CartesianPointVector &positionVector) const;
 
     /**
      *  @brief  Determine if the pixel under consideration is part of a peak and grow that peak to include all connected pixels of equal value
@@ -137,7 +137,7 @@ private:
      *
      *  @return true if we found a better peak while growing the current region, false otherwise
      */
-    bool GrowPeak(Canvas &canvas, int col, int row, float intensity, std::vector<std::pair<int, int>> &peak) const;
+    bool GrowPeak(const CanvasViewMap &canvases, int x, int y, int z, float intensity, std::vector<std::tuple<int, int, int>> &peak) const;
 
     /**
      *  @brief  Determines the parameters of the canvas for extracting the vertex location.
