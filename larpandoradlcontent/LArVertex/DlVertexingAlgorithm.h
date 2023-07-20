@@ -44,7 +44,7 @@ private:
          *  @brief Default constructor
          */
         Canvas(const pandora::HitType view, const int width, const int height, const int colOffset, const int rowOffset, const float xMin,
-            const float xMax, const float zMin, const float zMax);
+            const float xMax, const float zMin, const float zMax, const LArDLHelper::TorchInput &input);
 
         virtual ~Canvas();
 
@@ -59,6 +59,7 @@ private:
         const float m_xMax;
         const float m_zMin;
         const float m_zMax;
+        const LArDLHelper::TorchInput m_input;
     };
 
     typedef std::map<pandora::HitType, Canvas *> CanvasViewMap;

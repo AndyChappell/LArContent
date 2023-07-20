@@ -222,13 +222,13 @@ StatusCode DlVertexingAlgorithm::Infer()
         switch (view)
         {
             case TPC_VIEW_U:
-                canvases[view] = new Canvas(view, canvasWidth, canvasHeight, colOffset, rowOffset, xMin, xMax, yMin, yMax);
+                canvases[view] = new Canvas(view, canvasWidth, canvasHeight, colOffset, rowOffset, xMin, xMax, yMin, yMax, input);
                 break;
             case TPC_VIEW_V:
-                canvases[view] = new Canvas(view, canvasWidth, canvasHeight, colOffset, rowOffset, xMin, xMax, zMin, zMax);
+                canvases[view] = new Canvas(view, canvasWidth, canvasHeight, colOffset, rowOffset, xMin, xMax, zMin, zMax, input);
                 break;
             default:
-                canvases[view] = new Canvas(view, canvasWidth, canvasHeight, colOffset, rowOffset, yMin, yMax, zMin, zMax);
+                canvases[view] = new Canvas(view, canvasWidth, canvasHeight, colOffset, rowOffset, yMin, yMax, zMin, zMax, input);
                 break;
         }
 
@@ -406,7 +406,7 @@ StatusCode DlVertexingAlgorithm::GetVerticesFromCanvases(const CanvasViewMap &ca
             }
         }
     }
-    const float threshold{maxIntensity * 0.6f};
+    const float threshold{maxIntensity * 0.1f};
     std::cout << "Max intensity: " << maxIntensity << std::endl;
 
     std::vector<std::vector<std::tuple<int, int, int>>> peaks;
@@ -428,15 +428,17 @@ StatusCode DlVertexingAlgorithm::GetVerticesFromCanvases(const CanvasViewMap &ca
                 if (zxz >= xzCanvas.m_height || zyz >= yzCanvas.m_height)
                     continue;
 
-                const float contributionThreshold{0.33f * std::max({xyCanvas.m_canvas[yxy][xxy], xzCanvas.m_canvas[zxz][xxz],
-                    yzCanvas.m_canvas[zyz][yyz]})};
+                auto xyAccessor{xyCanvas.m_input.accessor<float, 4>()};
+                auto xzAccessor{xzCanvas.m_input.accessor<float, 4>()};
+                auto yzAccessor{yzCanvas.m_input.accessor<float, 4>()};
+
                 int nContributions{0};
-                nContributions += xyCanvas.m_canvas[yxy][xxy] > contributionThreshold ? 1 : 0;
-                nContributions += xzCanvas.m_canvas[zxz][xxz] > contributionThreshold ? 1 : 0;
-                nContributions += yzCanvas.m_canvas[zyz][yyz] > contributionThreshold ? 1 : 0;
-                float localIntensity{nContributions >= 2 ? xyCanvas.m_canvas[yxy][xxy] + xzCanvas.m_canvas[zxz][xxz] + yzCanvas.m_canvas[zyz][yyz] : 0.f};
-                if (localIntensity < std::numeric_limits<float>::epsilon())
+                nContributions += xyAccessor[0][0][yp][xp] > 0 ? 1 : 0;
+                nContributions += xzAccessor[0][0][zp][xp] > 0 ? 1 : 0;
+                nContributions += yzAccessor[0][0][zp][yp] > 0 ? 1 : 0;
+                if (nContributions < 3)
                     continue;
+                float localIntensity{xyCanvas.m_canvas[yxy][xxy] + xzCanvas.m_canvas[zxz][xxz] + yzCanvas.m_canvas[zyz][yyz]};
                 std::vector<std::tuple<int, int, int>> peak;
                 bool hasLowNeighbour{false};
                 for (int dx = -1; dx <= 1; ++dx)
@@ -514,6 +516,18 @@ bool DlVertexingAlgorithm::GrowPeak(const CanvasViewMap &canvases, int x, int y,
     Canvas &xyCanvas{*canvases.at(TPC_VIEW_U)};
     Canvas &xzCanvas{*canvases.at(TPC_VIEW_V)};
     Canvas &yzCanvas{*canvases.at(TPC_VIEW_W)};
+
+        auto xyAccessor{xyCanvas.m_input.accessor<float, 4>()};
+    auto xzAccessor{xzCanvas.m_input.accessor<float, 4>()};
+    auto yzAccessor{yzCanvas.m_input.accessor<float, 4>()};
+
+    int nContributions{0};
+    nContributions += xyAccessor[0][0][y][x] > 0 ? 1 : 0;
+    nContributions += xzAccessor[0][0][z][x] > 0 ? 1 : 0;
+    nContributions += yzAccessor[0][0][z][y] > 0 ? 1 : 0;
+    if (nContributions < 3)
+        return false;
+    
     const int xxy{x + xyCanvas.m_colOffset}, xxz{x + xzCanvas.m_colOffset}, yxy{y + xyCanvas.m_rowOffset}, yyz{y + yzCanvas.m_colOffset},
         zxz{z + xzCanvas.m_rowOffset}, zyz{z + yzCanvas.m_rowOffset};
     // Need to think through whether the visited conditional is adequate - these will be updated somewhat independently, so is it
@@ -1117,7 +1131,7 @@ StatusCode DlVertexingAlgorithm::ReadSettings(const TiXmlHandle xmlHandle)
 //-----------------------------------------------------------------------------------------------------------------------------------------
 
 DlVertexingAlgorithm::Canvas::Canvas(const HitType view, const int width, const int height, const int colOffset, const int rowOffset,
-    const float xMin, const float xMax, const float zMin, const float zMax) :
+    const float xMin, const float xMax, const float zMin, const float zMax, const LArDLHelper::TorchInput &input) :
     m_view{view},
     m_width{width},
     m_height{height},
@@ -1126,7 +1140,8 @@ DlVertexingAlgorithm::Canvas::Canvas(const HitType view, const int width, const 
     m_xMin{xMin},
     m_xMax{xMax},
     m_zMin{zMin},
-    m_zMax{zMax}
+    m_zMax{zMax},
+    m_input{input}
 {
     m_canvas = new float*[m_height];
     m_visited = new bool*[m_height];
