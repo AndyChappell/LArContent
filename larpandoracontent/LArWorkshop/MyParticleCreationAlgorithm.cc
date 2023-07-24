@@ -139,12 +139,13 @@ float MyParticleCreationAlgorithm::GetFigureOfMerit(const TwoDSlidingFitResult &
         const double x{xMin + (xMax - xMin) * n / m_nSamplingPoints};
         CartesianVector fitVectorU(0, 0, 0), fitVectorV(0, 0, 0), fitVectorW(0, 0, 0);
         CartesianVector fitDirectionU(0, 0, 0), fitDirectionV(0, 0, 0), fitDirectionW(0, 0, 0);
-        const float u{fitVectorU.GetZ()}, v{fitVectorV.GetZ()}, w{fitVectorW.GetZ()};
 
         if (fitResultU.GetTransverseProjection(x, fitSegmentU, fitVectorU, fitDirectionU) != STATUS_CODE_SUCCESS ||
             fitResultV.GetTransverseProjection(x, fitSegmentV, fitVectorV, fitDirectionV) != STATUS_CODE_SUCCESS ||
             fitResultW.GetTransverseProjection(x, fitSegmentW, fitVectorW, fitDirectionW) != STATUS_CODE_SUCCESS)
             continue;
+
+        const float u{fitVectorU.GetZ()}, v{fitVectorV.GetZ()}, w{fitVectorW.GetZ()};
 
         const float uv2w{LArGeometryHelper::MergeTwoPositions(this->GetPandora(), TPC_VIEW_U, TPC_VIEW_V, u, v)};
         const float uw2v{LArGeometryHelper::MergeTwoPositions(this->GetPandora(), TPC_VIEW_U, TPC_VIEW_W, u, w)};
