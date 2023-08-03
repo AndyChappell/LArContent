@@ -67,19 +67,21 @@ private:
     class VertexTuple
     {
     public:
-        VertexTuple(const pandora::CartesianVector &vertexU, const pandora::CartesianVector &vertexV,
+        VertexTuple(const pandora::Pandora &pandora, const pandora::CartesianVector &vertexU, const pandora::CartesianVector &vertexV,
             const pandora::CartesianVector &vertexW);
 
-        VertexTuple(const pandora::CartesianVector &vertex1, const pandora::CartesianVector &vertex2,
+        VertexTuple(const pandora::Pandora &pandora, const pandora::CartesianVector &vertex1, const pandora::CartesianVector &vertex2,
             const pandora::HitType view1, const pandora::HitType view2);
 
         const pandora::CartesianVector &GetPosition() const;
+        const pandora::CartesianPointVector &GetComponents() const;
         float GetChi2() const;
         std::string ToString() const;
 
     private:
         pandora::CartesianVector m_pos; ///< Calculated 3D position
         float m_chi2;                   ///< Chi squared of calculated position
+        pandora::CartesianPointVector m_components; ///< The 2D vertices that contributed to the 3D vertex
     };
 
     typedef std::pair<int, int> Pixel; // A Pixel is a row, column pair
@@ -125,7 +127,8 @@ private:
      *
      *  @return The StatusCode resulting from the function
      **/
-    pandora::StatusCode GetVerticesFromCanvases(const CanvasViewMap &canvases, pandora::CartesianPointVector &positionVector) const;
+    pandora::StatusCode GetVerticesFromCanvases(const CanvasViewMap &canvases, pandora::CartesianPointVector &verticesU,
+        pandora::CartesianPointVector &verticesV, pandora::CartesianPointVector &verticesW) const;
 
     /**
      *  @brief  Determine if the pixel under consideration is part of a peak and grow that peak to include all connected pixels of equal value
@@ -138,7 +141,7 @@ private:
      *
      *  @return true if we found a better peak while growing the current region, false otherwise
      */
-    bool GrowPeak(const CanvasViewMap &canvases, int x, int y, int z, float intensity, std::vector<std::tuple<int, int, int>> &peak) const;
+    bool GrowPeak(const Canvas &canvas, int col, int row, float intensity, std::vector<std::pair<int, int>> &peak) const;
 
     /**
      *  @brief  Determines the parameters of the canvas for extracting the vertex location.
