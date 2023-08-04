@@ -44,7 +44,7 @@ private:
          *  @brief Default constructor
          */
         Canvas(const pandora::HitType view, const int width, const int height, const int colOffset, const int rowOffset, const float xMin,
-            const float xMax, const float zMin, const float zMax, const LArDLHelper::TorchInput &input);
+            const float xMax, const float zMin, const float zMax);
 
         virtual ~Canvas();
 
@@ -59,7 +59,6 @@ private:
         const float m_xMax;
         const float m_zMin;
         const float m_zMax;
-        const LArDLHelper::TorchInput m_input;
     };
 
     typedef std::map<pandora::HitType, Canvas *> CanvasViewMap;
@@ -127,8 +126,7 @@ private:
      *
      *  @return The StatusCode resulting from the function
      **/
-    pandora::StatusCode GetVerticesFromCanvases(const CanvasViewMap &canvases, pandora::CartesianPointVector &verticesU,
-        pandora::CartesianPointVector &verticesV, pandora::CartesianPointVector &verticesW) const;
+    pandora::StatusCode GetVerticesFromCanvas(const Canvas &canvas, pandora::CartesianPointVector &vertices) const;
 
     /**
      *  @brief  Determine if the pixel under consideration is part of a peak and grow that peak to include all connected pixels of equal value

@@ -197,6 +197,9 @@ StatusCode DlVertexingAlgorithm::Infer()
     }
 
     CanvasViewMap canvases;
+    canvases[TPC_VIEW_U] = nullptr;
+    canvases[TPC_VIEW_V] = nullptr;
+    canvases[TPC_VIEW_W] = nullptr;
     CartesianPointVector vertexCandidatesU, vertexCandidatesV, vertexCandidatesW;
     for (const std::string &listname : m_caloHitListNames)
     {
@@ -229,7 +232,7 @@ StatusCode DlVertexingAlgorithm::Infer()
 
         int colOffset{0}, rowOffset{0}, canvasWidth{m_width}, canvasHeight{m_height};
         this->GetCanvasParameters(output, pixelVector, colOffset, rowOffset, canvasWidth, canvasHeight);
-        canvases[view] = new Canvas(view, canvasWidth, canvasHeight, colOffset, rowOffset, driftMin, driftMax, wireMin[view], wireMax[view], input);
+        canvases[view] = new Canvas(view, canvasWidth, canvasHeight, colOffset, rowOffset, driftMin, driftMax, wireMin[view], wireMax[view]);
         // we want the maximum value in the num_classes dimension (1) for every pixel
         auto classes{torch::argmax(output, 1)};
         // the argmax result is a 1 x height x width tensor where each element is a class id
@@ -247,7 +250,7 @@ StatusCode DlVertexingAlgorithm::Infer()
             }
         }
 
-        LArMvaHelper::MvaFeatureVector featureVector;
+/*        LArMvaHelper::MvaFeatureVector featureVector;
         featureVector.emplace_back(static_cast<double>(canvases[view]->m_width));
         featureVector.emplace_back(static_cast<double>(canvases[view]->m_height));
         for (const Pixel &pixel : pixelVector)
@@ -256,11 +259,11 @@ StatusCode DlVertexingAlgorithm::Infer()
             featureVector.emplace_back(static_cast<double>(pixel.second + canvases[view]->m_colOffset));
         }
 
-        LArMvaHelper::ProduceTrainingExample("hits.csv", true, featureVector);
+        LArMvaHelper::ProduceTrainingExample("hits.csv", true, featureVector);*/
     }
 
     // Ordering to match XML list provision
-    for (HitType view : {TPC_VIEW_W, TPC_VIEW_U, TPC_VIEW_V})
+/*    for (HitType view : {TPC_VIEW_W, TPC_VIEW_U, TPC_VIEW_V})
     {
         LArMvaHelper::MvaFeatureVector featureVector;
         featureVector.emplace_back(static_cast<double>(canvases[view]->m_width));
@@ -272,7 +275,7 @@ StatusCode DlVertexingAlgorithm::Infer()
                 featureVector.emplace_back(static_cast<double>(canvases[view]->m_canvas[row][col]));
 
         LArMvaHelper::ProduceTrainingExample("canvases.csv", true, featureVector);
-    }
+    }*/
 
     CartesianPointVector vertexVector;
     this->GetNetworkVertices(canvases, vertexVector);
@@ -292,7 +295,10 @@ StatusCode DlVertexingAlgorithm::Infer()
         StatusCode status{this->MakeCandidateVertexList(vertexVector)};
 
         for (const HitType view : {TPC_VIEW_U, TPC_VIEW_V, TPC_VIEW_W})
-            delete canvases[view];
+        {
+            if (canvases[view])
+                delete canvases[view];
+        }
 
         return status;
     }
@@ -301,7 +307,10 @@ StatusCode DlVertexingAlgorithm::Infer()
         std::cout << "Insufficient 2D vertices to reconstruct a 3D vertex" << std::endl;
 
         for (const HitType view : {TPC_VIEW_U, TPC_VIEW_V, TPC_VIEW_W})
-            delete canvases[view];
+        {
+            if (canvases[view])
+                delete canvases[view];
+        }
 
         return STATUS_CODE_NOT_FOUND;
     }
@@ -364,7 +373,9 @@ StatusCode DlVertexingAlgorithm::MakeNetworkInputFromHits(const CaloHitList &cal
 StatusCode DlVertexingAlgorithm::GetNetworkVertices(const CanvasViewMap &canvases, CartesianPointVector &positionVector) const
 {
     CartesianPointVector verticesU, verticesV, verticesW;
-    this->GetVerticesFromCanvases(canvases, verticesU, verticesV, verticesW);
+    this->GetVerticesFromCanvas(*canvases.at(TPC_VIEW_U), verticesU);
+    this->GetVerticesFromCanvas(*canvases.at(TPC_VIEW_V), verticesV);
+    this->GetVerticesFromCanvas(*canvases.at(TPC_VIEW_W), verticesW);
 
     std::vector<VertexTuple> vertexTuples;
     int nEmptyLists{(verticesU.empty() ? 1 : 0) + (verticesV.empty() ? 1 : 0) + (verticesW.empty() ? 1 : 0)};
@@ -487,118 +498,98 @@ StatusCode DlVertexingAlgorithm::GetNetworkVertices(const CanvasViewMap &canvase
 
 //-----------------------------------------------------------------------------------------------------------------------------------------
 
-StatusCode DlVertexingAlgorithm::GetVerticesFromCanvases(const CanvasViewMap &canvases, CartesianPointVector &verticesU,
-    CartesianPointVector &verticesV, CartesianPointVector &verticesW) const
+StatusCode DlVertexingAlgorithm::GetVerticesFromCanvas(const Canvas &canvas, CartesianPointVector &vertices) const
 {
     // ATTN If wire w pitches vary between TPCs, exception will be raised in initialisation of lar pseudolayer plugin
     const LArTPC *const pTPC(this->GetPandora().GetGeometry()->GetLArTPCMap().begin()->second);
 
-    const Canvas &uCanvas{*canvases.at(TPC_VIEW_U)};
-    const Canvas &vCanvas{*canvases.at(TPC_VIEW_V)};
-    const Canvas &wCanvas{*canvases.at(TPC_VIEW_W)};
+    HitType view{canvas.m_view};
+    const float pitch(view == TPC_VIEW_U ? pTPC->GetWirePitchU() : view == TPC_VIEW_V ? pTPC->GetWirePitchV() : pTPC->GetWirePitchW());
+    const float driftStep{0.5f};
 
-    for (const Canvas &canvas : {uCanvas, vCanvas, wCanvas})
+    const double dx{((canvas.m_xMax + 0.5f * driftStep) - (canvas.m_xMin - 0.5f * driftStep)) / m_width};
+    const double dz{((canvas.m_zMax + 0.5f * pitch) - (canvas.m_zMin - 0.5f * pitch)) / m_height};
+
+    float maxIntensity{0.f};
+    for (int xp = 0; xp < m_width; ++xp)
     {
-        HitType view{canvas.m_view};
-        const float pitch(view == TPC_VIEW_U ? pTPC->GetWirePitchU() : view == TPC_VIEW_V ? pTPC->GetWirePitchV() : pTPC->GetWirePitchW());
-        const float driftStep{0.5f};
+        int xpp{xp + canvas.m_colOffset};
+        if (xpp >= canvas.m_width)
+            continue;
 
-        const double dx{((canvas.m_xMax + 0.5f * driftStep) - (canvas.m_xMin - 0.5f * driftStep)) / m_width};
-        const double dz{((canvas.m_zMax + 0.5f * pitch) - (canvas.m_zMin - 0.5f * pitch)) / m_height};
-
-        float maxIntensity{0.f};
-        for (int xp = 0; xp < m_width; ++xp)
+        for (int zp = 0; zp < m_height; ++zp)
         {
-            int xpp{xp + canvas.m_colOffset};
-            if (xpp >= canvas.m_width)
+            int zpp{zp + canvas.m_rowOffset};
+            if (zpp >= canvas.m_height)
                 continue;
 
-            for (int zp = 0; zp < m_height; ++zp)
-            {
-                int zpp{zp + canvas.m_rowOffset};
-                if (zpp >= canvas.m_height)
-                    continue;
-
-                const float localIntensity{canvas.m_canvas[zpp][xpp]};
-                if (localIntensity > maxIntensity)
-                    maxIntensity = localIntensity;
-            }
+            const float localIntensity{canvas.m_canvas[zpp][xpp]};
+            if (localIntensity > maxIntensity)
+                maxIntensity = localIntensity;
         }
-        const float threshold{maxIntensity * 0.3f};
+    }
+    const float threshold{maxIntensity * 0.3f};
 
-        std::vector<std::vector<std::pair<int, int>>> peaks;
-        for (int xp = 0; xp < m_width; ++xp)
+    std::vector<std::vector<std::pair<int, int>>> peaks;
+    for (int xp = 0; xp < m_width; ++xp)
+    {
+        int xpp{xp + canvas.m_colOffset};
+        if (xpp >= canvas.m_width)
+            continue;
+
+        for (int zp = 0; zp < m_height; ++zp)
         {
-            int xpp{xp + canvas.m_colOffset};
-            if (xpp >= canvas.m_width)
+            int zpp{zp + canvas.m_rowOffset};
+            if (zpp >= canvas.m_height)
                 continue;
+            const float localIntensity{canvas.m_canvas[zpp][xpp]};
 
-            for (int zp = 0; zp < m_height; ++zp)
+            std::vector<std::pair<int, int>> peak;
+            bool hasLowNeighbour{false};
+            for (int dr = -1; dr <= 1; ++dr)
             {
-                int zpp{zp + canvas.m_rowOffset};
-                if (zpp >= canvas.m_height)
-                    continue;
-                const float localIntensity{canvas.m_canvas[zpp][xpp]};
-
-                std::vector<std::pair<int, int>> peak;
-                bool hasLowNeighbour{false};
-                for (int dr = -1; dr <= 1; ++dr)
+                for (int dc = -1; dc <=1; ++dc)
                 {
-                    for (int dc = -1; dc <=1; ++dc)
-                    {
-                        if (dr == 0 && dc == 0)
-                            continue;
-                        const int r{zpp + dr}, c{xpp + dc};
-                        if (r < 0 || r >= canvas.m_height || c < 0 || c >= canvas.m_width)
-                            continue;
+                    if (dr == 0 && dc == 0)
+                        continue;
+                    const int r{zpp + dr}, c{xpp + dc};
+                    if (r < 0 || r >= canvas.m_height || c < 0 || c >= canvas.m_width)
+                        continue;
 
-                        const float neighborIntensity{canvas.m_canvas[r][c]};
-                        if (localIntensity > neighborIntensity)
-                        {
-                            hasLowNeighbour = true;
-                        }
-                        else if (localIntensity < neighborIntensity)
-                        {
-                            hasLowNeighbour = false;
-                            break;
-                        }
+                    const float neighborIntensity{canvas.m_canvas[r][c]};
+                    if (localIntensity > neighborIntensity)
+                    {
+                        hasLowNeighbour = true;
+                    }
+                    else if (localIntensity < neighborIntensity)
+                    {
+                        hasLowNeighbour = false;
+                        break;
                     }
                 }
-                if (hasLowNeighbour && localIntensity > threshold)
-                    this->GrowPeak(canvas, xpp, zpp, localIntensity, peak);
-                if (!peak.empty())
-                    peaks.emplace_back(peak);
             }
+            if (hasLowNeighbour && localIntensity > threshold)
+                this->GrowPeak(canvas, xpp, zpp, localIntensity, peak);
+            if (!peak.empty())
+                peaks.emplace_back(peak);
         }
+    }
 
-        for (const auto peak : peaks)
+    for (const auto peak : peaks)
+    {
+        float row{0}, col{0};
+        for (const auto pixel : peak)
         {
-            float row{0}, col{0};
-            for (const auto pixel : peak)
-            {
-                row += pixel.second - canvas.m_rowOffset;
-                col += pixel.first - canvas.m_colOffset;
-            }
-            row /= peak.size();
-            col /= peak.size();
-
-            const float x{static_cast<float>(col * dx + canvas.m_xMin)};
-            const float z{static_cast<float>(row * dz + canvas.m_zMin)};
-            CartesianVector pt(x, 0, z);
-            switch (canvas.m_view)
-            {
-                case TPC_VIEW_U:
-                    verticesU.emplace_back(pt);
-                    break;
-                case TPC_VIEW_V:
-                    verticesV.emplace_back(pt);
-                    break;
-                default:
-                    verticesW.emplace_back(pt);
-                    break;
-            }
-            std::cout << "2D vertex: (" << pt.GetX() << "," << pt.GetZ() << ")" << std::endl;
+            row += pixel.second - canvas.m_rowOffset;
+            col += pixel.first - canvas.m_colOffset;
         }
+        row /= peak.size();
+        col /= peak.size();
+
+        const float x{static_cast<float>(col * dx + canvas.m_xMin)};
+        const float z{static_cast<float>(row * dz + canvas.m_zMin)};
+        CartesianVector pt(x, 0, z);
+        vertices.emplace_back(pt);
     }
 
     return STATUS_CODE_SUCCESS;
@@ -892,7 +883,6 @@ StatusCode DlVertexingAlgorithm::MakeCandidateVertexList(const CartesianPointVec
 
         const Vertex *pVertex(nullptr);
         PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::Vertex::Create(*this, parameters, pVertex));
-        std::cout << "All good" << std::endl;
     }
     PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::SaveList<Vertex>(*this, m_outputVertexListName));
     PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::ReplaceCurrentList<Vertex>(*this, m_outputVertexListName));
@@ -1062,7 +1052,7 @@ StatusCode DlVertexingAlgorithm::ReadSettings(const TiXmlHandle xmlHandle)
 //-----------------------------------------------------------------------------------------------------------------------------------------
 
 DlVertexingAlgorithm::Canvas::Canvas(const HitType view, const int width, const int height, const int colOffset, const int rowOffset,
-    const float xMin, const float xMax, const float zMin, const float zMax, const LArDLHelper::TorchInput &input) :
+    const float xMin, const float xMax, const float zMin, const float zMax) :
     m_view{view},
     m_width{width},
     m_height{height},
@@ -1071,8 +1061,7 @@ DlVertexingAlgorithm::Canvas::Canvas(const HitType view, const int width, const 
     m_xMin{xMin},
     m_xMax{xMax},
     m_zMin{zMin},
-    m_zMax{zMax},
-    m_input{input}
+    m_zMax{zMax}
 {
     m_canvas = new float*[m_height];
     m_visited = new bool*[m_height];
