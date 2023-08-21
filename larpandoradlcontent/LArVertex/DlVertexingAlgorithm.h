@@ -44,9 +44,84 @@ private:
          *  @brief Default constructor
          */
         Canvas(const pandora::HitType view, const int width, const int height, const int colOffset, const int rowOffset, const float xMin,
-            const float xMax, const float zMin, const float zMax);
+            const float xMax, const float zMin, const float zMax, const float pitch, const float drift, const LArDLHelper::TorchInput &input);
 
         virtual ~Canvas();
+
+        /**
+         *  @brief Get pixel width in terms of world x
+         *
+         *  @param imageWidth The width of the underlying image in pixels
+         *  @returns The width of the pixel
+         */
+        double GetDX(const int imageWidth) const;
+
+        /**
+         *  @brief Get pixel width in terms of world z
+         *
+         *  @param imageHeight The height of the underlying image in pixels
+         *  @returns The width of the pixel
+         */
+        double GetDZ(const int imageHeight) const;
+
+        /**
+         *  @brief Transform a pixel x coordinate from heat map to network space
+         *
+         *  @param x The pixel x coordinate in heat map space
+         *  @returns The pixel x coordinate in network space
+         */
+        int HeatMapToNetworkX(const int x) const;
+
+        /**
+         *  @brief Transform a pixel z coordinate from heat map to network space
+         *
+         *  @param x The pixel z coordinate in heat map space
+         *  @returns The pixel z coordinate in network space
+         */
+        int HeatMapToNetworkZ(const int z) const;
+
+        /**
+         *  @brief Transform a pixel x coordinate from network to heat map space
+         *
+         *  @param x The pixel x coordinate in network space
+         *  @returns The pixel x coordinate in heat map space
+         */
+        int NetworkToHeatMapX(const int x) const;
+
+        /**
+         *  @brief Transform a pixel z coordinate from network to heat map space
+         *
+         *  @param z The pixel z coordinate in network space
+         *  @returns The pixel z coordinate in heat map space
+         */
+        int NetworkToHeatMapZ(const int z) const;
+
+        /**
+         *  @brief Transform a pixel x coordinate from network to world space
+         *
+         *  @param x The pixel x coordinate in network space
+         *  @param imageWidth The width of the underlying image in pixels
+         *  @returns The physical coordinate in world space
+         */
+        float NetworkToWorldX(const int x, const int imageWidth) const;
+
+        /**
+         *  @brief Transform a pixel z coordinate from network to world space
+         *
+         *  @param z The pixel z coordinate in network space
+         *  @param imageHeight The height of the underlying image in pixels
+         *  @returns The physical coordinate in world space
+         */
+        float NetworkToWorldZ(const int z, const int imageHeight) const;
+
+        /**
+         *  @brief Transform a world z coordinate from world space to network space
+         *
+         *  @param z The physical z coordinate in world space
+         *  @param imageHeight The height of the underlying image in pixels
+         *  @returns The pixel coordinate in network space
+         */
+        int WorldToNetworkZ(const double z, const int imageHeight) const;
 
         pandora::HitType m_view;
         float **m_canvas;
@@ -59,6 +134,9 @@ private:
         const float m_xMax;
         const float m_zMin;
         const float m_zMax;
+        const float m_pitch;
+        const float m_drift;
+        const LArDLHelper::TorchInput m_input;
     };
 
     typedef std::map<pandora::HitType, Canvas *> CanvasViewMap;
@@ -119,6 +197,16 @@ private:
     pandora::StatusCode GetNetworkVertices(const CanvasViewMap &canvases, pandora::CartesianPointVector &positionVector) const;
 
     /*
+     *  @brief  Create a list of vertices from canvases
+     *
+     *  @param  canvases The input canvases
+     *  @param  positionVector The output vector of wire plane positions
+     *
+     *  @return The StatusCode resulting from the function
+     **/
+    pandora::StatusCode GetNetworkVerticesJoint(const CanvasViewMap &canvases, pandora::CartesianPointVector &positionVector) const;
+
+    /*
      *  @brief  Create a list of vertices from a canvas
      *
      *  @param  canvases The input canvases
@@ -127,6 +215,16 @@ private:
      *  @return The StatusCode resulting from the function
      **/
     pandora::StatusCode GetVerticesFromCanvas(const Canvas &canvas, pandora::CartesianPointVector &vertices) const;
+
+    /*
+     *  @brief  Create a list of vertices from a canvas
+     *
+     *  @param  canvases The input canvases
+     *  @param  positionVector The output vector of wire plane positions
+     *
+     *  @return The StatusCode resulting from the function
+     **/
+    pandora::StatusCode GetVerticesFromCanvasJoint(const CanvasViewMap &canvases, pandora::CartesianPointVector &positionVector) const;
 
     /**
      *  @brief  Determine if the pixel under consideration is part of a peak and grow that peak to include all connected pixels of equal value
@@ -140,6 +238,19 @@ private:
      *  @return true if we found a better peak while growing the current region, false otherwise
      */
     bool GrowPeak(const Canvas &canvas, int col, int row, float intensity, std::vector<std::pair<int, int>> &peak) const;
+
+    /**
+     *  @brief  Determine if the pixel under consideration is part of a peak and grow that peak to include all connected pixels of equal value
+     *
+     *  @param  canvas The canvas within which peaks are sought
+     *  @param  col The column of the pixel under consideration
+     *  @param  row The row of the pixel under consideration
+     *  @param  intensity The target intensity of the candidate peak
+     *  @param  peak The output vector of pixels constituting the peak under consideration
+     *
+     *  @return true if we found a better peak while growing the current region, false otherwise
+     */
+    bool GrowPeak(const CanvasViewMap &canvases, int x, int u, int v, float intensity, std::vector<std::tuple<int, int, int>> &peak) const;
 
     /**
      *  @brief  Determines the parameters of the canvas for extracting the vertex location.

@@ -181,6 +181,7 @@ StatusCode DlVertexingAlgorithm::Infer()
 {
     // Get boundaries for hits and make x dimension common
     std::map<HitType, float> wireMin, wireMax;
+    const float drift{0};
     float driftMin{std::numeric_limits<float>::max()}, driftMax{-std::numeric_limits<float>::max()};
     for (const std::string &listname : m_caloHitListNames)
     {
@@ -196,6 +197,7 @@ StatusCode DlVertexingAlgorithm::Infer()
         driftMax = std::max(viewDriftMax, driftMax);
     }
 
+    const LArTPC *const pTPC(this->GetPandora().GetGeometry()->GetLArTPCMap().begin()->second);
     CanvasViewMap canvases;
     canvases[TPC_VIEW_U] = nullptr;
     canvases[TPC_VIEW_V] = nullptr;
@@ -217,22 +219,27 @@ StatusCode DlVertexingAlgorithm::Infer()
         LArDLHelper::TorchInputVector inputs;
         inputs.push_back(input);
         LArDLHelper::TorchOutput output;
+        float pitch{0.f};
         switch (view)
         {
             case TPC_VIEW_U:
                 LArDLHelper::Forward(m_modelU, inputs, output);
+                pitch = pTPC->GetWirePitchU();
                 break;
             case TPC_VIEW_V:
                 LArDLHelper::Forward(m_modelV, inputs, output);
+                pitch = pTPC->GetWirePitchV();
                 break;
             default:
                 LArDLHelper::Forward(m_modelW, inputs, output);
+                pitch = pTPC->GetWirePitchW();
                 break;
         }
 
         int colOffset{0}, rowOffset{0}, canvasWidth{m_width}, canvasHeight{m_height};
         this->GetCanvasParameters(output, pixelVector, colOffset, rowOffset, canvasWidth, canvasHeight);
-        canvases[view] = new Canvas(view, canvasWidth, canvasHeight, colOffset, rowOffset, driftMin, driftMax, wireMin[view], wireMax[view]);
+        canvases[view] = new Canvas(view, canvasWidth, canvasHeight, colOffset, rowOffset, driftMin, driftMax, wireMin[view], wireMax[view],
+            pitch, drift, input);
         // we want the maximum value in the num_classes dimension (1) for every pixel
         auto classes{torch::argmax(output, 1)};
         // the argmax result is a 1 x height x width tensor where each element is a class id
@@ -278,7 +285,7 @@ StatusCode DlVertexingAlgorithm::Infer()
     }*/
 
     CartesianPointVector vertexVector;
-    this->GetNetworkVertices(canvases, vertexVector);
+    this->GetNetworkVerticesJoint(canvases, vertexVector);
 
     if (!vertexVector.empty())
     {
@@ -291,7 +298,6 @@ StatusCode DlVertexingAlgorithm::Infer()
         }
         PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
 
-        std::cout << "Final: " << vertexVector.front() << std::endl;
         StatusCode status{this->MakeCandidateVertexList(vertexVector)};
 
         for (const HitType view : {TPC_VIEW_U, TPC_VIEW_V, TPC_VIEW_W})
@@ -498,6 +504,15 @@ StatusCode DlVertexingAlgorithm::GetNetworkVertices(const CanvasViewMap &canvase
 
 //-----------------------------------------------------------------------------------------------------------------------------------------
 
+StatusCode DlVertexingAlgorithm::GetNetworkVerticesJoint(const CanvasViewMap &canvases, CartesianPointVector &positionVector) const
+{
+    this->GetVerticesFromCanvasJoint(canvases, positionVector);
+
+    return STATUS_CODE_SUCCESS;
+}
+
+//-----------------------------------------------------------------------------------------------------------------------------------------
+
 StatusCode DlVertexingAlgorithm::GetVerticesFromCanvas(const Canvas &canvas, CartesianPointVector &vertices) const
 {
     // ATTN If wire w pitches vary between TPCs, exception will be raised in initialisation of lar pseudolayer plugin
@@ -597,12 +612,164 @@ StatusCode DlVertexingAlgorithm::GetVerticesFromCanvas(const Canvas &canvas, Car
 
 //-----------------------------------------------------------------------------------------------------------------------------------------
 
+StatusCode DlVertexingAlgorithm::GetVerticesFromCanvasJoint(const CanvasViewMap &canvases, CartesianPointVector &positionVector) const
+{
+    Canvas &uCanvas{*canvases.at(TPC_VIEW_U)};
+    Canvas &vCanvas{*canvases.at(TPC_VIEW_V)};
+    Canvas &wCanvas{*canvases.at(TPC_VIEW_W)};
+
+    const LArTransformationPlugin *transform{this->GetPandora().GetPlugins()->GetLArTransformationPlugin()};
+
+    float maxIntensity{0.f};
+    for (int xp = 0; xp < m_width; ++xp)
+    {
+        int xu{uCanvas.NetworkToHeatMapX(xp)}, xv{vCanvas.NetworkToHeatMapX(xp)}, xw{wCanvas.NetworkToHeatMapX(xp)};
+        if (xu >= uCanvas.m_width || xv >= vCanvas.m_width || xw >= wCanvas.m_width)
+            continue;
+
+        for (int up = 0; up < m_height; ++up)
+        {
+            int upp{uCanvas.NetworkToHeatMapZ(up)};
+            if (upp >= uCanvas.m_height)
+                continue;
+
+            const float u{uCanvas.NetworkToWorldZ(up, m_height)};
+
+            for (int vp = 0; vp < m_height; ++vp)
+            {
+                int vpp{vCanvas.NetworkToHeatMapZ(vp)};
+                if (vpp >= vCanvas.m_height)
+                    continue;
+
+                const float v{vCanvas.NetworkToWorldZ(vp, m_height)};
+                const int wpp{wCanvas.NetworkToHeatMapZ(wCanvas.WorldToNetworkZ(transform->UVtoW(u, v), m_height))};
+
+                if (wpp < 0 || wpp >= wCanvas.m_height)
+                    continue;
+
+                float localIntensity{uCanvas.m_canvas[upp][xu] + vCanvas.m_canvas[vpp][xv] + wCanvas.m_canvas[wpp][xw]};
+                if (localIntensity > maxIntensity)
+                    maxIntensity = localIntensity;
+            }
+        }
+    }
+    const float threshold{maxIntensity * 0.5f};
+
+    std::vector<std::vector<std::tuple<int, int, int>>> peaks;
+    for (int xp = 0; xp < m_width; ++xp)
+    {
+        int xu{uCanvas.NetworkToHeatMapX(xp)}, xv{vCanvas.NetworkToHeatMapX(xp)}, xw{wCanvas.NetworkToHeatMapX(xp)};
+        if (xu >= uCanvas.m_width || xv >= vCanvas.m_width || xw >= wCanvas.m_width)
+            continue;
+
+        for (int up = 0; up < m_height; ++up)
+        {
+            int upp{uCanvas.NetworkToHeatMapZ(up)};
+            if (upp >= uCanvas.m_height)
+                continue;
+            const float u{uCanvas.NetworkToWorldZ(up, m_height)};
+
+            for (int vp = 0; vp < m_height; ++vp)
+            {
+                int vpp{vCanvas.NetworkToHeatMapZ(vp)};
+                if (vpp >= vCanvas.m_height)
+                    continue;
+                const float v{vCanvas.NetworkToWorldZ(vp, m_height)};
+                const int wp{wCanvas.WorldToNetworkZ(transform->UVtoW(u, v), m_height)};
+                const int wpp{wCanvas.NetworkToHeatMapZ(wp)};
+                if (wpp < 0 || wpp >= wCanvas.m_height)
+                    continue;
+
+                auto uAccessor{uCanvas.m_input.accessor<float, 4>()};
+                auto vAccessor{vCanvas.m_input.accessor<float, 4>()};
+                auto wAccessor{wCanvas.m_input.accessor<float, 4>()};
+
+                int nContributions{0};
+                nContributions += uAccessor[0][0][up][xp] > 0 ? 1 : 0;
+                nContributions += vAccessor[0][0][vp][xp] > 0 ? 1 : 0;
+                nContributions += wAccessor[0][0][wp][xp] > 0 ? 1 : 0;
+                if (nContributions < 3)
+                    continue;
+                float localIntensity{uCanvas.m_canvas[upp][xu] + vCanvas.m_canvas[vpp][xv] + wCanvas.m_canvas[wpp][xw]};
+                std::vector<std::tuple<int, int, int>> peak;
+                bool hasLowNeighbour{false};
+                for (int dx = -1; dx <= 1; ++dx)
+                {
+                    const int xnu{xu + dx}, xnv{xv + dx}, xnw{xw + dx};
+                    if (xnu < 0 || xnu >= uCanvas.m_width || xnv < 0 || xnv >= vCanvas.m_width || xnw < 0 || xnw >= wCanvas.m_width)
+                        continue;
+                    for (int du = -1; du <=1; ++du)
+                    {
+                        const int un{upp + du};
+                        if (un < 0 || un >= uCanvas.m_height)
+                            continue;
+                        float unw{uCanvas.NetworkToWorldZ(uCanvas.HeatMapToNetworkZ(un), m_height)};
+
+                        for (int dv = -1; dv <= 1; ++dv)
+                        {
+                            if (dx == 0 && du == 0 && dv == 0)
+                                continue;
+
+                            const int vn{vpp + dv};
+                            if (vn < 0 || vn >= vCanvas.m_height)
+                                continue;
+
+                            float vnw{vCanvas.NetworkToWorldZ(vCanvas.HeatMapToNetworkZ(vn), m_height)};
+                            const int wn{wCanvas.NetworkToHeatMapZ(wCanvas.WorldToNetworkZ(transform->UVtoW(unw, vnw), m_height))};
+                            if (wn < 0 || wn >= wCanvas.m_height)
+                                continue;
+
+                            const float neighborIntensity{uCanvas.m_canvas[un][xnu] + vCanvas.m_canvas[vn][xnv] + wCanvas.m_canvas[wn][xnw]};
+                            if (localIntensity > neighborIntensity)
+                            {
+                                hasLowNeighbour = true;
+                            }
+                            else if (localIntensity < neighborIntensity)
+                            {
+                                hasLowNeighbour = false;
+                                break;
+                            }
+                        }
+                    }
+                }
+                if (hasLowNeighbour && localIntensity > threshold)
+                {
+                    this->GrowPeak(canvases, xp, up, vp, localIntensity, peak);
+                }
+                if (!peak.empty())
+                    peaks.emplace_back(peak);
+            }
+        }
+    }
+
+    for (const auto peak : peaks)
+    {
+        float x{0}, u{0}, v{0};
+        for (const auto pixel : peak)
+        {
+            x += std::get<0>(pixel);
+            u += std::get<1>(pixel);
+            v += std::get<2>(pixel);
+        }
+        x /= peak.size();
+        u /= peak.size();
+        v /= peak.size();
+
+        x = uCanvas.NetworkToWorldX(x, m_width);
+        u = uCanvas.NetworkToWorldZ(u, m_height);
+        v = vCanvas.NetworkToWorldZ(v, m_height);
+
+        CartesianVector pt(x, transform->UVtoY(u, v), transform->UVtoZ(u, v));
+        positionVector.emplace_back(pt);
+    }
+
+    return STATUS_CODE_SUCCESS;
+}
+
+//-----------------------------------------------------------------------------------------------------------------------------------------
+
 bool DlVertexingAlgorithm::GrowPeak(const Canvas &canvas, int col, int row, float intensity, std::vector<std::pair<int, int>> &peak) const
 {
-//    if (col >= 0 && col < canvas.m_width && row >= 0 && row < canvas.m_height)
-//    {
-//        std::cout << "Visited: " << canvas.m_visited[row][col] << " " << 
-//    }
     if (col < 0 || col >= canvas.m_width || row < 0 || row >= canvas.m_height || canvas.m_visited[row][col] || canvas.m_canvas[row][col] < intensity)
         return false;
 
@@ -636,7 +803,6 @@ bool DlVertexingAlgorithm::GrowPeak(const Canvas &canvas, int col, int row, floa
         for (const auto pixel : peak)
             canvas.m_visited[pixel.second][pixel.first] = false;
         peak.clear();
-        //std::cout << ". New size " << peak.size() << " new intensity " << intensity << std::endl;
         this->GrowPeak(canvas, col, row, intensity, peak);
         return true;
     }
@@ -644,7 +810,6 @@ bool DlVertexingAlgorithm::GrowPeak(const Canvas &canvas, int col, int row, floa
     // Add pixel to the peak
     canvas.m_visited[row][col] = true;
     peak.emplace_back(std::make_pair(col, row));
-    //std::cout << "   Added" << std::endl;
 
     for (int dc = -1; dc <= 1; ++dc)
     {
@@ -652,11 +817,122 @@ bool DlVertexingAlgorithm::GrowPeak(const Canvas &canvas, int col, int row, floa
         {
             if (dr == 0 && dc == 0)
                 continue;
-            //std::cout << "   Adjacent (" << (row + i) << "," << (col + j) << ")" << std::endl;
             bool reset{this->GrowPeak(canvas, col + dc, row + dr, intensity, peak)};
             // If we started growing a non-peak region, stop looking relative to the previous peak
             if (reset)
                 return reset;
+        }
+    }
+
+    return false;
+}
+
+//-----------------------------------------------------------------------------------------------------------------------------------------
+
+bool DlVertexingAlgorithm::GrowPeak(const CanvasViewMap &canvases, int xp, int up, int vp, float intensity,
+    std::vector<std::tuple<int, int, int>> &peak) const
+{
+    Canvas &uCanvas{*canvases.at(TPC_VIEW_U)};
+    Canvas &vCanvas{*canvases.at(TPC_VIEW_V)};
+    Canvas &wCanvas{*canvases.at(TPC_VIEW_W)};
+
+    auto uAccessor{uCanvas.m_input.accessor<float, 4>()};
+    auto vAccessor{vCanvas.m_input.accessor<float, 4>()};
+    auto wAccessor{wCanvas.m_input.accessor<float, 4>()};
+
+    const LArTransformationPlugin *transform{this->GetPandora().GetPlugins()->GetLArTransformationPlugin()};
+
+    const float u{uCanvas.NetworkToWorldZ(up, m_height)};
+    const float v{vCanvas.NetworkToWorldZ(vp, m_height)};
+    const int wp{wCanvas.WorldToNetworkZ(transform->UVtoW(u, v), m_height)};
+
+    int nContributions{0};
+    nContributions += uAccessor[0][0][up][xp] > 0 ? 1 : 0;
+    nContributions += vAccessor[0][0][vp][xp] > 0 ? 1 : 0;
+    nContributions += wAccessor[0][0][wp][xp] > 0 ? 1 : 0;
+    if (nContributions < 3)
+        return false;
+    
+    const int xu{uCanvas.NetworkToHeatMapX(xp)}, xv{vCanvas.NetworkToHeatMapX(xp)}, xw{wCanvas.NetworkToHeatMapX(xp)};
+    const int upp{uCanvas.NetworkToHeatMapZ(up)}, vpp{vCanvas.NetworkToHeatMapZ(vp)}, wpp{wCanvas.NetworkToHeatMapZ(wp)};
+    // Need to think through whether the visited conditional is adequate - these will be updated somewhat independently, so is it
+    // possible that the triplet combination could be set when the specific triplet hasn't been visited?
+    if (xu < 0 || xu >= uCanvas.m_width || xv < 0 || xv >= vCanvas.m_width || xw < 0 || xw >= wCanvas.m_height ||
+        upp < 0 || upp >= uCanvas.m_height || vpp < 0 || vpp >= vCanvas.m_height || wpp < 0 || wpp >= wCanvas.m_height ||
+        (uCanvas.m_visited[upp][xu] && vCanvas.m_visited[vpp][xv]) ||
+        ((uCanvas.m_canvas[upp][xu] + vCanvas.m_canvas[vpp][xv] + wCanvas.m_canvas[wpp][xw]) < intensity))
+        return false;
+
+    // Check that no adjacent pixel is larger than this one
+    float localIntensity{uCanvas.m_canvas[upp][xu] + vCanvas.m_canvas[vpp][xv] + wCanvas.m_canvas[wpp][xw]};
+    for (int dx = -1; dx <= 1; ++dx)
+    {
+        const int xnu{xu + dx}, xnv{xv + dx}, xnw{xw + dx};
+        if (xnu < 0 || xnu >= uCanvas.m_width || xnv < 0 || xnv >= vCanvas.m_width || xnw < 0 || xnw >= wCanvas.m_width)
+            continue;
+        for (int du = -1; du <= 1; ++du)
+        {
+            const int un{upp + du};
+            if (un < 0 || un >= uCanvas.m_height)
+                continue;
+            float unw{uCanvas.NetworkToWorldZ(uCanvas.HeatMapToNetworkZ(un), m_height)};
+
+            for (int dv = -1; dv <= 1; ++dv)
+            {
+                if (dx == 0 && du == 0 && dv == 0)
+                    continue;
+
+                const int vn{vpp + dv};
+                if (vn < 0 || vn >= vCanvas.m_height)
+                    continue;
+
+                float vnw{vCanvas.NetworkToWorldZ(vCanvas.HeatMapToNetworkZ(vn), m_height)};
+                const int wn{wCanvas.NetworkToHeatMapZ(wCanvas.WorldToNetworkZ(transform->UVtoW(unw, vnw), m_height))};
+                if (wn < 0 || wn >= wCanvas.m_height)
+                    continue;
+
+                const float neighborIntensity{uCanvas.m_canvas[un][xnu] + vCanvas.m_canvas[vn][xnv] + wCanvas.m_canvas[wn][xnw]};
+                if (intensity < neighborIntensity)
+                    return false;
+            }
+        }
+    }
+
+    // Need to check we aren't growing into a higher peak, if we are, abort and let the top-level function move on
+    if (localIntensity > intensity)
+    {
+        intensity = localIntensity;
+        for (const auto pixel : peak)
+        {
+            // It seems unlikely that this is a viable approach - likely need a map of visited tuples instead
+            uCanvas.m_visited[uCanvas.NetworkToHeatMapZ(std::get<1>(pixel))][uCanvas.NetworkToHeatMapX(std::get<0>(pixel))] = false;
+            vCanvas.m_visited[vCanvas.NetworkToHeatMapZ(std::get<2>(pixel))][vCanvas.NetworkToHeatMapX(std::get<0>(pixel))] = false;
+        }
+        peak.clear();
+        return true;
+    }
+
+    // Add pixel to the peak
+    uCanvas.m_visited[upp][xu] = true;
+    vCanvas.m_visited[vpp][xv] = true;
+    peak.emplace_back(std::make_tuple(xp, up, vp));
+
+    for (int dx = -1; dx <= 1; ++dx)
+    {
+        for (int du = -1; du <= 1; ++du)
+        {
+            for (int dv = -1; dv <= 1; ++dv)
+            {
+                if (dx == 0 && du == 0 && dv == 0)
+                    continue;
+                if (uCanvas.m_visited[upp + du][xu + dx] && vCanvas.m_visited[vpp + dv][xv + dx])
+                {
+                    bool reset{this->GrowPeak(canvases, xp + dx, up + du, vp + dv, intensity, peak)};
+                    // If we started growing a non-peak region, stop looking relative to the previous peak
+                    if (reset)
+                        return reset;
+                }
+            }
         }
     }
 
@@ -1052,7 +1328,7 @@ StatusCode DlVertexingAlgorithm::ReadSettings(const TiXmlHandle xmlHandle)
 //-----------------------------------------------------------------------------------------------------------------------------------------
 
 DlVertexingAlgorithm::Canvas::Canvas(const HitType view, const int width, const int height, const int colOffset, const int rowOffset,
-    const float xMin, const float xMax, const float zMin, const float zMax) :
+    const float xMin, const float xMax, const float zMin, const float zMax, const float pitch, const float drift, const LArDLHelper::TorchInput &input) :
     m_view{view},
     m_width{width},
     m_height{height},
@@ -1061,7 +1337,10 @@ DlVertexingAlgorithm::Canvas::Canvas(const HitType view, const int width, const 
     m_xMin{xMin},
     m_xMax{xMax},
     m_zMin{zMin},
-    m_zMax{zMax}
+    m_zMax{zMax},
+    m_pitch{pitch},
+    m_drift{drift},
+    m_input{input}
 {
     m_canvas = new float*[m_height];
     m_visited = new bool*[m_height];
@@ -1083,6 +1362,69 @@ DlVertexingAlgorithm::Canvas::~Canvas()
     }
     delete[] m_canvas;
     delete[] m_visited;
+}
+
+//-----------------------------------------------------------------------------------------------------------------------------------------
+
+double DlVertexingAlgorithm::Canvas::GetDX(const int imageWidth) const
+{
+   return ((this->m_xMax + 0.5f * this->m_drift) - (this->m_xMin - 0.5f * this->m_drift)) / imageWidth;
+}
+
+//-----------------------------------------------------------------------------------------------------------------------------------------
+
+double DlVertexingAlgorithm::Canvas::GetDZ(const int imageHeight) const
+{
+   return ((this->m_zMax + 0.5f * this->m_pitch) - (this->m_zMin - 0.5f * this->m_pitch)) / imageHeight;
+}
+
+//-----------------------------------------------------------------------------------------------------------------------------------------
+
+int DlVertexingAlgorithm::Canvas::HeatMapToNetworkX(const int x) const
+{
+    return x - this->m_colOffset;
+}
+
+//-----------------------------------------------------------------------------------------------------------------------------------------
+
+int DlVertexingAlgorithm::Canvas::HeatMapToNetworkZ(const int z) const
+{
+    return z - this->m_rowOffset;
+}
+
+//-----------------------------------------------------------------------------------------------------------------------------------------
+
+int DlVertexingAlgorithm::Canvas::NetworkToHeatMapX(const int x) const
+{
+    return x + this->m_colOffset;
+}
+
+//-----------------------------------------------------------------------------------------------------------------------------------------
+
+int DlVertexingAlgorithm::Canvas::NetworkToHeatMapZ(const int z) const
+{
+    return z + this->m_rowOffset;
+}
+
+//-----------------------------------------------------------------------------------------------------------------------------------------
+
+float DlVertexingAlgorithm::Canvas::NetworkToWorldX(const int x, const int imageWidth) const
+{
+    return static_cast<float>(x * this->GetDX(imageWidth) + this->m_xMin);
+}
+
+//-----------------------------------------------------------------------------------------------------------------------------------------
+
+float DlVertexingAlgorithm::Canvas::NetworkToWorldZ(const int z, const int imageHeight) const
+{
+    return static_cast<float>(z * this->GetDZ(imageHeight) + this->m_zMin);
+}
+
+//-----------------------------------------------------------------------------------------------------------------------------------------
+
+int DlVertexingAlgorithm::Canvas::WorldToNetworkZ(const double z, const int imageHeight) const
+{
+    return static_cast<int>((z - this->m_zMin) / this->GetDZ(imageHeight));
 }
 
 //-----------------------------------------------------------------------------------------------------------------------------------------
