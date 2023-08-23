@@ -282,14 +282,14 @@ StatusCode DlVertexingAlgorithm::Infer()
 
     if (!vertexVector.empty())
     {
-        PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1.f, 1.f, 1.f));
+/*        PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1.f, 1.f, 1.f));
 
         for (const CartesianVector &vertex : vertexVector)
         {
             const CartesianVector vec2d(vertex.GetX(), 0, vertex.GetZ());
             PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &vec2d, "vec", BLUE, 1));
         }
-        PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
+        PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));*/
 
         std::cout << "Final: " << vertexVector.front() << std::endl;
         StatusCode status{this->MakeCandidateVertexList(vertexVector)};
