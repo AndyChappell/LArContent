@@ -54,6 +54,7 @@
 #include "larpandoracontent/LArMonitoring/MuonLeadingEventValidationAlgorithm.h"
 #include "larpandoracontent/LArMonitoring/NeutrinoEventValidationAlgorithm.h"
 #include "larpandoracontent/LArMonitoring/PfoValidationAlgorithm.h"
+#include "larpandoracontent/LArMonitoring/SecondaryVertexMonitoringAlgorithm.h"
 #include "larpandoracontent/LArMonitoring/ShowerTensorVisualizationTool.h"
 #include "larpandoracontent/LArMonitoring/TestBeamEventValidationAlgorithm.h"
 #include "larpandoracontent/LArMonitoring/TestBeamHierarchyEventValidationAlgorithm.h"
@@ -223,6 +224,7 @@
     d("LArHierarchyValidation",                 HierarchyValidationAlgorithm)                                                   \
     d("LArPfoValidation",                       PfoValidationAlgorithm)                                                         \
     d("LArMCParticleMonitoring",                MCParticleMonitoringAlgorithm)                                                  \
+    d("LArSecondaryVertexMonitoring",           SecondaryVertexMonitoringAlgorithm)                                             \
     d("LArVertexMonitoring",                    VertexMonitoringAlgorithm)                                                      \
     d("LArVisualMonitoring",                    VisualMonitoringAlgorithm)                                                      \
     d("LArVisualParticleMonitoring",            VisualParticleMonitoringAlgorithm)                                              \
