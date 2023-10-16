@@ -34,18 +34,14 @@ VertexClusterCreationAlgorithm::VertexClusterCreationAlgorithm() :
 
 StatusCode VertexClusterCreationAlgorithm::Run()
 {
-    const MCParticleList *pMCParticleList{nullptr};
-    PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetCurrentList(*this, pMCParticleList));
-
-    LArMCParticleHelper::MCContributionMap mcToHitsMap;
-    MCParticleVector primaries;
-    LArMCParticleHelper::GetPrimaryMCParticleList(pMCParticleList, primaries);
-    MCParticleList primariesList(primaries.begin(), primaries.end());
-
     const CaloHitList *pCaloHitList{nullptr};
     PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetList(*this, m_caloHitListName, pCaloHitList));
     const VertexList *pVertexList{nullptr};
-    PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetList(*this, m_vertexListName, pVertexList));
+    StatusCode status{PandoraContentApi::GetList(*this, m_vertexListName, pVertexList)};
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_INITIALIZED, !=, status);
+
+    if (status == STATUS_CODE_NOT_INITIALIZED)
+        return STATUS_CODE_SUCCESS;
 
     if (!pCaloHitList || pCaloHitList->empty() || !pVertexList || pVertexList->empty())
         return STATUS_CODE_SUCCESS;
