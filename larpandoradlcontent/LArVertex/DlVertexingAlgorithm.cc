@@ -83,7 +83,7 @@ StatusCode DlVertexingAlgorithm::PrepareTrainingSample()
 
     // Only train on events where there is a vertex in the fiducial volume
     bool hasFiducialVertex{false};
-    for (const CartesianVector vertex : vertices)
+    for (const CartesianVector &vertex : vertices)
     {
         if (LArVertexHelper::IsInFiducialVolume(this->GetPandora(), vertex, "dune_fd_hd"))
         {
@@ -282,14 +282,14 @@ StatusCode DlVertexingAlgorithm::Infer()
 
     if (!vertexVector.empty())
     {
-/*        PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1.f, 1.f, 1.f));
+        PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1.f, 1.f, 1.f));
 
         for (const CartesianVector &vertex : vertexVector)
         {
             const CartesianVector vec2d(vertex.GetX(), 0, vertex.GetZ());
-            PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &vec2d, "vec", BLUE, 1));
+            PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &vec2d, "vec", BLUE, 3));
         }
-        PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));*/
+        PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
 
         std::cout << "Final: " << vertexVector.front() << std::endl;
         StatusCode status{this->MakeCandidateVertexList(vertexVector)};
@@ -575,10 +575,10 @@ StatusCode DlVertexingAlgorithm::GetVerticesFromCanvas(const Canvas &canvas, Car
         }
     }
 
-    for (const auto peak : peaks)
+    for (const auto &peak : peaks)
     {
         float row{0}, col{0};
-        for (const auto pixel : peak)
+        for (const auto &pixel : peak)
         {
             row += pixel.second - canvas.m_rowOffset;
             col += pixel.first - canvas.m_colOffset;
@@ -633,7 +633,7 @@ bool DlVertexingAlgorithm::GrowPeak(const Canvas &canvas, int col, int row, floa
     if (localIntensity > intensity)
     {
         intensity = localIntensity;
-        for (const auto pixel : peak)
+        for (const auto &pixel : peak)
             canvas.m_visited[pixel.second][pixel.first] = false;
         peak.clear();
         //std::cout << ". New size " << peak.size() << " new intensity " << intensity << std::endl;
