@@ -37,32 +37,6 @@ public:
     virtual ~DlVertexingAlgorithm();
 
 private:
-    class Canvas
-    {
-    public:
-        /**
-         *  @brief Default constructor
-         */
-        Canvas(const pandora::HitType view, const int width, const int height, const int colOffset, const int rowOffset, const float xMin,
-            const float xMax, const float zMin, const float zMax);
-
-        virtual ~Canvas();
-
-        pandora::HitType m_view;
-        float **m_canvas;
-        bool **m_visited;
-        const int m_width;
-        const int m_height;
-        const int m_colOffset;
-        const int m_rowOffset;
-        const float m_xMin;
-        const float m_xMax;
-        const float m_zMin;
-        const float m_zMax;
-    };
-
-    typedef std::map<pandora::HitType, Canvas *> CanvasViewMap;
-
     class VertexTuple
     {
     public:
@@ -73,14 +47,12 @@ private:
             const pandora::HitType view1, const pandora::HitType view2);
 
         const pandora::CartesianVector &GetPosition() const;
-        const pandora::CartesianPointVector &GetComponents() const;
         float GetChi2() const;
         std::string ToString() const;
 
     private:
         pandora::CartesianVector m_pos; ///< Calculated 3D position
         float m_chi2;                   ///< Chi squared of calculated position
-        pandora::CartesianPointVector m_components; ///< The 2D vertices that contributed to the 3D vertex
     };
 
     typedef std::pair<int, int> Pixel; // A Pixel is a row, column pair
@@ -109,37 +81,24 @@ private:
         const float xMax, const float zMin, const float zMax, LArDLHelper::TorchInput &networkInput, PixelVector &pixelVector) const;
 
     /*
-     *  @brief  Create a list of vertices from canvases
+     *  @brief  Create a list of wire plane-space coordinates from a canvas
      *
-     *  @param  canvases The input canvases
+     *  @param  canvas The input canvas
+     *  @param  canvasWidth The width of the canvas
+     *  @param  canvasHeight The height of the canvas
+     *  @param  columnOffset The column offset used when populating the canvas
+     *  @param  rowOffset The row offset used when populating the canvas
+     *  @param  xMin The minimum x coordinate for the hits
+     *  @param  xMax The maximum x coordinate for the hits
+     *  @param  zMin The minimum x coordinate for the hits
+     *  @param  zMax The maximum x coordinate for the hits
      *  @param  positionVector The output vector of wire plane positions
      *
      *  @return The StatusCode resulting from the function
      **/
-    pandora::StatusCode GetNetworkVertices(const CanvasViewMap &canvases, pandora::CartesianPointVector &positionVector) const;
-
-    /*
-     *  @brief  Create a list of vertices from a canvas
-     *
-     *  @param  canvases The input canvases
-     *  @param  positionVector The output vector of wire plane positions
-     *
-     *  @return The StatusCode resulting from the function
-     **/
-    pandora::StatusCode GetVerticesFromCanvas(const Canvas &canvas, pandora::CartesianPointVector &vertices) const;
-
-    /**
-     *  @brief  Determine if the pixel under consideration is part of a peak and grow that peak to include all connected pixels of equal value
-     *
-     *  @param  canvas The canvas within which peaks are sought
-     *  @param  col The column of the pixel under consideration
-     *  @param  row The row of the pixel under consideration
-     *  @param  intensity The target intensity of the candidate peak
-     *  @param  peak The output vector of pixels constituting the peak under consideration
-     *
-     *  @return true if we found a better peak while growing the current region, false otherwise
-     */
-    bool GrowPeak(const Canvas &canvas, int col, int row, float intensity, std::vector<std::pair<int, int>> &peak) const;
+    pandora::StatusCode MakeWirePlaneCoordinatesFromCanvas(float **canvas, const int canvasWidth, const int canvasHeight,
+        const int columnOffset, const int rowOffset, const pandora::HitType view, const float xMin, const float xMax, const float zMin,
+        const float zMax, pandora::CartesianPointVector &positionVector) const;
 
     /**
      *  @brief  Determines the parameters of the canvas for extracting the vertex location.

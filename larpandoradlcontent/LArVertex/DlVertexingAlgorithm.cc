@@ -17,8 +17,6 @@
 #include "larpandoracontent/LArHelpers/LArMvaHelper.h"
 #include "larpandoracontent/LArHelpers/LArVertexHelper.h"
 
-#include "larpandoracontent/LArObjects/LArEventTopology.h"
-
 #include "larpandoradlcontent/LArVertex/DlVertexingAlgorithm.h"
 
 using namespace pandora;
@@ -61,8 +59,6 @@ DlVertexingAlgorithm::~DlVertexingAlgorithm()
 
 StatusCode DlVertexingAlgorithm::Run()
 {
-    ++m_event;
-
     if (m_trainingMode)
         return this->PrepareTrainingSample();
     else
@@ -73,28 +69,6 @@ StatusCode DlVertexingAlgorithm::Run()
 
 StatusCode DlVertexingAlgorithm::PrepareTrainingSample()
 {
-    const CaloHitList *pCaloHitList2D{nullptr};
-    PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetList(*this, "CaloHitList2D", pCaloHitList2D));
-    LArEventTopology eventTopology(*pCaloHitList2D);
-    eventTopology.ConstructVisibleHierarchy();
-    eventTopology.PruneHierarchy();
-    CartesianPointVector vertices;
-    eventTopology.GetVertices(vertices);
-
-    // Only train on events where there is a vertex in the fiducial volume
-    bool hasFiducialVertex{false};
-    for (const CartesianVector &vertex : vertices)
-    {
-        if (LArVertexHelper::IsInFiducialVolume(this->GetPandora(), vertex, "dune_fd_hd"))
-        {
-            hasFiducialVertex = true;
-            break;
-        }
-    }
-
-    if (!hasFiducialVertex)
-        return STATUS_CODE_SUCCESS;
-
     LArMCParticleHelper::MCContributionMap mcToHitsMap;
     PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, this->GetMCToHitsMap(mcToHitsMap));
     MCParticleList hierarchy;
@@ -124,49 +98,65 @@ StatusCode DlVertexingAlgorithm::PrepareTrainingSample()
             continue;
 
         HitType view{pCaloHitList->front()->GetHitType()};
+        const bool isU{view == TPC_VIEW_U}, isV{view == TPC_VIEW_V}, isW{view == TPC_VIEW_W};
+        if (!(isU || isV || isW))
+            return STATUS_CODE_NOT_ALLOWED;
 
+        CartesianPointVector vertices;
+        for (const MCParticle *mc : hierarchy)
+        {
+            if (LArMCParticleHelper::IsNeutrino(mc))
+                vertices.push_back(mc->GetVertex());
+        }
+        if (vertices.empty())
+            continue;
+        const CartesianVector &vertex{vertices.front()};
         const std::string trainingFilename{m_trainingOutputFile + "_" + listname + ".csv"};
-        const unsigned long nVertices{vertices.size()};
+        const unsigned long nVertices{1};
         unsigned long nHits{0};
+        const unsigned int nuance{LArMCParticleHelper::GetNuanceCode(hierarchy.front())};
 
-        LArMvaHelper::MvaFeatureVector featureVector;
-        featureVector.emplace_back(static_cast<double>(m_event));
-        featureVector.emplace_back(static_cast<double>(nVertices));
         // Vertices
         const LArTransformationPlugin *transform{this->GetPandora().GetPlugins()->GetLArTransformationPlugin()};
-        for (const CartesianVector &vertex : vertices)
-        {
-            switch (view)
-            {
-                case TPC_VIEW_U:
-                    featureVector.emplace_back(vertex.GetX());
-                    featureVector.emplace_back(transform->YZtoU(vertex.GetY(), vertex.GetZ()));
-                    break;
-                case TPC_VIEW_V:
-                    featureVector.emplace_back(vertex.GetX());
-                    featureVector.emplace_back(transform->YZtoV(vertex.GetY(), vertex.GetZ()));
-                    break;
-                default:
-                    featureVector.emplace_back(vertex.GetX());
-                    featureVector.emplace_back(transform->YZtoW(vertex.GetY(), vertex.GetZ()));
-                    break;
-            }
-        }
+        const double xVtx{vertex.GetX()};
+        double zVtx{0.};
+        if (isW)
+            zVtx = transform->YZtoW(vertex.GetY(), vertex.GetZ());
+        else if (isV)
+            zVtx = transform->YZtoV(vertex.GetY(), vertex.GetZ());
+        else
+            zVtx = transform->YZtoU(vertex.GetY(), vertex.GetZ());
 
+        // Calo hits
+        double xMin{driftMin}, xMax{driftMax}, zMin{wireMin[view]}, zMax{wireMax[view]};
+
+        // Only train on events where the vertex resides within the image - with a small tolerance
+        if (!(xVtx > (xMin - 1.f) && xVtx < (xMax + 1.f) && zVtx > (zMin - 1.f) && zVtx < (zMax + 1.f)))
+            continue;
+
+        LArMvaHelper::MvaFeatureVector featureVector;
+        featureVector.emplace_back(static_cast<double>(nuance));
+        featureVector.emplace_back(static_cast<double>(nVertices));
+        featureVector.emplace_back(xVtx);
+        featureVector.emplace_back(zVtx);
         // Retain the hit region
-        featureVector.emplace_back(driftMin);
-        featureVector.emplace_back(driftMax);
-        featureVector.emplace_back(wireMin[view]);
-        featureVector.emplace_back(wireMax[view]);
+        featureVector.emplace_back(xMin);
+        featureVector.emplace_back(xMax);
+        featureVector.emplace_back(zMin);
+        featureVector.emplace_back(zMax);
 
         for (const CaloHit *pCaloHit : *pCaloHitList)
         {
-            featureVector.emplace_back(static_cast<double>(pCaloHit->GetPositionVector().GetX()));
-            featureVector.emplace_back(static_cast<double>(pCaloHit->GetPositionVector().GetZ()));
-            featureVector.emplace_back(static_cast<double>(pCaloHit->GetMipEquivalentEnergy()));
+            const float x{pCaloHit->GetPositionVector().GetX()}, z{pCaloHit->GetPositionVector().GetZ()}, adc{pCaloHit->GetMipEquivalentEnergy()};
+            // If on a refinement pass, drop hits outside the region of interest
+            if (m_pass > 1 && (x < xMin || x > xMax || z < zMin || z > zMax))
+                continue;
+            featureVector.emplace_back(static_cast<double>(x));
+            featureVector.emplace_back(static_cast<double>(z));
+            featureVector.emplace_back(static_cast<double>(adc));
             ++nHits;
         }
-        featureVector.insert(featureVector.begin() + 2 + 2 * nVertices + 4, static_cast<double>(nHits));
+        featureVector.insert(featureVector.begin() + 8, static_cast<double>(nHits));
         // Only write out the feature vector if there were enough hits in the region of interest
         if (nHits > 10)
             LArMvaHelper::ProduceTrainingExample(trainingFilename, true, featureVector);
@@ -179,7 +169,9 @@ StatusCode DlVertexingAlgorithm::PrepareTrainingSample()
 
 StatusCode DlVertexingAlgorithm::Infer()
 {
-    // Get boundaries for hits and make x dimension common
+    if (m_pass == 1)
+        ++m_event;
+
     std::map<HitType, float> wireMin, wireMax;
     float driftMin{std::numeric_limits<float>::max()}, driftMax{-std::numeric_limits<float>::max()};
     for (const std::string &listname : m_caloHitListNames)
@@ -196,19 +188,17 @@ StatusCode DlVertexingAlgorithm::Infer()
         driftMax = std::max(viewDriftMax, driftMax);
     }
 
-    CanvasViewMap canvases;
-    canvases[TPC_VIEW_U] = nullptr;
-    canvases[TPC_VIEW_V] = nullptr;
-    canvases[TPC_VIEW_W] = nullptr;
     CartesianPointVector vertexCandidatesU, vertexCandidatesV, vertexCandidatesW;
-    for (const std::string &listname : m_caloHitListNames)
+    for (const std::string &listName : m_caloHitListNames)
     {
         const CaloHitList *pCaloHitList{nullptr};
-        PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetList(*this, listname, pCaloHitList));
-        if (pCaloHitList->empty())
-            continue;
+        PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetList(*this, listName, pCaloHitList));
 
         HitType view{pCaloHitList->front()->GetHitType()};
+        const bool isU{view == TPC_VIEW_U}, isV{view == TPC_VIEW_V}, isW{view == TPC_VIEW_W};
+        if (!isU && !isV && !isW)
+            return STATUS_CODE_NOT_ALLOWED;
+
         LArDLHelper::TorchInput input;
         PixelVector pixelVector;
         this->MakeNetworkInputFromHits(*pCaloHitList, view, driftMin, driftMax, wireMin[view], wireMax[view], input, pixelVector);
@@ -217,22 +207,20 @@ StatusCode DlVertexingAlgorithm::Infer()
         LArDLHelper::TorchInputVector inputs;
         inputs.push_back(input);
         LArDLHelper::TorchOutput output;
-        switch (view)
-        {
-            case TPC_VIEW_U:
-                LArDLHelper::Forward(m_modelU, inputs, output);
-                break;
-            case TPC_VIEW_V:
-                LArDLHelper::Forward(m_modelV, inputs, output);
-                break;
-            default:
-                LArDLHelper::Forward(m_modelW, inputs, output);
-                break;
-        }
+        if (isU)
+            LArDLHelper::Forward(m_modelU, inputs, output);
+        else if (isV)
+            LArDLHelper::Forward(m_modelV, inputs, output);
+        else
+            LArDLHelper::Forward(m_modelW, inputs, output);
 
         int colOffset{0}, rowOffset{0}, canvasWidth{m_width}, canvasHeight{m_height};
         this->GetCanvasParameters(output, pixelVector, colOffset, rowOffset, canvasWidth, canvasHeight);
-        canvases[view] = new Canvas(view, canvasWidth, canvasHeight, colOffset, rowOffset, driftMin, driftMax, wireMin[view], wireMax[view]);
+
+        float **canvas{new float *[canvasHeight]};
+        for (int row = 0; row < canvasHeight; ++row)
+            canvas[row] = new float[canvasWidth]{};
+
         // we want the maximum value in the num_classes dimension (1) for every pixel
         auto classes{torch::argmax(output, 1)};
         // the argmax result is a 1 x height x width tensor where each element is a class id
@@ -246,74 +234,120 @@ StatusCode DlVertexingAlgorithm::Infer()
             {
                 const int inner{static_cast<int>(std::round(std::ceil(scaleFactor * m_thresholds[cls - 1])))};
                 const int outer{static_cast<int>(std::round(std::ceil(scaleFactor * m_thresholds[cls])))};
-                this->DrawRing(canvases[view]->m_canvas, row + rowOffset, col + colOffset, inner, outer, 1.f / (outer * outer - inner * inner));
+                this->DrawRing(canvas, row + rowOffset, col + colOffset, inner, outer, 1.f / (outer * outer - inner * inner));
             }
         }
 
-/*        LArMvaHelper::MvaFeatureVector featureVector;
-        featureVector.emplace_back(static_cast<double>(canvases[view]->m_width));
-        featureVector.emplace_back(static_cast<double>(canvases[view]->m_height));
-        for (const Pixel &pixel : pixelVector)
-        {
-            featureVector.emplace_back(static_cast<double>(pixel.first + canvases[view]->m_rowOffset));
-            featureVector.emplace_back(static_cast<double>(pixel.second + canvases[view]->m_colOffset));
-        }
+        CartesianPointVector positionVector;
+        this->MakeWirePlaneCoordinatesFromCanvas(
+            canvas, canvasWidth, canvasHeight, colOffset, rowOffset, view, driftMin, driftMax, wireMin[view], wireMax[view], positionVector);
+        if (isU)
+            vertexCandidatesU.emplace_back(positionVector.front());
+        else if (isV)
+            vertexCandidatesV.emplace_back(positionVector.front());
+        else
+            vertexCandidatesW.emplace_back(positionVector.front());
 
-        LArMvaHelper::ProduceTrainingExample("hits.csv", true, featureVector);*/
+#ifdef MONITORING
+        if (m_visualise)
+        {
+            PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1.f, 1.f, 1.f));
+            try
+            {
+                float x{0.f}, u{0.f}, v{0.f}, w{0.f};
+                this->GetTrueVertexPosition(x, u, v, w);
+                if (isU)
+                {
+                    const CartesianVector trueVertex(x, 0.f, u);
+                    PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &trueVertex, "U(true)", BLUE, 3));
+                }
+                else if (isV)
+                {
+                    const CartesianVector trueVertex(x, 0.f, v);
+                    PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &trueVertex, "V(true)", BLUE, 3));
+                }
+                else if (isW)
+                {
+                    const CartesianVector trueVertex(x, 0.f, w);
+                    PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &trueVertex, "W(true)", BLUE, 3));
+                }
+            }
+            catch (StatusCodeException &e)
+            {
+                std::cerr << "DlVertexingAlgorithm: Warning. Couldn't find true vertex." << std::endl;
+            }
+            for (const auto &pos : positionVector)
+            {
+                std::string label{isU ? "U" : isV ? "V" : "W"};
+                PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &pos, label, RED, 3));
+            }
+            PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
+        }
+#endif
+
+        for (int row = 0; row < canvasHeight; ++row)
+            delete[] canvas[row];
+        delete[] canvas;
     }
 
-    // Ordering to match XML list provision
-/*    for (HitType view : {TPC_VIEW_W, TPC_VIEW_U, TPC_VIEW_V})
+    int nEmptyLists{0};
+    if (vertexCandidatesU.empty())
+        ++nEmptyLists;
+    if (vertexCandidatesV.empty())
+        ++nEmptyLists;
+    if (vertexCandidatesW.empty())
+        ++nEmptyLists;
+    std::vector<VertexTuple> vertexTuples;
+    CartesianPointVector candidates3D;
+    if (nEmptyLists == 0)
     {
-        LArMvaHelper::MvaFeatureVector featureVector;
-        featureVector.emplace_back(static_cast<double>(canvases[view]->m_width));
-        featureVector.emplace_back(static_cast<double>(canvases[view]->m_height));
-        featureVector.emplace_back(static_cast<double>(canvases[view]->m_colOffset));
-        featureVector.emplace_back(static_cast<double>(canvases[view]->m_rowOffset));
-        for (int row = 0; row < canvases[view]->m_height; ++row)
-            for (int col = 0; col < canvases[view]->m_width; ++col)
-                featureVector.emplace_back(static_cast<double>(canvases[view]->m_canvas[row][col]));
-
-        LArMvaHelper::ProduceTrainingExample("canvases.csv", true, featureVector);
-    }*/
-
-    CartesianPointVector vertexVector;
-    this->GetNetworkVertices(canvases, vertexVector);
-
-    if (!vertexVector.empty())
+        vertexTuples.emplace_back(VertexTuple(this->GetPandora(), vertexCandidatesU.front(), vertexCandidatesV.front(), vertexCandidatesW.front()));
+    }
+    else if (nEmptyLists == 1)
     {
-        PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1.f, 1.f, 1.f));
-
-        for (const CartesianVector &vertex : vertexVector)
-        {
-            const CartesianVector vec2d(vertex.GetX(), 0, vertex.GetZ());
-            PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &vec2d, "vec", BLUE, 3));
+        if (vertexCandidatesU.empty())
+        { // V and W available
+            vertexTuples.emplace_back(VertexTuple(this->GetPandora(), vertexCandidatesV.front(), vertexCandidatesW.front(), TPC_VIEW_V, TPC_VIEW_W));
         }
-        PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
-
-        std::cout << "Final: " << vertexVector.front() << std::endl;
-        StatusCode status{this->MakeCandidateVertexList(vertexVector)};
-
-        for (const HitType view : {TPC_VIEW_U, TPC_VIEW_V, TPC_VIEW_W})
-        {
-            if (canvases[view])
-                delete canvases[view];
+        else if (vertexCandidatesV.empty())
+        { // U and W available
+            vertexTuples.emplace_back(VertexTuple(this->GetPandora(), vertexCandidatesU.front(), vertexCandidatesW.front(), TPC_VIEW_U, TPC_VIEW_W));
         }
+        else
+        { // U and V available
+            vertexTuples.emplace_back(VertexTuple(this->GetPandora(), vertexCandidatesU.front(), vertexCandidatesV.front(), TPC_VIEW_U, TPC_VIEW_V));
+        }
+    }
+    else
+    { // Not enough views to reconstruct a 3D vertex
+        std::cout << "Insufficient 2D vertices to reconstruct a 3D vertex" << std::endl;
+        return STATUS_CODE_NOT_FOUND;
+    }
 
-        return status;
+    if (m_visualise)
+    {
+        PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &vertexTuples.front().GetPosition(), "candidate", GREEN, 1));
+    }
+
+    if (!vertexTuples.empty())
+    {
+        const CartesianVector &vertex{vertexTuples.front().GetPosition()};
+        CartesianPointVector vertexCandidates;
+        vertexCandidates.emplace_back(vertex);
+        PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, this->MakeCandidateVertexList(vertexCandidates));
     }
     else
     {
         std::cout << "Insufficient 2D vertices to reconstruct a 3D vertex" << std::endl;
-
-        for (const HitType view : {TPC_VIEW_U, TPC_VIEW_V, TPC_VIEW_W})
-        {
-            if (canvases[view])
-                delete canvases[view];
-        }
-
         return STATUS_CODE_NOT_FOUND;
     }
+
+    if (m_visualise)
+    {
+        PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
+    }
+
+    return STATUS_CODE_SUCCESS;
 }
 
 //-----------------------------------------------------------------------------------------------------------------------------------------
@@ -370,297 +404,36 @@ StatusCode DlVertexingAlgorithm::MakeNetworkInputFromHits(const CaloHitList &cal
 
 //-----------------------------------------------------------------------------------------------------------------------------------------
 
-StatusCode DlVertexingAlgorithm::GetNetworkVertices(const CanvasViewMap &canvases, CartesianPointVector &positionVector) const
-{
-    CartesianPointVector verticesU, verticesV, verticesW;
-    this->GetVerticesFromCanvas(*canvases.at(TPC_VIEW_U), verticesU);
-    this->GetVerticesFromCanvas(*canvases.at(TPC_VIEW_V), verticesV);
-    this->GetVerticesFromCanvas(*canvases.at(TPC_VIEW_W), verticesW);
-
-    std::vector<VertexTuple> vertexTuples;
-    int nEmptyLists{(verticesU.empty() ? 1 : 0) + (verticesV.empty() ? 1 : 0) + (verticesW.empty() ? 1 : 0)};
-    
-    if (nEmptyLists == 0)
-    {
-        for (const CartesianVector &vertexU : verticesU)
-        {
-            for (const CartesianVector &vertexV : verticesV)
-            {
-                for (const CartesianVector &vertexW : verticesW)
-                {
-                    const float xMin{std::min({vertexU.GetX(), vertexV.GetX(), vertexW.GetX()})};
-                    const float xMax{std::max({vertexU.GetX(), vertexV.GetX(), vertexW.GetX()})};
-                    if ((xMax - xMin) < 10.f)
-                    {
-                        const VertexTuple &tuple{VertexTuple(this->GetPandora(), vertexU, vertexV, vertexW)};
-                        if (tuple.GetChi2() < 1)
-                            vertexTuples.emplace_back(tuple);
-                    }
-                }
-            }
-        }
-    }
-    else if (nEmptyLists == 1)
-    {
-        if (verticesU.empty())
-        {
-            for (const CartesianVector &vertexV : verticesV)
-            {
-                for (const CartesianVector &vertexW : verticesW)
-                {
-                    const float xMin{std::min({vertexV.GetX(), vertexW.GetX()})};
-                    const float xMax{std::max({vertexV.GetX(), vertexW.GetX()})};
-                    if ((xMax - xMin) < 10.f)
-                    {
-                        const VertexTuple &tuple{VertexTuple(this->GetPandora(), vertexV, vertexW, TPC_VIEW_V, TPC_VIEW_W)};
-                        if (tuple.GetChi2() < 1)
-                            vertexTuples.emplace_back(tuple);
-                    }
-                }
-            }
-        }
-        else if (verticesV.empty())
-        {
-            for (const CartesianVector &vertexU : verticesU)
-            {
-                for (const CartesianVector &vertexW : verticesW)
-                {
-                    const float xMin{std::min({vertexU.GetX(), vertexW.GetX()})};
-                    const float xMax{std::max({vertexU.GetX(), vertexW.GetX()})};
-                    if ((xMax - xMin) < 10.f)
-                    {
-                        const VertexTuple &tuple{VertexTuple(this->GetPandora(), vertexU, vertexW, TPC_VIEW_U, TPC_VIEW_W)};
-                        if (tuple.GetChi2() < 1)
-                            vertexTuples.emplace_back(tuple);
-                    }
-                }
-            }
-        }
-        else
-        {
-            for (const CartesianVector &vertexU : verticesU)
-            {
-                for (const CartesianVector &vertexV : verticesV)
-                {
-                    const float xMin{std::min({vertexU.GetX(), vertexV.GetX()})};
-                    const float xMax{std::max({vertexU.GetX(), vertexV.GetX()})};
-                    if ((xMax - xMin) < 10.f)
-                    {
-                        const VertexTuple &tuple{VertexTuple(this->GetPandora(), vertexU, vertexV, TPC_VIEW_U, TPC_VIEW_V)};
-                        if (tuple.GetChi2() < 1)
-                            vertexTuples.emplace_back(tuple);
-                    }
-                }
-            }
-        }
-    }
-    else
-    {
-        std::cout << "Insufficient 2D vertices to reconstruct a 3D vertex" << std::endl;
-        return STATUS_CODE_NOT_FOUND;
-    }
-
-    // Sort the vertex tuples here and pick the unique ones that look sound
-    std::sort(vertexTuples.begin(), vertexTuples.end(),
-        [](const VertexTuple &tuple1, const VertexTuple &tuple2)
-        {
-            const CartesianPointVector &components1{tuple1.GetComponents()};
-            const CartesianPointVector &components2{tuple2.GetComponents()};
-            if (components1.size() == components2.size())
-                return tuple1.GetChi2() < tuple2.GetChi2();
-            else
-                return components1.size() > components2.size();
-        });
-
-    CartesianPointVector used;
-    for (const VertexTuple &tuple : vertexTuples)
-    {
-        const CartesianPointVector &components{tuple.GetComponents()};
-        bool isAvailable{true};
-        for (const CartesianVector &component : components)
-        {
-            if (std::find(used.begin(), used.end(), component) != used.end())
-            {
-                isAvailable = false;
-                break;
-            }
-        }
-        if (!isAvailable || (components.size() < 3 && tuple.GetChi2() > 0.1))
-            continue;
-
-        positionVector.emplace_back(tuple.GetPosition());
-        for (const CartesianVector &component : components)
-            used.emplace_back(component);
-    }
-
-    return STATUS_CODE_SUCCESS;
-}
-
-//-----------------------------------------------------------------------------------------------------------------------------------------
-
-StatusCode DlVertexingAlgorithm::GetVerticesFromCanvas(const Canvas &canvas, CartesianPointVector &vertices) const
+StatusCode DlVertexingAlgorithm::MakeWirePlaneCoordinatesFromCanvas(float **canvas, const int canvasWidth, const int canvasHeight,
+    const int columnOffset, const int rowOffset, const HitType view, const float xMin, const float xMax, const float zMin, const float zMax,
+    CartesianPointVector &positionVector) const
 {
     // ATTN If wire w pitches vary between TPCs, exception will be raised in initialisation of lar pseudolayer plugin
     const LArTPC *const pTPC(this->GetPandora().GetGeometry()->GetLArTPCMap().begin()->second);
-
-    HitType view{canvas.m_view};
     const float pitch(view == TPC_VIEW_U ? pTPC->GetWirePitchU() : view == TPC_VIEW_V ? pTPC->GetWirePitchV() : pTPC->GetWirePitchW());
     const float driftStep{0.5f};
 
-    const double dx{((canvas.m_xMax + 0.5f * driftStep) - (canvas.m_xMin - 0.5f * driftStep)) / m_width};
-    const double dz{((canvas.m_zMax + 0.5f * pitch) - (canvas.m_zMin - 0.5f * pitch)) / m_height};
+    const double dx = ((xMax + 0.5f * driftStep) - (xMin - 0.5f * driftStep)) / m_width;
+    const double dz = ((zMax + 0.5f * pitch) - (zMin - 0.5f * pitch)) / m_height;
 
-    float maxIntensity{0.f};
-    for (int xp = 0; xp < m_width; ++xp)
-    {
-        int xpp{xp + canvas.m_colOffset};
-        if (xpp >= canvas.m_width)
-            continue;
-
-        for (int zp = 0; zp < m_height; ++zp)
-        {
-            int zpp{zp + canvas.m_rowOffset};
-            if (zpp >= canvas.m_height)
-                continue;
-
-            const float localIntensity{canvas.m_canvas[zpp][xpp]};
-            if (localIntensity > maxIntensity)
-                maxIntensity = localIntensity;
-        }
-    }
-    const float threshold{maxIntensity * 0.3f};
-
-    std::vector<std::vector<std::pair<int, int>>> peaks;
-    for (int xp = 0; xp < m_width; ++xp)
-    {
-        int xpp{xp + canvas.m_colOffset};
-        if (xpp >= canvas.m_width)
-            continue;
-
-        for (int zp = 0; zp < m_height; ++zp)
-        {
-            int zpp{zp + canvas.m_rowOffset};
-            if (zpp >= canvas.m_height)
-                continue;
-            const float localIntensity{canvas.m_canvas[zpp][xpp]};
-
-            std::vector<std::pair<int, int>> peak;
-            bool hasLowNeighbour{false};
-            for (int dr = -1; dr <= 1; ++dr)
+    float best{-1.f};
+    int rowBest{0}, colBest{0};
+    for (int row = 0; row < canvasHeight; ++row)
+        for (int col = 0; col < canvasWidth; ++col)
+            if (canvas[row][col] > 0 && canvas[row][col] > best)
             {
-                for (int dc = -1; dc <=1; ++dc)
-                {
-                    if (dr == 0 && dc == 0)
-                        continue;
-                    const int r{zpp + dr}, c{xpp + dc};
-                    if (r < 0 || r >= canvas.m_height || c < 0 || c >= canvas.m_width)
-                        continue;
-
-                    const float neighborIntensity{canvas.m_canvas[r][c]};
-                    if (localIntensity > neighborIntensity)
-                    {
-                        hasLowNeighbour = true;
-                    }
-                    else if (localIntensity < neighborIntensity)
-                    {
-                        hasLowNeighbour = false;
-                        break;
-                    }
-                }
+                best = canvas[row][col];
+                rowBest = row;
+                colBest = col;
             }
-            if (hasLowNeighbour && localIntensity > threshold)
-                this->GrowPeak(canvas, xpp, zpp, localIntensity, peak);
-            if (!peak.empty())
-                peaks.emplace_back(peak);
-        }
-    }
 
-    for (const auto &peak : peaks)
-    {
-        float row{0}, col{0};
-        for (const auto &pixel : peak)
-        {
-            row += pixel.second - canvas.m_rowOffset;
-            col += pixel.first - canvas.m_colOffset;
-        }
-        row /= peak.size();
-        col /= peak.size();
+    const float x{static_cast<float>((colBest - columnOffset) * dx + xMin)};
+    const float z{static_cast<float>((rowBest - rowOffset) * dz + zMin)};
 
-        const float x{static_cast<float>(col * dx + canvas.m_xMin)};
-        const float z{static_cast<float>(row * dz + canvas.m_zMin)};
-        CartesianVector pt(x, 0, z);
-        vertices.emplace_back(pt);
-    }
+    CartesianVector pt(x, 0.f, z);
+    positionVector.emplace_back(pt);
 
     return STATUS_CODE_SUCCESS;
-}
-
-//-----------------------------------------------------------------------------------------------------------------------------------------
-
-bool DlVertexingAlgorithm::GrowPeak(const Canvas &canvas, int col, int row, float intensity, std::vector<std::pair<int, int>> &peak) const
-{
-//    if (col >= 0 && col < canvas.m_width && row >= 0 && row < canvas.m_height)
-//    {
-//        std::cout << "Visited: " << canvas.m_visited[row][col] << " " << 
-//    }
-    if (col < 0 || col >= canvas.m_width || row < 0 || row >= canvas.m_height || canvas.m_visited[row][col] || canvas.m_canvas[row][col] < intensity)
-        return false;
-
-    // Check that no adjacent pixel is larger than this one
-    for (int dc = -1; dc <= 1; ++dc)
-    {
-        const int c{col + dc};
-        if (c < 0 || c >= canvas.m_width)
-            continue;
-
-        for (int dr = -1; dr <= 1; ++dr)
-        {
-            const int r{row + dr};
-            if (r < 0 || r >= canvas.m_height)
-                continue;
-
-            if (dr == 0 && dc == 0)
-                continue;
-
-            const float neighborIntensity{canvas.m_canvas[r][c]};
-            if (neighborIntensity > intensity)
-                return false;
-        }
-    }
-
-    // Need to check we aren't growing into a higher peak, if we are restart from the current pixel
-    float localIntensity{canvas.m_canvas[row][col]};
-    if (localIntensity > intensity)
-    {
-        intensity = localIntensity;
-        for (const auto &pixel : peak)
-            canvas.m_visited[pixel.second][pixel.first] = false;
-        peak.clear();
-        //std::cout << ". New size " << peak.size() << " new intensity " << intensity << std::endl;
-        this->GrowPeak(canvas, col, row, intensity, peak);
-        return true;
-    }
-
-    // Add pixel to the peak
-    canvas.m_visited[row][col] = true;
-    peak.emplace_back(std::make_pair(col, row));
-    //std::cout << "   Added" << std::endl;
-
-    for (int dc = -1; dc <= 1; ++dc)
-    {
-        for (int dr = -1; dr <= 1; ++dr)
-        {
-            if (dr == 0 && dc == 0)
-                continue;
-            //std::cout << "   Adjacent (" << (row + i) << "," << (col + j) << ")" << std::endl;
-            bool reset{this->GrowPeak(canvas, col + dc, row + dr, intensity, peak)};
-            // If we started growing a non-peak region, stop looking relative to the previous peak
-            if (reset)
-                return reset;
-        }
-    }
-
-    return false;
 }
 
 //-----------------------------------------------------------------------------------------------------------------------------------------
@@ -845,6 +618,70 @@ void DlVertexingAlgorithm::GetHitRegion(const CaloHitList &caloHitList, float &x
     // ATTN If wire w pitches vary between TPCs, exception will be raised in initialisation of lar pseudolayer plugin
     const LArTPC *const pTPC(this->GetPandora().GetGeometry()->GetLArTPCMap().begin()->second);
     const float pitch(view == TPC_VIEW_U ? pTPC->GetWirePitchU() : view == TPC_VIEW_V ? pTPC->GetWirePitchV() : pTPC->GetWirePitchW());
+
+    if (m_pass > 1)
+    {
+        const VertexList *pVertexList(nullptr);
+        PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetList(*this, m_inputVertexListName, pVertexList));
+        if (pVertexList->empty())
+            throw StatusCodeException(STATUS_CODE_NOT_FOUND);
+        const CartesianVector &vertex{pVertexList->front()->GetPosition()};
+
+        // Get hit distribution left/right asymmetry
+        int nHitsLeft{0}, nHitsRight{0};
+        const double xVtx{vertex.GetX()};
+        for (const std::string &listname : m_caloHitListNames)
+        {
+            const CaloHitList *pCaloHitList(nullptr);
+            PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetList(*this, listname, pCaloHitList));
+            if (pCaloHitList->empty())
+                continue;
+            for (const CaloHit *const pCaloHit : *pCaloHitList)
+            {
+                const CartesianVector &pos{pCaloHit->GetPositionVector()};
+                if (pos.GetX() <= xVtx)
+                    ++nHitsLeft;
+                else
+                    ++nHitsRight;
+            }
+        }
+        const int nHitsTotal{nHitsLeft + nHitsRight};
+        if (nHitsTotal == 0)
+            throw StatusCodeException(STATUS_CODE_NOT_FOUND);
+        const float xAsymmetry{nHitsLeft / static_cast<float>(nHitsTotal)};
+
+        // Vertices
+        const LArTransformationPlugin *transform{this->GetPandora().GetPlugins()->GetLArTransformationPlugin()};
+        double zVtx{0.};
+        if (isW)
+            zVtx += transform->YZtoW(vertex.GetY(), vertex.GetZ());
+        else if (isV)
+            zVtx += transform->YZtoV(vertex.GetY(), vertex.GetZ());
+        else
+            zVtx = transform->YZtoU(vertex.GetY(), vertex.GetZ());
+
+        // Get hit distribution upstream/downstream asymmetry
+        int nHitsUpstream{0}, nHitsDownstream{0};
+        for (const CaloHit *const pCaloHit : caloHitList)
+        {
+            const CartesianVector &pos{pCaloHit->GetPositionVector()};
+            if (pos.GetZ() <= zVtx)
+                ++nHitsUpstream;
+            else
+                ++nHitsDownstream;
+        }
+        const int nHitsViewTotal{nHitsUpstream + nHitsDownstream};
+        if (nHitsViewTotal == 0)
+            throw StatusCodeException(STATUS_CODE_NOT_FOUND);
+        const float zAsymmetry{nHitsUpstream / static_cast<float>(nHitsViewTotal)};
+
+        const float xSpan{m_driftStep * (m_width - 1)};
+        xMin = xVtx - xAsymmetry * xSpan;
+        xMax = xMin + (m_driftStep * (m_width - 1));
+        const float zSpan{pitch * (m_height - 1)};
+        zMin = zVtx - zAsymmetry * zSpan;
+        zMax = zMin + zSpan;
+    }
 
     // Avoid unreasonable rescaling of very small hit regions, pixels are assumed to be 0.5cm in x and wire pitch in z
     // ATTN: Rescaling is to a size 1 pixel smaller than the intended image to ensure all hits fit within an imaged binned
@@ -1051,56 +888,13 @@ StatusCode DlVertexingAlgorithm::ReadSettings(const TiXmlHandle xmlHandle)
 //-----------------------------------------------------------------------------------------------------------------------------------------
 //-----------------------------------------------------------------------------------------------------------------------------------------
 
-DlVertexingAlgorithm::Canvas::Canvas(const HitType view, const int width, const int height, const int colOffset, const int rowOffset,
-    const float xMin, const float xMax, const float zMin, const float zMax) :
-    m_view{view},
-    m_width{width},
-    m_height{height},
-    m_colOffset{colOffset},
-    m_rowOffset{rowOffset},
-    m_xMin{xMin},
-    m_xMax{xMax},
-    m_zMin{zMin},
-    m_zMax{zMax}
-{
-    m_canvas = new float*[m_height];
-    m_visited = new bool*[m_height];
-    for (int r = 0; r < m_height; ++r)
-    {
-        m_canvas[r] = new float[m_width]{};
-        m_visited[r] = new bool[m_width]{false};
-    }
-}
-
-//-----------------------------------------------------------------------------------------------------------------------------------------
-
-DlVertexingAlgorithm::Canvas::~Canvas()
-{
-    for (int r = 0; r < m_height; ++r)
-    {
-        delete[] m_canvas[r];
-        delete[] m_visited[r];
-    }
-    delete[] m_canvas;
-    delete[] m_visited;
-}
-
-//-----------------------------------------------------------------------------------------------------------------------------------------
-//-----------------------------------------------------------------------------------------------------------------------------------------
-
-DlVertexingAlgorithm::VertexTuple::VertexTuple(const Pandora &pandora, const CartesianVector &vertexU, const CartesianVector &vertexV,
-    const CartesianVector &vertexW) :
+DlVertexingAlgorithm::VertexTuple::VertexTuple(
+    const Pandora &pandora, const CartesianVector &vertexU, const CartesianVector &vertexV, const CartesianVector &vertexW) :
     m_pos{0.f, 0.f, 0.f},
     m_chi2{0.f}
 {
     LArGeometryHelper::MergeThreePositions3D(pandora, TPC_VIEW_U, TPC_VIEW_V, TPC_VIEW_W, vertexU, vertexV, vertexW, m_pos, m_chi2);
-    if (m_chi2 <= 1.f)
-    {
-        m_components.emplace_back(vertexU);
-        m_components.emplace_back(vertexV);
-        m_components.emplace_back(vertexW);
-    }
-    else
+    if (m_chi2 > 1.f)
     {
         CartesianVector vertexUV(0.f, 0.f, 0.f);
         float chi2UV{0.f};
@@ -1113,44 +907,36 @@ DlVertexingAlgorithm::VertexTuple::VertexTuple(const Pandora &pandora, const Car
         CartesianVector vertexVW(0.f, 0.f, 0.f);
         float chi2VW{0.f};
         LArGeometryHelper::MergeTwoPositions3D(pandora, TPC_VIEW_V, TPC_VIEW_W, vertexV, vertexW, vertexVW, chi2VW);
-         
+
         if (chi2UV < m_chi2)
         {
             m_pos = vertexUV;
             m_chi2 = chi2UV;
-            m_components.emplace_back(vertexU);
-            m_components.emplace_back(vertexV);
         }
         if (chi2UW < m_chi2)
         {
             m_pos = vertexUW;
             m_chi2 = chi2UW;
-            m_components.clear();
-            m_components.emplace_back(vertexU);
-            m_components.emplace_back(vertexW);
         }
         if (chi2VW < m_chi2)
         {
             m_pos = vertexVW;
             m_chi2 = chi2VW;
-            m_components.clear();
-            m_components.emplace_back(vertexV);
-            m_components.emplace_back(vertexW);
         }
     }
+    //    std::cout << "Merging 3, position (" << m_pos.GetX() << ", " << m_pos.GetY() << ", " << m_pos.GetZ() << ") with chi2 " << m_chi2 <<
+    //        std::endl;
 }
 
 //-----------------------------------------------------------------------------------------------------------------------------------------
 
-DlVertexingAlgorithm::VertexTuple::VertexTuple(const Pandora &pandora, const CartesianVector &vertex1, const CartesianVector &vertex2,
-    const HitType view1, const HitType view2) :
+DlVertexingAlgorithm::VertexTuple::VertexTuple(
+    const Pandora &pandora, const CartesianVector &vertex1, const CartesianVector &vertex2, const HitType view1, const HitType view2) :
     m_pos{0.f, 0.f, 0.f},
     m_chi2{0.f}
 {
-    m_components.emplace_back(vertex1);
-    m_components.emplace_back(vertex2);
-
     LArGeometryHelper::MergeTwoPositions3D(pandora, view1, view2, vertex1, vertex2, m_pos, m_chi2);
+    std::cout << "Merging 2, position (" << m_pos.GetX() << ", " << m_pos.GetY() << ", " << m_pos.GetZ() << ") with chi2 " << m_chi2 << std::endl;
 }
 
 //-----------------------------------------------------------------------------------------------------------------------------------------
@@ -1158,13 +944,6 @@ DlVertexingAlgorithm::VertexTuple::VertexTuple(const Pandora &pandora, const Car
 const CartesianVector &DlVertexingAlgorithm::VertexTuple::GetPosition() const
 {
     return m_pos;
-}
-
-//-----------------------------------------------------------------------------------------------------------------------------------------
-
-const CartesianPointVector &DlVertexingAlgorithm::VertexTuple::GetComponents() const
-{
-    return m_components;
 }
 
 //-----------------------------------------------------------------------------------------------------------------------------------------
