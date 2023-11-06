@@ -39,6 +39,8 @@ StatusCode DlClusterAlgorithm::Run()
         subsetList.emplace_back(*iter);
         std::advance(iter, 10);
         subsetList.emplace_back(*iter);
+        std::advance(iter, 20);
+        subsetList.emplace_back(*iter);
 
         LArDelaunayTriangulationHelper::VertexVector vertices;
         for (const CaloHit *pCaloHit : subsetList)//*pCaloHitList)

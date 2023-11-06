@@ -11,7 +11,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <iterator>
 #include <limits>
+#include <random>
 
 using namespace pandora;
 
@@ -20,26 +22,87 @@ namespace lar_content
 
 LArDelaunayTriangulationHelper::Triangle *LArDelaunayTriangulationHelper::MakeInitialBoundingTriangle(const VertexVector &vertices)
 {
-    float xMin{std::numeric_limits<float>::max()}, xMax{-std::numeric_limits<float>::max()}, zMin{std::numeric_limits<float>::max()},
-        zMax{-std::numeric_limits<float>::max()};
-
-    for (const Vertex *const pVertex : vertices)
-    {
-        xMin = std::min(xMin, pVertex->m_x);
-        xMax = std::max(xMax, pVertex->m_x);
-        zMin = std::min(zMin, pVertex->m_z);
-        zMax = std::max(zMax, pVertex->m_z);
-    }
-    xMin -= 1;
-    xMax += 1;
-    zMin -= 1;
-    zMax += 1;
-    const float dx{xMax - xMin}, dz{zMax - zMin};
-    const Vertex *const v0{new Vertex(0.5f * (xMin + xMax), zMin - dz)};
-    const Vertex *const v1{new Vertex(v0->m_x - 1.5f * dx, v0->m_z + 3.f * dz)};
-    const Vertex *const v2{new Vertex(v0->m_x + 1.5f * dx, v0->m_z + 3.f * dz)};
+    const Circle enclosing{LArDelaunayTriangulationHelper::Welzl(vertices)};
+    std::cout << "Enclosing: (" << enclosing.m_x << "," << enclosing.m_z << "," << enclosing.m_r << ")" << std::endl;
+    const float alpha{0};
+    const float beta{2 * M_PI / 3};
+    const float gamma{4 * M_PI / 3};
+    const Vertex *const v0{new Vertex(enclosing.m_x + 2 * enclosing.m_r * std::cos(alpha), enclosing.m_z + 2 * enclosing.m_r * std::sin(alpha))};
+    const Vertex *const v1{new Vertex(enclosing.m_x + 2 * enclosing.m_r * std::cos(beta), enclosing.m_z + 2 * enclosing.m_r * std::sin(beta))};
+    const Vertex *const v2{new Vertex(enclosing.m_x + 2 * enclosing.m_r * std::cos(gamma), enclosing.m_z + 2 * enclosing.m_r * std::sin(gamma))};
 
     return new Triangle(v0, v1, v2);
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+LArDelaunayTriangulationHelper::Circle LArDelaunayTriangulationHelper::Welzl(const VertexVector &vertices)
+{
+    VertexVector verticesCopy(vertices);
+    std::random_device dev;
+    std::mt19937 rng(dev());
+    std::shuffle(verticesCopy.begin(), verticesCopy.end(), rng);
+    VertexVector boundary;
+    return LArDelaunayTriangulationHelper::WelzlRecursive(verticesCopy, verticesCopy.size(), boundary);
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+LArDelaunayTriangulationHelper::Circle LArDelaunayTriangulationHelper::WelzlRecursive(VertexVector &vertices, const int n, VertexVector boundary)
+{
+    if (n == 0 || boundary.size() == 3)
+        return LArDelaunayTriangulationHelper::MakeCircle(boundary);
+
+    const int idx{rand() % n};
+    const Vertex *const p{vertices[idx]};
+    std::swap(vertices[idx], vertices[n - 1]);
+
+    Circle circle(LArDelaunayTriangulationHelper::WelzlRecursive(vertices, n - 1, boundary));
+    if (circle.Contains(*p))
+        return circle;
+
+    boundary.push_back(p);
+    return LArDelaunayTriangulationHelper::WelzlRecursive(vertices, n - 1, boundary);
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+LArDelaunayTriangulationHelper::Circle LArDelaunayTriangulationHelper::MakeCircle(const VertexVector &boundary)
+{
+    const size_t n{boundary.size()};
+    if (n == 0)
+    {
+        return Circle(0, 0, 0);
+    }
+    else if (n == 1)
+    {
+        const Vertex &v0{*boundary[0]};
+        return Circle(v0.m_x, v0.m_z, 0);
+    }
+    else if (n == 2)
+    {
+        const Vertex &v0{*boundary[0]};
+        const Vertex &v1{*boundary[1]};
+
+        const float x{0.5f * (v0.m_x + v1.m_x)};
+        const float z{0.5f * (v0.m_z + v1.m_z)};
+        const float dx{x - v0.m_x};
+        const float dz{z - v0.m_z};
+        const float r{std::sqrt(dx * dx + dz * dz)};
+
+        return Circle(x, z, r);
+    }
+    else
+    {
+        const Vertex &v0{*boundary[0]};
+        const Vertex &v1{*boundary[1]};
+        const Vertex &v2{*boundary[2]};
+        std::cout << "It: " << v0.m_x << " " << v0.m_z << std::endl;
+        std::cout << "It: " << v1.m_x << " " << v1.m_z << std::endl;
+        std::cout << "It: " << v2.m_x << " " << v2.m_z << std::endl;
+
+        return LArDelaunayTriangulationHelper::CalculateCircumcircle(v0, v1, v2);
+    }
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
@@ -51,7 +114,7 @@ void LArDelaunayTriangulationHelper::AddVertex(const Vertex *const pVertex, Tria
     for (auto iter = triangles.begin(); iter != triangles.end(); )
     {
         const Triangle *const triangle{*iter};
-        if (triangle->IsInCircumCircle(pVertex))
+        if (triangle->IsInCircumcircle(*pVertex))
         {
             triangle->GetUniqueEdges(edges);
             iter = triangles.erase(iter);
@@ -132,6 +195,27 @@ LArDelaunayTriangulationHelper::Vertex::Vertex(const float x, const float z) :
 //------------------------------------------------------------------------------------------------------------------------------------------
 //------------------------------------------------------------------------------------------------------------------------------------------
 
+LArDelaunayTriangulationHelper::Circle::Circle(const float x, const float z, const float r) :
+    m_x{x},
+    m_z{z},
+    m_r{r},
+    m_r2{r * r}
+{
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+bool LArDelaunayTriangulationHelper::Circle::Contains(const Vertex &vertex) const
+{
+    const float dx{vertex.m_x - this->m_x};
+    const float dz{vertex.m_z - this->m_z};
+
+    return (dx * dx + dz * dz) <= this->m_r2;
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+//------------------------------------------------------------------------------------------------------------------------------------------
+
 LArDelaunayTriangulationHelper::Edge::Edge(const Vertex *const pVertex0, const Vertex *const pVertex1) :
     m_v0{pVertex0},
     m_v1{pVertex1}
@@ -148,59 +232,40 @@ LArDelaunayTriangulationHelper::Triangle::Triangle(const Vertex *const pVertex0,
     m_e01{new Edge(this->m_v0, this->m_v1)},
     m_e12{new Edge(this->m_v1, this->m_v2)},
     m_e20{new Edge(this->m_v2, this->m_v0)},
-    m_ccx{0.f},
-    m_ccz{0.f},
-    m_ccr2{0.f}
+    m_circle{LArDelaunayTriangulationHelper::CalculateCircumcircle(*this->m_v0, *this->m_v1, *this->m_v2)}
 {
-    this->CalculateCircumCircle();
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-bool LArDelaunayTriangulationHelper::Triangle::IsInCircumCircle(const Vertex *const pVertex) const
+bool LArDelaunayTriangulationHelper::Triangle::IsInCircumcircle(const Vertex &vertex) const
 {
-    const float dx{pVertex->m_x - this->m_ccx};
-    const float dz{pVertex->m_z - this->m_ccz};
-
-    return (dx * dx + dz * dz) <= this->m_ccr2;
+    return this->m_circle.Contains(vertex);
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-void LArDelaunayTriangulationHelper::Triangle::CalculateCircumCircle()
+LArDelaunayTriangulationHelper::Circle LArDelaunayTriangulationHelper::CalculateCircumcircle(const Vertex &v0, const Vertex &v1, const Vertex &v2)
 {
-    const float minx{std::min({this->m_v0->m_x, this->m_v1->m_x, this->m_v2->m_x})};
-    const float minz{std::min({this->m_v0->m_z, this->m_v1->m_z, this->m_v2->m_z})};
-    const float maxx{std::max({this->m_v0->m_x, this->m_v1->m_x, this->m_v2->m_x})};
-    const float maxz{std::max({this->m_v0->m_z, this->m_v1->m_z, this->m_v2->m_z})};
-    const float ox{0.5f * (minx + maxx)};
-    const float oz{0.5f * (minz + maxz)};
+    const LArDelaunayTriangulationHelper::Vertex &temp{LArDelaunayTriangulationHelper::GetCircumcircleCentre(v1.m_x - v0.m_x, v1.m_z - v0.m_z,
+        v2.m_x - v0.m_x, v2.m_z - v0.m_z)};
+    const LArDelaunayTriangulationHelper::Vertex centre(temp.m_x + v0.m_x, temp.m_z + v0.m_z);
+    const float dx{centre.m_x - v0.m_x};
+    const float dz{centre.m_z - v0.m_z};
+    
+    return LArDelaunayTriangulationHelper::Circle(centre.m_x, centre.m_z, std::sqrt(dx * dx + dz * dz));
+}
 
-    const float dx0{this->m_v0->m_x - ox};
-    const float dz0{this->m_v0->m_z - oz};
-    const float dx1{this->m_v1->m_x - ox};
-    const float dz1{this->m_v1->m_z - oz};
-    const float dx2{this->m_v2->m_x - ox};
-    const float dz2{this->m_v2->m_z - oz};
-    const float scale{2 * (dx0 * (dz1 - dz2) + dx1 * (dz2 - dz0) + dx2 * (dz0 - dz1))};
+//------------------------------------------------------------------------------------------------------------------------------------------
 
-    // If points are colinear, get the extrema and use the midpoint as the centre
-    if (std::round(std::abs(scale)) == 0.f)
-    {
-        m_ccx = 0.5f * (minx + maxx);
-        m_ccz = 0.5f * (minz + maxz);
-        const float dx{m_ccx - minx};
-        const float dz{m_ccz - minz};
-        m_ccr2 = dx * dx + dz * dz;
-    }
-    else
-    {
-        m_ccx = ox + ((dx0 * dx0 + dz0 * dz0) * (dz1 - dz2) + (dx1 * dx1 + dz1 * dz1) * (dz2 - dz0) + (dx2 * dx2 + dz2 * dz2) * (dz0 - dz1)) / scale;
-        m_ccz = oz + ((dx0 * dx0 + dz0 * dz0) * (dx2 - dx1) + (dx1 * dx1 + dz1 * dz1) * (dx0 - dx2) + (dx2 * dx2 + dz2 * dz2) * (dx1 - dx0)) / scale;
-        const float dx{m_ccx - this->m_v0->m_x};
-        const float dz{m_ccz - this->m_v0->m_z};
-        m_ccr2 = dx * dx + dz * dz;
-    }
+LArDelaunayTriangulationHelper::Vertex LArDelaunayTriangulationHelper::GetCircumcircleCentre(const float dx0, const float dz0, const float dx1,
+    const float dz1)
+{
+    const float d0{dx0 * dx0 + dz0 * dz0};
+    const float d1{dx1 * dx1 + dz1 * dz1};
+    const float d2{dx0 * dz1 - dz0 * dx1};
+
+    return LArDelaunayTriangulationHelper::Vertex((dz1 * d0 - dz0 * d1) / (2 * d2), (dx0 * d1 - dx1 * d0) / (2 * d2));
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------

@@ -45,6 +45,32 @@ public:
     };
     typedef std::vector<const Vertex *> VertexVector;
 
+    class Circle
+    {
+    public:
+        /**
+         *  @brief Constructor
+         *
+         *  @param  vertex0 An endpoint of the edge
+         *  @param  vertex1 An endpoint of the edge
+         **/
+        Circle(const float x, const float z, const float r);
+
+        /**
+         *  @brief Checks if a vertex is contained within this circle
+         *
+         *  @param  vertex The vertex whose containment should be checked
+         *
+         *  @return true if the vertex is contained within the circle, false otherwise
+         */
+        bool Contains(const Vertex &vertex) const;
+
+        const float m_x; ///< x coordinate of the circle
+        const float m_z; ///< z coordinate of the circle
+        const float m_r; ///< radius of the circle
+        const float m_r2; ///< square of the radius of the circle
+    };
+
     class Edge
     {
     public:
@@ -77,13 +103,13 @@ public:
         Triangle(const Vertex *const pVertex0, const Vertex *const pVertex1, const Vertex *const pVertex2);
 
         /**
-         *  @brief Checks if a vertex is contained within this triangle's circumcircle
+         *  @brief Checks if a vertex is within this triangle's circumcircle
          *
-         *  @param  vertex The vertex whose containment should be checked
+         *  @param  vertex The vertex to be checked for containment
          *
-         *  @return true if the vertex is contained within the triangle's circumcircle, false otherwise
+         *  @return Whether or not the vertex is contained within the circumcircle of this triangle
          */
-        bool IsInCircumCircle(const Vertex *const vertex) const;
+        bool IsInCircumcircle(const Vertex &vertex) const;
 
         /**
          *  @brief Retrieves the edges in this triangle
@@ -116,13 +142,32 @@ public:
         const Edge *const m_e20; ///< The edge between vertex 2 and vertex 0 of the triangle
 
     private:
-        void CalculateCircumCircle();
-
-        float m_ccx;    ///< x coordinate of the circumcircle
-        float m_ccz;    ///< z coordinate of the circumcircle
-        float m_ccr2;   ///< square of the radius of the circumcircle
+        const Circle m_circle;    ///< The circumcircle associated with this triangle
     };
     typedef std::vector<const Triangle *> TriangleVector;
+
+    /**
+     *  @brief  Construct a circumcircle from a set of vertices
+     *
+     *  @param  v0 a vertex of the triangle from which the circle should be constructed
+     *  @param  v1 a vertex of the triangle from which the circle should be constructed
+     *  @param  v2 a vertex of the triangle from which the circle should be constructed
+     *
+     *  @return the circumcircle through the vertices
+     */
+    static Circle CalculateCircumcircle(const Vertex &v0, const Vertex &v1, const Vertex &v2);
+
+    /**
+     *  @brief  Determine the centre of a circumcircle
+     *
+     *  @param  dx0 the x distance between vertex 0 and vertex 1
+     *  @param  dz0 the z distance between vertex 0 and vertex 1
+     *  @param  dx1 the x distance between vertex 0 and vertex 2
+     *  @param  dz1 the z distance between vertex 0 and vertex 2
+     *
+     *  @return the centre of the circumcircle
+     */
+    static Vertex GetCircumcircleCentre(const float dx0, const float dz0, const float dx1, const float dz1);
 
     /**
      *  @brief  Construct the bounding triangle for a set of vertices
@@ -148,6 +193,27 @@ public:
      *  @param  triangles the vector of triangles to be modified
      */
     static void ShrinkWrap(const Triangle &bounds, TriangleVector &triangles);
+
+private:
+    /**
+     *  @brief  Construct the minimum bounding circle for a set of vertices using Welzl's algorithm
+     *
+     *  @param  vertices the vertices to be bound
+     *
+     *  @return the circle bounding all vertices
+     */
+    static Circle Welzl(const VertexVector &vertices);
+
+    static Circle WelzlRecursive(VertexVector &vertices, const int i, VertexVector boundary);
+
+    /**
+     *  @brief  Construct a circle from a set of boundary points
+     *
+     *  @param  boundary the points on the boundary of the circle to construct
+     *
+     *  @return the circle lying on the vertices
+     */
+    static Circle MakeCircle(const VertexVector &boundary);
 };
 
 } // namespace lar_content
