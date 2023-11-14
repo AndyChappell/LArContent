@@ -23,7 +23,6 @@ namespace lar_content
 LArDelaunayTriangulationHelper::Triangle *LArDelaunayTriangulationHelper::MakeInitialBoundingTriangle(const VertexVector &vertices)
 {
     const Circle enclosing{LArDelaunayTriangulationHelper::Welzl(vertices)};
-    std::cout << "Enclosing: (" << enclosing.m_x << "," << enclosing.m_z << "," << enclosing.m_r << ")" << std::endl;
     const float alpha{0};
     const float beta{2 * M_PI / 3};
     const float gamma{4 * M_PI / 3};
@@ -97,9 +96,6 @@ LArDelaunayTriangulationHelper::Circle LArDelaunayTriangulationHelper::MakeCircl
         const Vertex &v0{*boundary[0]};
         const Vertex &v1{*boundary[1]};
         const Vertex &v2{*boundary[2]};
-        std::cout << "It: " << v0.m_x << " " << v0.m_z << std::endl;
-        std::cout << "It: " << v1.m_x << " " << v1.m_z << std::endl;
-        std::cout << "It: " << v2.m_x << " " << v2.m_z << std::endl;
 
         return LArDelaunayTriangulationHelper::CalculateCircumcircle(v0, v1, v2);
     }
@@ -118,35 +114,18 @@ void LArDelaunayTriangulationHelper::AddVertex(const Vertex *const pVertex, Tria
         {
             triangle->GetUniqueEdges(edges);
             iter = triangles.erase(iter);
-            std::cout << "Delete triangle: ";
-            std::cout << "(" << triangle->m_v0->m_x << " " << triangle->m_v0->m_z << ") " <<
-                "(" << triangle->m_v1->m_x << " " << triangle->m_v1->m_z << ") " <<
-                "(" << triangle->m_v2->m_x << " " << triangle->m_v2->m_z << ") " << std::endl;
             delete triangle;
         }
         else
         {
             ++iter;
-            std::cout << "Keep triangle: ";
-            std::cout << "(" << triangle->m_v0->m_x << " " << triangle->m_v0->m_z << ") " <<
-                "(" << triangle->m_v1->m_x << " " << triangle->m_v1->m_z << ") " <<
-                "(" << triangle->m_v2->m_x << " " << triangle->m_v2->m_z << ") " << std::endl;
         }
-    }
-
-    for (const Edge *const pEdge : edges)
-    {
-        std::cout << "Edge: (" << pEdge->m_v0->m_x << " " << pEdge->m_v0->m_z << ") (" << pEdge->m_v1->m_x << " " << pEdge->m_v1->m_z << ")" << std::endl;
     }
 
     // Construct new triangles from the vertex and the unique edges
     for (const Edge *const pEdge : edges)
     {
         const Triangle *const triangle{new Triangle(pEdge->m_v0, pEdge->m_v1, pVertex)};
-        std::cout << "New triangle: ";
-        std::cout << "(" << triangle->m_v0->m_x << " " << triangle->m_v0->m_z << ") " <<
-            "(" << triangle->m_v1->m_x << " " << triangle->m_v1->m_z << ") " <<
-            "(" << triangle->m_v2->m_x << " " << triangle->m_v2->m_z << ") " << std::endl;
 
         triangles.emplace_back(triangle);
     }

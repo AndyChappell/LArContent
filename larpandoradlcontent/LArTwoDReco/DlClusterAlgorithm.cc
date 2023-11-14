@@ -32,7 +32,7 @@ StatusCode DlClusterAlgorithm::Run()
         if (pCaloHitList->empty())
             continue;
         std::cout << "Num hits: " << pCaloHitList->size() << std::endl;
-        CaloHitList subsetList;
+/*        CaloHitList subsetList;
         auto iter{pCaloHitList->begin()};
         subsetList.emplace_back(*iter);
         std::advance(iter, 2);
@@ -40,54 +40,21 @@ StatusCode DlClusterAlgorithm::Run()
         std::advance(iter, 10);
         subsetList.emplace_back(*iter);
         std::advance(iter, 20);
-        subsetList.emplace_back(*iter);
+        subsetList.emplace_back(*iter);*/
 
         LArDelaunayTriangulationHelper::VertexVector vertices;
-        for (const CaloHit *pCaloHit : subsetList)//*pCaloHitList)
+        for (const CaloHit *pCaloHit : *pCaloHitList)
         {
             vertices.emplace_back(new LArDelaunayTriangulationHelper::Vertex(pCaloHit));
-            std::cout << pCaloHit->GetPositionVector() << std::endl;
         }
 
         LArDelaunayTriangulationHelper::TriangleVector triangles;
         const LArDelaunayTriangulationHelper::Triangle *bounds{LArDelaunayTriangulationHelper::MakeInitialBoundingTriangle(vertices)};
         triangles.emplace_back(bounds);
-        std::cout << "\nInit" << std::endl;
-        for (const LArDelaunayTriangulationHelper::Triangle *const pTriangle : triangles)
-        {
-            std::cout << "   (" << pTriangle->m_v0->m_x << " " << pTriangle->m_v0->m_z << ") " <<
-                "(" << pTriangle->m_v1->m_x << " " << pTriangle->m_v1->m_z << ") " <<
-                "(" << pTriangle->m_v2->m_x << " " << pTriangle->m_v2->m_z << ") " << std::endl;
-        }
         for (const LArDelaunayTriangulationHelper::Vertex *const pVertex : vertices)
         {
-            std::cout << "\nAdding (" << pVertex->m_x << " " << pVertex->m_z << ")" << std::endl;
             LArDelaunayTriangulationHelper::AddVertex(pVertex, triangles);
-            for (const LArDelaunayTriangulationHelper::Triangle *const pTriangle : triangles)
-            {
-                std::cout << "   (" << pTriangle->m_v0->m_x << " " << pTriangle->m_v0->m_z << ") " <<
-                    "(" << pTriangle->m_v1->m_x << " " << pTriangle->m_v1->m_z << ") " <<
-                    "(" << pTriangle->m_v2->m_x << " " << pTriangle->m_v2->m_z << ") " << std::endl;
-            }
         }
-/*        std::cout << "Here 4\n";
-        LArDelaunayTriangulationHelper::ShrinkWrap(*bounds, triangles);
-        std::cout << "Here 5\n";
-
-        const HitType view{pCaloHitList->front()->GetHitType()};
-        std::string suffix{view == TPC_VIEW_U ? "_U.csv" : view == TPC_VIEW_V ? "_V.csv" : "_W.csv"};
-        for (const LArDelaunayTriangulationHelper::Triangle *const pTriangle : triangles)
-        {
-            LArMvaHelper::MvaFeatureVector featureVector;
-            featureVector.emplace_back(pTriangle->m_v0->m_x);
-            featureVector.emplace_back(pTriangle->m_v0->m_z);
-            featureVector.emplace_back(pTriangle->m_v1->m_x);
-            featureVector.emplace_back(pTriangle->m_v1->m_z);
-            featureVector.emplace_back(pTriangle->m_v2->m_x);
-            featureVector.emplace_back(pTriangle->m_v2->m_z);
-            LArMvaHelper::ProduceTrainingExample("Delaunay" + suffix, true, featureVector);
-        }
-        std::cout << "Here 6\n";*/
     }
 
     return STATUS_CODE_SUCCESS;
