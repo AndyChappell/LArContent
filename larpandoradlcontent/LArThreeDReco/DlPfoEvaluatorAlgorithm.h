@@ -37,6 +37,7 @@ private:
     pandora::StatusCode PrepareTrainingSample();
     pandora::StatusCode Infer();
     float GetPurity(const pandora::ParticleFlowObject *const pPfo, const pandora::HitType view);
+    void StripDownstreamHits(const pandora::MCParticle *const pMainMC, pandora::CaloHitList &pfoHitList);
     float GetCompleteness(const pandora::ParticleFlowObject *const pPfo, const pandora::HitType view, const MapOfMCHitMaps &mcToAllHitsMap);
     float GetFactor(const pandora::CaloHitList &caloHitList);
     void CreateTrainingExample(const pandora::ParticleFlowObject *const pPfo, const pandora::HitType view, const float metric, const float threshold);

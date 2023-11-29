@@ -66,6 +66,7 @@ StatusCode DlPfoEvaluatorAlgorithm::Run()
 
 StatusCode DlPfoEvaluatorAlgorithm::PrepareTrainingSample()
 {
+    PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1.f, 1.f, 1.f))
     MapOfMCHitMaps mcToAllHitsMap;
     const bool usePurity{m_purityThreshold > 0.f};
     const float threshold{std::max(m_purityThreshold, m_completenessThreshold)};
@@ -76,15 +77,34 @@ StatusCode DlPfoEvaluatorAlgorithm::PrepareTrainingSample()
         this->GetMCHitsMap(*pCaloHitList, mcToAllHitsMap);
     }
 
+    ClusterList goodClusterListU, goodClusterListV, goodClusterListW, badClusterListU, badClusterListV, badClusterListW;
     for (const std::string &listname : m_pfoListNames)
     {
         const PfoList *pPfoList{nullptr};
-        PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetList(*this, listname, pPfoList));
+        const StatusCode status{PandoraContentApi::GetList(*this, listname, pPfoList)};
+        if (status != STATUS_CODE_SUCCESS)
+            continue;
 
         for (const ParticleFlowObject *const pPfo : *pPfoList)
         {
             if (usePurity)
             {
+                const float purityU{this->GetPurity(pPfo, TPC_VIEW_U)};
+                const float purityV{this->GetPurity(pPfo, TPC_VIEW_V)};
+                const float purityW{this->GetPurity(pPfo, TPC_VIEW_W)};
+                if (purityU >= threshold)
+                    LArPfoHelper::GetClusters(pPfo, TPC_VIEW_U, goodClusterListU);
+                else if (purityU >= 0.f)
+                    LArPfoHelper::GetClusters(pPfo, TPC_VIEW_U, badClusterListU);
+                if (purityV >= threshold)
+                    LArPfoHelper::GetClusters(pPfo, TPC_VIEW_V, goodClusterListV);
+                else if (purityV >= 0.f)
+                    LArPfoHelper::GetClusters(pPfo, TPC_VIEW_V, badClusterListV);
+                if (purityW >= threshold)
+                    LArPfoHelper::GetClusters(pPfo, TPC_VIEW_W, goodClusterListW);
+                else if (purityW >= 0.f)
+                    LArPfoHelper::GetClusters(pPfo, TPC_VIEW_W, badClusterListW);
+
                 this->CreateTrainingExample(pPfo, TPC_VIEW_U, this->GetPurity(pPfo, TPC_VIEW_U), threshold);
                 this->CreateTrainingExample(pPfo, TPC_VIEW_V, this->GetPurity(pPfo, TPC_VIEW_V), threshold);
                 this->CreateTrainingExample(pPfo, TPC_VIEW_W, this->GetPurity(pPfo, TPC_VIEW_W), threshold);
@@ -97,6 +117,13 @@ StatusCode DlPfoEvaluatorAlgorithm::PrepareTrainingSample()
             }
         }
     }
+    PANDORA_MONITORING_API(VisualizeClusters(this->GetPandora(), &goodClusterListU, "good_u", BLUE, false));
+    PANDORA_MONITORING_API(VisualizeClusters(this->GetPandora(), &badClusterListU, "bad_u", RED, false));
+    PANDORA_MONITORING_API(VisualizeClusters(this->GetPandora(), &goodClusterListV, "good_v", BLUE, false));
+    PANDORA_MONITORING_API(VisualizeClusters(this->GetPandora(), &badClusterListV, "bad_v", RED, false));
+    PANDORA_MONITORING_API(VisualizeClusters(this->GetPandora(), &goodClusterListW, "good_w", BLUE, false));
+    PANDORA_MONITORING_API(VisualizeClusters(this->GetPandora(), &badClusterListW, "bad_w", RED, false));
+    PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
 
     return STATUS_CODE_SUCCESS;
 }
@@ -116,11 +143,40 @@ float DlPfoEvaluatorAlgorithm::GetPurity(const ParticleFlowObject *const pPfo, c
     LArPfoHelper::GetCaloHits(pPfo, view, pfoHitList);
     float weight{0.f};
     const MCParticle *const pMainMC{this->GetMainMCParticle(pfoHitList, weight)};
+    if (!pfoHitList.empty())
+        this->StripDownstreamHits(pMainMC, pfoHitList);
 
     if (pMainMC && weight > 0.f)
         return weight * this->GetFactor(pfoHitList);
     else
         return -1.f;
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+void DlPfoEvaluatorAlgorithm::StripDownstreamHits(const MCParticle *const pMainMC, CaloHitList &pfoHitList)
+{
+    MCParticleList mcDesendentsList;
+    LArMCParticleHelper::GetAllDescendentMCParticles(pMainMC, mcDesendentsList);
+    std::map<const MCParticle *, bool> mcDescendentsMap;
+    for (const MCParticle *const pChildMC : mcDesendentsList)
+        mcDescendentsMap[pChildMC] = true;
+    for (auto iter = pfoHitList.begin(); iter != pfoHitList.end(); )
+    {
+        const CaloHit *const pCaloHit{*iter};
+        try
+        {
+            const MCParticle *pMC{MCParticleHelper::GetMainMCParticle(pCaloHit)};
+            if ((pMC == pMainMC) || (mcDescendentsMap.find(pMC) == mcDescendentsMap.end()))
+                ++iter;
+            else
+                iter = pfoHitList.erase(iter);
+        }
+        catch (StatusCodeException &)
+        {
+            ++iter;
+        }
+    }
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
@@ -183,7 +239,15 @@ void DlPfoEvaluatorAlgorithm::CreateTrainingExample(const ParticleFlowObject *co
     CaloHitVector caloHitVector;
     for (const CaloHit *const pCaloHit : caloHitList)
         caloHitVector.emplace_back(pCaloHit);
-    const Vertex *const pVertex{LArPfoHelper::GetVertex(pPfo)};
+    const Vertex *pVertex{nullptr};
+    try
+    {
+        pVertex = LArPfoHelper::GetVertex(pPfo);
+    }
+    catch (StatusCodeException &)
+    {
+    }
+
     if (!pVertex)
         return;
     const CartesianVector &vertex3D{pVertex->GetPosition()};
@@ -205,11 +269,12 @@ void DlPfoEvaluatorAlgorithm::CreateTrainingExample(const ParticleFlowObject *co
         q.emplace_back(pCaloHit->GetMipEquivalentEnergy());
     }
 
+    const int isGood{metric >= threshold ? 1 : 0};
     const std::string treeName{m_rootTreePrefix + (view == TPC_VIEW_U ? "_u" : view == TPC_VIEW_V ? "_v" : "_w")};
-    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), treeName, "x", x));
-    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), treeName, "z", z));
-    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), treeName, "q", q));
-    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), treeName, "is_good", metric >= threshold));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), treeName, "x", &x));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), treeName, "z", &z));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), treeName, "q", &q));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), treeName, "is_good", isGood));
     PANDORA_MONITORING_API(FillTree(this->GetPandora(), treeName));
 }
  
