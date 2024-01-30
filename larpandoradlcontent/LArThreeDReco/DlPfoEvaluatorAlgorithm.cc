@@ -66,7 +66,7 @@ StatusCode DlPfoEvaluatorAlgorithm::Run()
 
 StatusCode DlPfoEvaluatorAlgorithm::PrepareTrainingSample()
 {
-    PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1.f, 1.f, 1.f))
+//    PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1.f, 1.f, 1.f))
     MapOfMCHitMaps mcToAllHitsMap;
     const bool usePurity{m_purityThreshold > 0.f};
     const float threshold{std::max(m_purityThreshold, m_completenessThreshold)};
@@ -89,7 +89,7 @@ StatusCode DlPfoEvaluatorAlgorithm::PrepareTrainingSample()
         {
             if (usePurity)
             {
-                const float purityU{this->GetPurity(pPfo, TPC_VIEW_U)};
+/*                const float purityU{this->GetPurity(pPfo, TPC_VIEW_U)};
                 const float purityV{this->GetPurity(pPfo, TPC_VIEW_V)};
                 const float purityW{this->GetPurity(pPfo, TPC_VIEW_W)};
                 if (purityU >= threshold)
@@ -103,7 +103,7 @@ StatusCode DlPfoEvaluatorAlgorithm::PrepareTrainingSample()
                 if (purityW >= threshold)
                     LArPfoHelper::GetClusters(pPfo, TPC_VIEW_W, goodClusterListW);
                 else if (purityW >= 0.f)
-                    LArPfoHelper::GetClusters(pPfo, TPC_VIEW_W, badClusterListW);
+                    LArPfoHelper::GetClusters(pPfo, TPC_VIEW_W, badClusterListW);*/
 
                 this->CreateTrainingExample(pPfo, TPC_VIEW_U, this->GetPurity(pPfo, TPC_VIEW_U), threshold);
                 this->CreateTrainingExample(pPfo, TPC_VIEW_V, this->GetPurity(pPfo, TPC_VIEW_V), threshold);
@@ -117,13 +117,13 @@ StatusCode DlPfoEvaluatorAlgorithm::PrepareTrainingSample()
             }
         }
     }
-    PANDORA_MONITORING_API(VisualizeClusters(this->GetPandora(), &goodClusterListU, "good_u", BLUE, false));
+/*    PANDORA_MONITORING_API(VisualizeClusters(this->GetPandora(), &goodClusterListU, "good_u", BLUE, false));
     PANDORA_MONITORING_API(VisualizeClusters(this->GetPandora(), &badClusterListU, "bad_u", RED, false));
     PANDORA_MONITORING_API(VisualizeClusters(this->GetPandora(), &goodClusterListV, "good_v", BLUE, false));
     PANDORA_MONITORING_API(VisualizeClusters(this->GetPandora(), &badClusterListV, "bad_v", RED, false));
     PANDORA_MONITORING_API(VisualizeClusters(this->GetPandora(), &goodClusterListW, "good_w", BLUE, false));
     PANDORA_MONITORING_API(VisualizeClusters(this->GetPandora(), &badClusterListW, "bad_w", RED, false));
-    PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
+    PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));*/
 
     return STATUS_CODE_SUCCESS;
 }
@@ -143,7 +143,7 @@ float DlPfoEvaluatorAlgorithm::GetPurity(const ParticleFlowObject *const pPfo, c
     LArPfoHelper::GetCaloHits(pPfo, view, pfoHitList);
     float weight{0.f};
     const MCParticle *const pMainMC{this->GetMainMCParticle(pfoHitList, weight)};
-    if (!pfoHitList.empty())
+    if (pMainMC && !pfoHitList.empty())
         this->StripDownstreamHits(pMainMC, pfoHitList);
 
     if (pMainMC && weight > 0.f)
@@ -239,19 +239,16 @@ void DlPfoEvaluatorAlgorithm::CreateTrainingExample(const ParticleFlowObject *co
     CaloHitVector caloHitVector;
     for (const CaloHit *const pCaloHit : caloHitList)
         caloHitVector.emplace_back(pCaloHit);
-    const Vertex *pVertex{nullptr};
-    try
-    {
-        pVertex = LArPfoHelper::GetVertex(pPfo);
-    }
-    catch (StatusCodeException &)
-    {
-    }
-
-    if (!pVertex)
+    ClusterList clusterList;
+    LArPfoHelper::GetClusters(pPfo, view, clusterList);
+    if (clusterList.empty())
         return;
-    const CartesianVector &vertex3D{pVertex->GetPosition()};
-    const CartesianVector &vertex2D{LArGeometryHelper::ProjectPosition(this->GetPandora(), vertex3D, view)};
+    const Cluster *pCluster{clusterList.front()};
+    CaloHitList clusterHitList;
+    pCluster->GetOrderedCaloHitList().FillCaloHitList(clusterHitList);
+    if (clusterHitList.empty())
+        return;
+    const CartesianVector &vertex2D{clusterHitList.front()->GetPositionVector()};
 
     auto sortByDistance = [&](const CaloHit *const pCaloHit1, const CaloHit *const pCaloHit2)
     {
