@@ -11,6 +11,8 @@
 
 #include "Pandora/Algorithm.h"
 
+#include "larpandoradlcontent/LArHelpers/LArDLHelper.h"
+
 #include <map>
 
 namespace lar_dl_content
@@ -41,6 +43,8 @@ private:
     float GetCompleteness(const pandora::ParticleFlowObject *const pPfo, const pandora::HitType view, const MapOfMCHitMaps &mcToAllHitsMap);
     float GetFactor(const pandora::CaloHitList &caloHitList);
     void CreateTrainingExample(const pandora::ParticleFlowObject *const pPfo, const pandora::HitType view, const float metric, const float threshold);
+    void CreateSequence(const pandora::ParticleFlowObject *const pPfo, const pandora::HitType view, pandora::FloatVector &x, pandora::FloatVector &z,
+        pandora::FloatVector &q);
     void GetMCHitsMap(const pandora::CaloHitList caloHitList, MCHitMap &mcHitsMap);
     void GetMCHitsMap(const pandora::CaloHitList caloHitList, MapOfMCHitMaps &mcAllHitsMap);
     const pandora::MCParticle *GetMainMCParticle(const pandora::CaloHitList &pfoHitList, float &weight);
@@ -50,6 +54,9 @@ private:
     std::string m_caloHitListName;  ///< The name of the CaloHitList containing all 2D hits
     std::string m_rootFileName; ///< The output ROOT filename
     std::string m_rootTreePrefix; ///< The prefix for the ROOT tree name
+    LArDLHelper::TorchModel m_modelU; ///< The model for the U view
+    LArDLHelper::TorchModel m_modelV; ///< The model for the V view
+    LArDLHelper::TorchModel m_modelW; ///< The model for the W view
     float m_purityThreshold;    ///< The threshold above which a PFO is considered well-reconstructed based on purity
     float m_completenessThreshold;    ///< The threshold above which a PFO is considered well-reconstructed based on completeness
     bool m_useAdcWeighting; ///< Whether or not hit contributions should be weighted by ADC
