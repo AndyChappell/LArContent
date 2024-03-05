@@ -34,8 +34,11 @@ private:
 
     bool m_visualise;               // Whether to produce visual monitoring output
     bool m_writeFile;               // Whether to produce ROOT output file
+    bool m_fromList;                // Use the vertex list instead of the root pfo
     std::string m_filename;         // The filename of the ROOT output file
     std::string m_treename;         // The name of the ROOT tree
+    std::string m_caloHitListName;  // The list name for the full colleciton of calo hits
+    std::string m_vertexListName;   // The vertex list name if reading from list
     float m_transparencyThresholdE; ///< Cell energy for which transparency is saturated (0%, fully opaque)
     float m_energyScaleThresholdE;  ///< Cell energy for which color is at top end of continous color palette
     float m_scalingFactor;          ///< TEve works with [cm], Pandora usually works with [mm] (but LArContent went with cm too)
