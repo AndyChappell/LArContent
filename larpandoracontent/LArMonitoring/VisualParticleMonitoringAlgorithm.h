@@ -104,6 +104,7 @@ private:
     bool m_visualizeMC;             ///< Whether or not to visualize MC particles
     bool m_visualizePfo;            ///< Whether or not to visualize PFOs
     bool m_visualizeSlice;          ///< Whether or not to visualize reconstructed slices
+    bool m_visualizeEnergy;         ///< Whether or not to visualize hit energy 
     bool m_groupMCByPdg;            ///< Whether or not to group MC particles by particle id
     bool m_showPfoByPid;            ///< Whether or not to colour PFOs by particle id
     bool m_showPfoMatchedMC;        ///< Whether or not to display the best matched MC particle for a PFO

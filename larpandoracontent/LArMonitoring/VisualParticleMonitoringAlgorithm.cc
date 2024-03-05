@@ -23,6 +23,7 @@ VisualParticleMonitoringAlgorithm::VisualParticleMonitoringAlgorithm() :
     m_visualizeMC(false),
     m_visualizePfo(false),
     m_visualizeSlice(false),
+    m_visualizeEnergy{false},
     m_groupMCByPdg(false),
     m_showPfoByPid(false),
     m_showPfoMatchedMC(false),
@@ -110,16 +111,14 @@ void VisualParticleMonitoringAlgorithm::VisualizeIndependentMC(const LArMCPartic
         const auto iter{mcMap.find(pMC)};
         if (iter == mcMap.end())
             continue;
-        std::string key("other");
+        std::string key("unknown");
         try
         {
             const int pdg{std::abs(pMC->GetParticleId())};
-            if (keys.find(pdg) != keys.end())
-                key = keys.at(pdg);
+            key = std::to_string(pdg);
         }
         catch (const StatusCodeException &)
         {
-            key = "unknown";
         }
 
         CaloHitList uHits, vHits, wHits;
@@ -133,13 +132,13 @@ void VisualParticleMonitoringAlgorithm::VisualizeIndependentMC(const LArMCPartic
             else
                 wHits.emplace_back(pCaloHit);
         }
-        std::string suffix{std::to_string(mcIdx) + "_" + key};
+        std::string suffix{std::to_string(mcIdx) + " PDG: " + key};
         if (!uHits.empty())
-            PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &uHits, "u_" + suffix, colors.at(colorIdx)));
+            PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &uHits, "u_" + suffix, m_visualizeEnergy ? AUTOENERGY : colors.at(colorIdx)));
         if (!vHits.empty())
-            PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &vHits, "v_" + suffix, colors.at(colorIdx)));
+            PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &vHits, "v_" + suffix, m_visualizeEnergy ? AUTOENERGY : colors.at(colorIdx)));
         if (!wHits.empty())
-            PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &wHits, "w_" + suffix, colors.at(colorIdx)));
+            PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &wHits, "w_" + suffix, m_visualizeEnergy ? AUTOENERGY : colors.at(colorIdx)));
         colorIdx = (colorIdx + 1) >= colors.size() ? 0 : colorIdx + 1;
         ++mcIdx;
     }
@@ -446,25 +445,18 @@ void VisualParticleMonitoringAlgorithm::VisualizePfoByParticleId(const PfoList &
 //------------------------------------------------------------------------------------------------------------------------------------------
 
 void VisualParticleMonitoringAlgorithm::MakeSelection(
-    const MCParticleList *pMCList, const CaloHitList *pCaloHitList, LArMCParticleHelper::MCContributionMap &mcMap) const
+    const MCParticleList *, const CaloHitList *pCaloHitList, LArMCParticleHelper::MCContributionMap &mcMap) const
 {
-    // Default reconstructability criteria are very liberal to allow for unfolded hierarchy
-    LArMCParticleHelper::PrimaryParameters parameters;
-    parameters.m_minPrimaryGoodHits = 2;
-    parameters.m_minHitsForGoodView = 1;
-    parameters.m_maxPhotonPropagation = std::numeric_limits<float>::max();
-    parameters.m_minHitSharingFraction = 0;
-    parameters.m_foldBackHierarchy = false;
-
-    if (!m_isTestBeam)
+    for (const CaloHit *pCaloHit : *pCaloHitList)
     {
-        LArMCParticleHelper::SelectReconstructableMCParticles(pMCList, pCaloHitList, parameters, LArMCParticleHelper::IsBeamNeutrinoFinalState, mcMap);
-        LArMCParticleHelper::SelectReconstructableMCParticles(pMCList, pCaloHitList, parameters, LArMCParticleHelper::IsCosmicRay, mcMap);
-    }
-    else
-    {
-        LArMCParticleHelper::SelectReconstructableMCParticles(pMCList, pCaloHitList, parameters, LArMCParticleHelper::IsBeamParticle, mcMap);
-        LArMCParticleHelper::SelectReconstructableMCParticles(pMCList, pCaloHitList, parameters, LArMCParticleHelper::IsCosmicRay, mcMap);
+        try
+        {
+            const MCParticle *pMCParticle{MCParticleHelper::GetMainMCParticle(pCaloHit)};
+            mcMap[pMCParticle].emplace_back(pCaloHit);
+        }
+        catch (const StatusCodeException &)
+        {
+        }
     }
 }
 #endif // MONITORING
@@ -482,6 +474,7 @@ StatusCode VisualParticleMonitoringAlgorithm::ReadSettings(const TiXmlHandle xml
     PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "VisualizeMC", m_visualizeMC));
     PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "VisualizePFO", m_visualizePfo));
     PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "VisualizeSlice", m_visualizeSlice));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "VisualizeEnergy", m_visualizeEnergy));
     PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "GroupMCByPDG", m_groupMCByPdg));
     PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "ShowPFOByPID", m_showPfoByPid));
     PANDORA_RETURN_RESULT_IF_AND_IF(
