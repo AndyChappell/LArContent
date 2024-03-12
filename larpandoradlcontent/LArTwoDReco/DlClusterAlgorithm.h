@@ -39,6 +39,9 @@ private:
 
     pandora::StringVector m_caloHitListNames;  ///< The names of the calo hit lists
     std::string m_outputFilePrefix;            ///< The prefix to use for output CSV filenames
+    float m_maxEdgeLengthSquared;              ///< The maximum length of an edge
+    float m_maxEdgeRatioSquared;               ///< The maximum ratio of the longest to shortest edge of a triangle
+    bool m_prune;                              ///< Whether or not to prune the graph
 };
 
 } // namespace lar_dl_content

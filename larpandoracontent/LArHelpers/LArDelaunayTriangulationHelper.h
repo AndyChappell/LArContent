@@ -37,6 +37,11 @@ public:
          **/
         Vertex(const float x, const float z);
 
+        inline float DistanceSquared(const Vertex &other) const
+        {
+            return (this->m_x - other.m_x)*(this->m_x - other.m_x) + (this->m_z - other.m_z)*(this->m_z - other.m_z);
+        };
+
         inline bool operator==(const Vertex &other) const { return this->m_x == other.m_x && this->m_z == other.m_z; };
 
         const float m_x;    ///< The x coordinate of the vertex
@@ -81,6 +86,13 @@ public:
          *  @param  vertex1 An endpoint of the edge
          **/
         Edge(const Vertex *const pVertex0, const Vertex *const pVertex1);
+
+        inline float LengthSquared() const
+        {
+            return (this->m_v0->m_x - this->m_v1->m_x)*(this->m_v0->m_x - this->m_v1->m_x) +
+                (this->m_v0->m_z - this->m_v1->m_z)*(this->m_v0->m_z - this->m_v1->m_z);
+        };
+
 
         inline bool operator==(const Edge &other) const { return (*(this->m_v0) == *(other.m_v0) && *(this->m_v1) == *(other.m_v1)) ||
             (*(this->m_v0) == *(other.m_v1) && *(this->m_v1) == *(other.m_v0)); };
@@ -193,6 +205,16 @@ public:
      *  @param  triangles the vector of triangles to be modified
      */
     static void ShrinkWrap(const Triangle &bounds, TriangleVector &triangles);
+
+    /**
+     *  @brief  Construct a Delaunay triangulation from a list of calo hits. Note the caller takes ownership of the vertices and triangles
+     *          and is responsible for deleting them subsequently.
+     *
+     *  @param  caloHitList the calo hit list containing the hits to triangulate
+     *  @param  vertices the vector of vertices to populate
+     *  @param  triangles the vector of triangles to populate
+     */
+    static void Triangulate(const pandora::CaloHitList &caloHitList, VertexVector &vertices, TriangleVector &triangles);
 
 private:
     /**

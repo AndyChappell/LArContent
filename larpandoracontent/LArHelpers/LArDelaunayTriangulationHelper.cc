@@ -153,6 +153,25 @@ void LArDelaunayTriangulationHelper::ShrinkWrap(const Triangle &bounds, Triangle
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
+
+void LArDelaunayTriangulationHelper::Triangulate(const CaloHitList &caloHitList, VertexVector &vertices, TriangleVector &triangles)
+{
+    for (const CaloHit *pCaloHit : caloHitList)
+    {
+        vertices.emplace_back(new Vertex(pCaloHit));
+    }
+
+    const Triangle *bounds{MakeInitialBoundingTriangle(vertices)};
+    triangles.emplace_back(bounds);
+    for (const Vertex *const pVertex : vertices)
+    {
+        AddVertex(pVertex, triangles);
+    }
+
+    ShrinkWrap(*bounds, triangles);
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
 //------------------------------------------------------------------------------------------------------------------------------------------
 
 LArDelaunayTriangulationHelper::Vertex::Vertex(const CaloHit *const pCaloHit) :

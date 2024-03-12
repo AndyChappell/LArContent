@@ -17,6 +17,8 @@
 #include "larpandoracontent/LArObjects/LArCaloHit.h"
 #include "larpandoracontent/LArUtility/KDTreeLinkerAlgoT.h"
 
+#include <random>
+
 using namespace pandora;
 using namespace lar_content;
 
@@ -25,6 +27,7 @@ namespace lar_dl_content
 
 StatusCode DlClusterAlgorithm::Run()
 {
+    PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1.f, 1.f, 1.f));
     for (const std::string &listName : m_caloHitListNames)
     {
         const CaloHitList *pCaloHitList{nullptr};
@@ -43,18 +46,117 @@ StatusCode DlClusterAlgorithm::Run()
         subsetList.emplace_back(*iter);*/
 
         LArDelaunayTriangulationHelper::VertexVector vertices;
-        for (const CaloHit *pCaloHit : *pCaloHitList)
-        {
-            vertices.emplace_back(new LArDelaunayTriangulationHelper::Vertex(pCaloHit));
-        }
-
         LArDelaunayTriangulationHelper::TriangleVector triangles;
-        const LArDelaunayTriangulationHelper::Triangle *bounds{LArDelaunayTriangulationHelper::MakeInitialBoundingTriangle(vertices)};
-        triangles.emplace_back(bounds);
-        for (const LArDelaunayTriangulationHelper::Vertex *const pVertex : vertices)
+        LArDelaunayTriangulationHelper::Triangulate(*pCaloHitList, vertices, triangles);
+        std::map<const LArDelaunayTriangulationHelper::Vertex*, LArDelaunayTriangulationHelper::EdgeVector> vertexEdgeMap;
+
+        LArDelaunayTriangulationHelper::EdgeVector edges;
+        std::random_device device;
+        std::mt19937 generator(device());
+        std::bernoulli_distribution coinFlip(1);
+        for (const LArDelaunayTriangulationHelper::Triangle *pTriangle : triangles)
         {
-            LArDelaunayTriangulationHelper::AddVertex(pVertex, triangles);
+            if (coinFlip(generator))
+            {
+                LArDelaunayTriangulationHelper::EdgeVector triEdges;
+                pTriangle->GetEdges(triEdges);
+                const float len0Square{triEdges.at(0)->m_v0->DistanceSquared(*triEdges.at(0)->m_v1)};
+                const float len1Square{triEdges.at(1)->m_v0->DistanceSquared(*triEdges.at(1)->m_v1)};
+                const float len2Square{triEdges.at(2)->m_v0->DistanceSquared(*triEdges.at(2)->m_v1)};
+                const float minLen{std::min({len0Square, len1Square, len2Square})};
+                const float maxLen{std::max({len0Square, len1Square, len2Square})};
+                if ((m_maxEdgeRatioSquared * minLen) < maxLen)
+                {
+                    // Only base of triangle is a reasonable link - delete the other edges
+                    if (len2Square > minLen || len2Square > m_maxEdgeLengthSquared)
+                        triEdges.erase(triEdges.begin() + 2);
+                    if (len1Square > minLen || len1Square > m_maxEdgeLengthSquared)
+                        triEdges.erase(triEdges.begin() + 1);
+                    if (len0Square > minLen || len0Square > m_maxEdgeLengthSquared)
+                        triEdges.erase(triEdges.begin() + 0);
+                }
+                else
+                {
+                    // Remove excessively long edges
+                    if (len2Square > m_maxEdgeLengthSquared)
+                        triEdges.erase(triEdges.begin() + 2);
+                    if (len1Square > m_maxEdgeLengthSquared)
+                        triEdges.erase(triEdges.begin() + 1);
+                    if (len0Square > m_maxEdgeLengthSquared)
+                        triEdges.erase(triEdges.begin() + 0);
+                }
+                for (const LArDelaunayTriangulationHelper::Edge *pEdge : triEdges)
+                {
+                    if (std::find_if(edges.begin(), edges.end(),
+                        [pEdge](const LArDelaunayTriangulationHelper::Edge *const &edge) { return *edge == *pEdge; }) == edges.end())
+                    {
+                        edges.emplace_back(pEdge);
+                    }
+                }
+            }
         }
+        if (m_prune)
+        {
+            LArDelaunayTriangulationHelper::EdgeVector prunedEdges;
+            for (const LArDelaunayTriangulationHelper::Edge *pEdge : edges)
+            {
+                vertexEdgeMap[pEdge->m_v0].emplace_back(pEdge);
+                vertexEdgeMap[pEdge->m_v1].emplace_back(pEdge);
+            }
+            for (const LArDelaunayTriangulationHelper::Edge *pEdge1 : edges)
+            {
+                const float thisLength{pEdge1->LengthSquared()};
+                bool shortest{true};
+                for (const LArDelaunayTriangulationHelper::Edge *pEdge2 : vertexEdgeMap[pEdge1->m_v0])
+                {
+                    if (pEdge1 == pEdge2)
+                        continue;
+                    const float compareLength{pEdge2->LengthSquared()};
+                    if (compareLength < thisLength)
+                    {
+                        shortest = false;
+                        break;
+                    }
+                }
+                if (!shortest)
+                {
+                    shortest = true;
+                    for (const LArDelaunayTriangulationHelper::Edge *pEdge2 : vertexEdgeMap[pEdge1->m_v1])
+                    {
+                        if (pEdge1 == pEdge2)
+                            continue;
+                        const float compareLength{pEdge2->LengthSquared()};
+                        if (compareLength < thisLength)
+                        {
+                            shortest = false;
+                            break;
+                        }
+                    }
+                }
+                if (shortest)
+                    prunedEdges.emplace_back(pEdge1);
+            }
+            edges = prunedEdges;
+        }
+        for (const LArDelaunayTriangulationHelper::Edge *pEdge : edges)
+        {
+            CartesianVector start(pEdge->m_v0->m_x, 0, pEdge->m_v0->m_z);
+            CartesianVector end(pEdge->m_v1->m_x, 0, pEdge->m_v1->m_z);
+            if (pEdge->m_v0->m_pCaloHit && pEdge->m_v1->m_pCaloHit)
+            {
+                PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &start, &end, "e", BLUE, 1, 1));
+            }
+        }
+        PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
+
+        // Visualise the triangulation
+        // COnvert to graph
+        // Visualise the graph
+
+        for (const LArDelaunayTriangulationHelper::Vertex *pVertex : vertices)
+            delete pVertex;
+        for (const LArDelaunayTriangulationHelper::Triangle *pTriangle : triangles)
+            delete pTriangle;
     }
 
     return STATUS_CODE_SUCCESS;
@@ -116,6 +218,11 @@ StatusCode DlClusterAlgorithm::ReadSettings(const TiXmlHandle xmlHandle)
 {
     PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadVectorOfValues(xmlHandle, "CaloHitListNames", m_caloHitListNames));
     PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadValue(xmlHandle, "OutputFilePrefix", m_outputFilePrefix));
+    PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadValue(xmlHandle, "MaxEdgeLength", m_maxEdgeLengthSquared));
+    m_maxEdgeLengthSquared *= m_maxEdgeLengthSquared;
+    PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadValue(xmlHandle, "MaxEdgeRatio", m_maxEdgeRatioSquared));
+    m_maxEdgeRatioSquared *= m_maxEdgeRatioSquared;
+    PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadValue(xmlHandle, "Prune", m_prune));
 
     return STATUS_CODE_SUCCESS;
 }
