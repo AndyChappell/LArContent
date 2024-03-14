@@ -48,6 +48,11 @@ StatusCode DlClusterAlgorithm::Run()
         }
         PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
 
+        for (const LArGraphHelper::Edge *const edge : edges)
+        {
+            delete edge;
+        }
+
         // If distance from this to idx2 is larger than idx1 to idx2, don't add it
 
         // We'll still have disconnected graphs. In this case, construct these matrices using the subset of hits in each
