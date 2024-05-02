@@ -192,7 +192,6 @@ StatusCode VertexHitAssociationAlgorithm::Run()
                     goodStart = true;
                 else if (dlVector[i] > 0.f && dtVector[i] < 0.7f)
                     goodStart = true;
-                std::cout << dlVector[i] << " " << dtVector[i] << std::endl;
                 if (goodStart)
                 {
                     const CaloHit *const pThisCaloHit{hitVector[i]};
