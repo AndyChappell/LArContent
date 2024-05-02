@@ -59,7 +59,7 @@ void VertexAssociatedHitAlgorithm::IdentifyAssociatedHits(const CaloHitList &cal
     const LArTransformationPlugin *transform{this->GetPandora().GetPlugins()->GetLArTransformationPlugin()};
 
     // Gather the hits within a given radii of the vertices
-    CaloHitList vetoedHits;
+    std::set<const CaloHit *> vetoedHitSet;
     for (const Vertex *const pVertex : vertexList)
     {
         const CartesianVector &pos3D{pVertex->GetPosition()};
@@ -87,14 +87,20 @@ void VertexAssociatedHitAlgorithm::IdentifyAssociatedHits(const CaloHitList &cal
             const CartesianVector &hitPos{pCaloHit->GetPositionVector()};
             const float distanceSquared{hitPos.GetDistanceSquared(pos)};
             if (distanceSquared <= 25.f)
-                vetoedHits.emplace_back(pCaloHit);
+                vetoedHitSet.insert(pCaloHit);
         }
+    }
+
+    CaloHitList vetoedHits;
+    for (const CaloHit *const pCaloHit :vetoedHitSet)
+    {
+        vetoedHits.emplace_back(pCaloHit);
     }
 
     CaloHitList retainedHits;
     for (const CaloHit *const pCaloHit : caloHitList)
     {
-        if (std::find(vetoedHits.begin(), vetoedHits.end(), pCaloHit) == vetoedHits.end())
+        if (vetoedHitSet.find(pCaloHit) == vetoedHitSet.end())
         {
             retainedHits.emplace_back(pCaloHit);
         }
