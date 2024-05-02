@@ -14,6 +14,8 @@
 
 #include "larpandoracontent/LArTwoDReco/LArClusterAssociation/VertexHitAssociationAlgorithm.h"
 
+#include <numeric>
+
 using namespace pandora;
 
 namespace lar_content
@@ -56,30 +58,18 @@ StatusCode VertexHitAssociationAlgorithm::Run()
 
     PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1, 1, 1));
 
-    std::vector<LArPointingCluster> pointingClusterVector;
-    std::map<const Cluster *, CaloHitList> innerClusterToCandidateMap, outerClusterToCandidateMap;
-    std::map<const Cluster *, int> clusterToIndexMap;
-    std::map<const CaloHit *, int> hitAssocMap;
+    typedef std::tuple<const Cluster *, CaloHitVector, CaloHitVector, FloatVector, FloatVector> ClusterAssociation;
+    std::vector<ClusterAssociation> clusterAssociations;
     for (const Cluster *const pCluster : selectedClusters)
     {
+        CaloHitVector candidateInnerHits, candidateOuterHits;
+        FloatVector dlInner, dtInner, dlOuter, dtOuter;
         HitType view{LArClusterHelper::GetClusterHitType(pCluster)};
         ClusterList clusterList;
         clusterList.emplace_back(pCluster);
-        PANDORA_MONITORING_API(VisualizeClusters(this->GetPandora(), &clusterList, "cluster", BLACK, false));
         const LArPointingCluster pointingCluster(pCluster, 10, LArGeometryHelper::GetWirePitch(this->GetPandora(), view));
-        const CartesianVector &a{pointingCluster.GetInnerVertex().GetPosition()};
-        const CartesianVector &b{a - pointingCluster.GetInnerVertex().GetDirection() * 10};
-        const CartesianVector &c{pointingCluster.GetOuterVertex().GetPosition()};
-        const CartesianVector &d{c - pointingCluster.GetOuterVertex().GetDirection() * 10};
         const CartesianVector &innerDir{pointingCluster.GetInnerVertex().GetDirection() * -1.f};
         const CartesianVector &outerDir{pointingCluster.GetOuterVertex().GetDirection() * -1.f};
-        pointingClusterVector.emplace_back(pointingCluster);
-        clusterToIndexMap[pCluster] = pointingClusterVector.size() - 1;
-
-        PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &a, &b, "ab", BLUE, 1, 1));
-        PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &c, &d, "cd", RED, 1, 1));
-        PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
-
         for (const CaloHit *pCaloHit : *pCaloHitList)
         {
             const CartesianVector &pos{pCaloHit->GetPositionVector()};
@@ -92,15 +82,11 @@ StatusCode VertexHitAssociationAlgorithm::Run()
                     const float innerCross{innerDir.GetCrossProduct(vecInner).GetMagnitude()};
                     if (innerCross < 1.f)
                     {
-                        innerClusterToCandidateMap[pCluster].emplace_back(pCaloHit);
-                        if (hitAssocMap.find(pCaloHit) == hitAssocMap.end())
-                            hitAssocMap[pCaloHit] = 1;
-                        else
-                            ++hitAssocMap[pCaloHit];
+                        candidateInnerHits.emplace_back(pCaloHit);
+                        dlInner.emplace_back(innerDot);
+                        dtInner.emplace_back(innerCross);
                     }
                 }
-                //PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &pCaloHit->GetPositionVector(), "hit", BLACK, 1));
-                //PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
             }
 
             const CartesianVector &vecOuter{pos - pointingCluster.GetOuterVertex().GetPosition()};
@@ -112,37 +98,137 @@ StatusCode VertexHitAssociationAlgorithm::Run()
                     const float outerCross{outerDir.GetCrossProduct(vecOuter).GetMagnitude()};
                     if (outerCross < 1.f)
                     {
-                        outerClusterToCandidateMap[pCluster].emplace_back(pCaloHit);
-                        if (hitAssocMap.find(pCaloHit) == hitAssocMap.end())
-                            hitAssocMap[pCaloHit] = 1;
-                        else
-                            ++hitAssocMap[pCaloHit];
+                        candidateOuterHits.emplace_back(pCaloHit);
+                        dlOuter.emplace_back(outerDot);
+                        dtOuter.emplace_back(outerCross);
                     }
                 }
-                //PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &pCaloHit->GetPositionVector(), "hit", BLACK, 1));
-                //PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
             }
         }
 
-        CaloHitList &innerHits{innerClusterToCandidateMap[pCluster]};
-        PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &innerHits, "inner", ORANGE));
-        CaloHitList &outerHits{outerClusterToCandidateMap[pCluster]};
-        PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &outerHits, "outer", GREEN));
+        // sort the cluster hits along the respective inner and outer pointing cluster directions
+        CaloHitList tempHitList;
+        pCluster->GetOrderedCaloHitList().FillCaloHitList(tempHitList);
+        CaloHitVector clusterHitsInner(tempHitList.begin(), tempHitList.end());
+        FloatVector clusterDots;
+        for (const CaloHit *pCaloHit : clusterHitsInner)
+        {
+            const CartesianVector &pos{pCaloHit->GetPositionVector()};
+            const CartesianVector &vec{pos - pointingCluster.GetInnerVertex().GetPosition()};
+            clusterDots.emplace_back(innerDir.GetDotProduct(vec));
+        }
+        std::vector<size_t> sortIdx(clusterDots.size());
+        std::iota(sortIdx.begin(), sortIdx.end(), 0);
+        std::stable_sort(sortIdx.begin(), sortIdx.end(), [&clusterDots](size_t i, size_t j) { return clusterDots[i] < clusterDots[j]; });
+        this->SortByIndex<const CaloHit*>(sortIdx, clusterHitsInner);
+
+        std::vector<size_t> sortIdx1(dlInner.size());
+        std::iota(sortIdx1.begin(), sortIdx1.end(), 0);
+        std::stable_sort(sortIdx1.begin(), sortIdx1.end(), [&dlInner, &dtInner](size_t i, size_t j)
+            {
+                if (dlInner[i] != dlInner[j])
+                    return dlInner[i] < dlInner[j];
+                else
+                    return dtInner[i] < dtInner[j];
+            });
+        this->SortByIndex<const CaloHit*>(sortIdx1, candidateInnerHits);
+        this->SortByIndex<float>(sortIdx1, dlInner);
+        this->SortByIndex<float>(sortIdx1, dtInner);
+
+        std::vector<size_t> sortIdx2(dlOuter.size());
+        std::iota(sortIdx2.begin(), sortIdx2.end(), 0);
+        std::stable_sort(sortIdx2.begin(), sortIdx2.end(), [&dlOuter, &dtOuter](size_t i, size_t j)
+            {
+                if (dlOuter[i] != dlOuter[j])
+                    return dlOuter[i] < dlOuter[j];
+                else
+                    return dtOuter[i] < dtOuter[j];
+            });
+
+        this->SortByIndex<const CaloHit*>(sortIdx2, candidateOuterHits);
+        this->SortByIndex<float>(sortIdx2, dlOuter);
+        this->SortByIndex<float>(sortIdx2, dtOuter);
+
+        CaloHitVector clusterHitsOuter(clusterHitsInner.rbegin(), clusterHitsInner.rend());
+
+        if (!candidateInnerHits.empty())
+        {
+            clusterAssociations.emplace_back(std::make_tuple(pCluster, clusterHitsInner, candidateInnerHits, dlInner, dtInner));
+        }
+        if (!candidateOuterHits.empty())
+        {
+            clusterAssociations.emplace_back(std::make_tuple(pCluster, clusterHitsOuter, candidateOuterHits, dlOuter, dtOuter));
+        }
+    }
+
+    for (const ClusterAssociation &assoc : clusterAssociations)
+    {
+        const CaloHitVector &hitVector{std::get<2>(assoc)};
+        const FloatVector &dlVector{std::get<3>(assoc)};
+        const FloatVector &dtVector{std::get<4>(assoc)};
+        CaloHitList candidateCluster;
+        int ip{-1};
+        for (size_t i = 0; i < hitVector.size(); ++i)
+        {
+            if (ip > -1)
+            {
+                // Disallow merge parallel hits, avoid jumping too far, and keep tight to the principal axis
+                if (((dlVector[i] - dlVector[ip]) > std::numeric_limits<float>::epsilon()) && ((dlVector[i] - dlVector[ip]) < 2.f) &&
+                    (std::abs(dtVector[i] - dtVector[ip]) < 0.5f))
+                {
+                    const CaloHit *const pPrevCaloHit{hitVector[ip]};
+                    const CaloHit *const pThisCaloHit{hitVector[i]};
+                    if ((pThisCaloHit->GetPositionVector() - pPrevCaloHit->GetPositionVector()).GetMagnitude() <= 2.f)
+                    {
+                        candidateCluster.emplace_back(pThisCaloHit);
+                        ip = i;
+                    }
+                }
+            }
+            else
+            {
+                bool goodStart{false};
+                if (dlVector[i] < 0.f && dtVector[i] < 0.2f)
+                    goodStart = true;
+                else if (dlVector[i] > 0.f && dtVector[i] < 0.7f)
+                    goodStart = true;
+                std::cout << dlVector[i] << " " << dtVector[i] << std::endl;
+                if (goodStart)
+                {
+                    const CaloHit *const pThisCaloHit{hitVector[i]};
+                    candidateCluster.emplace_back(pThisCaloHit);
+                    ip = i;
+                }
+            }
+        }
+        const CaloHitVector clusterHits{std::get<1>(assoc)};
+        const CaloHitList tempClusterHits(clusterHits.begin(), clusterHits.end());
+        const CaloHitList tempNewHits(candidateCluster.begin(), candidateCluster.end());
+        PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &tempClusterHits, "base", BLACK));
+        PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &tempNewHits, "new", RED));
         PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
-        // Given candidates, if there are no competing pointing clusters, can probably just merge them
-        // If there are competing candidates, need a more careful analysis of how hits should be allocated
-        // After merging the unambiguous cases, can re-evaluate options. Consider if the competing cases
-        // form crossing tracks and if so, split at the intersection, if not, perhaps longest track wins etc
-        // Can use the dot product to figure out the order to walk through hits
-        // Look for continuity in hits (if gaps, demand stricter perpendicular distance)
-        //
-        // Get CartesianPointVector, suitably sorted? and perform a sliding linear fit. Can examine the fit rms along the fit
-        // and decide whether or not a hit should be added
-        // Can probably collect sliding fit results and compare them to decide how to handle ambiguity
-        // When stopping, probably need to get the local position from the longitudinal position and find the nearest hit
     }
 
     return STATUS_CODE_SUCCESS;
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+template <typename T>
+void VertexHitAssociationAlgorithm::SortByIndex(const std::vector<size_t> &indices, std::vector<T> &vec) const
+{
+    std::vector<std::pair<T, int>> temp(indices.size());
+    for (size_t i = 0; i < temp.size(); ++i)
+    {
+        temp[i].first = vec[i];
+        temp[i].second = indices[i];
+    }
+
+    std::sort(temp.begin(), temp.end(), [](const std::pair<T, int> &i, const std::pair<T, int> &j){ return i.second < j.second; });
+    for (size_t i = 0; i < temp.size(); ++i)
+    {
+        vec[i] = temp[i].first;
+    }
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
