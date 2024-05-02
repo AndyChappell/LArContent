@@ -30,6 +30,15 @@ private:
     pandora::StatusCode Run();
     pandora::StatusCode ReadSettings(const pandora::TiXmlHandle xmlHandle);
 
+    /**
+     *  @brief  Sort a vector (in place) according to provided indices
+     *
+     *  @param  indices The index order governing the sort
+     *  @param  vec The vector to be sorted (in place)
+     */
+    template <typename T>
+    void SortByIndex(const std::vector<size_t> &indices, std::vector<T> &vec) const;
+
     std::string m_caloHitListName;       ///< The name of the list containing unassociated hits
     unsigned int m_minClusterLayers;     ///< minimum allowed number of layers for a clean cluster
     unsigned int m_maxGapLayers;         ///< maximum allowed number of layers between associated clusters
