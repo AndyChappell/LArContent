@@ -60,6 +60,7 @@ StatusCode VertexHitAssociationAlgorithm::Run()
 
     typedef std::tuple<const Cluster *, CaloHitVector, CaloHitVector, FloatVector, FloatVector> ClusterAssociation;
     std::vector<ClusterAssociation> clusterAssociations;
+    CaloHitSet usedHits;
     for (const Cluster *const pCluster : selectedClusters)
     {
         CaloHitVector candidateInnerHits, candidateOuterHits;
@@ -72,6 +73,8 @@ StatusCode VertexHitAssociationAlgorithm::Run()
         const CartesianVector &outerDir{pointingCluster.GetOuterVertex().GetDirection() * -1.f};
         for (const CaloHit *pCaloHit : *pCaloHitList)
         {
+            if (usedHits.find(pCaloHit) != usedHits.end())
+                continue;
             const CartesianVector &pos{pCaloHit->GetPositionVector()};
             const CartesianVector &vecInner{pos - pointingCluster.GetInnerVertex().GetPosition()};
             if (vecInner.GetMagnitude() <= 10.f)
@@ -85,6 +88,7 @@ StatusCode VertexHitAssociationAlgorithm::Run()
                         candidateInnerHits.emplace_back(pCaloHit);
                         dlInner.emplace_back(innerDot);
                         dtInner.emplace_back(innerCross);
+                        usedHits.insert(pCaloHit);
                     }
                 }
             }
@@ -101,6 +105,7 @@ StatusCode VertexHitAssociationAlgorithm::Run()
                         candidateOuterHits.emplace_back(pCaloHit);
                         dlOuter.emplace_back(outerDot);
                         dtOuter.emplace_back(outerCross);
+                        usedHits.insert(pCaloHit);
                     }
                 }
             }
@@ -161,6 +166,7 @@ StatusCode VertexHitAssociationAlgorithm::Run()
         }
     }
 
+    std::vector<CaloHitList> clusterHitsList;
     for (const ClusterAssociation &assoc : clusterAssociations)
     {
         const CaloHitVector &hitVector{std::get<2>(assoc)};
@@ -200,13 +206,39 @@ StatusCode VertexHitAssociationAlgorithm::Run()
                 }
             }
         }
+        if (!candidateCluster.empty())
+        {
+            clusterHitsList.emplace_back(candidateCluster);
+        }
+
         const CaloHitVector clusterHits{std::get<1>(assoc)};
         const CaloHitList tempClusterHits(clusterHits.begin(), clusterHits.end());
         const CaloHitList tempNewHits(candidateCluster.begin(), candidateCluster.end());
-        PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &tempClusterHits, "base", BLACK));
-        PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &tempNewHits, "new", RED));
-        PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
+        //PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &tempClusterHits, "base", BLACK));
+        //PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &tempNewHits, "new", AUTOITER));
+        //PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
     }
+
+    const ClusterList *pOutputClusterList{nullptr};
+    std::string originalClusterListName, tempListName{"temp"};
+    PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetCurrentListName<Cluster>(*this, originalClusterListName));
+    PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::CreateTemporaryListAndSetCurrent(*this, pOutputClusterList, tempListName));
+    for (CaloHitList &caloHitList : clusterHitsList)
+    {
+        const Cluster *pCluster{nullptr};
+        PandoraContentApi::Cluster::Parameters parameters;
+        parameters.m_caloHitList.emplace_back(caloHitList.front());
+        PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::Cluster::Create(*this, parameters, pCluster));
+
+        caloHitList.pop_front();
+        for (const CaloHit *const pAssociatedCaloHit : caloHitList)
+        {
+            PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::AddToCluster(*this, pCluster, pAssociatedCaloHit));
+        }
+    }
+
+    PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::SaveList<Cluster>(*this, originalClusterListName));
+    PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::ReplaceCurrentList<Cluster>(*this, originalClusterListName));
 
     return STATUS_CODE_SUCCESS;
 }
