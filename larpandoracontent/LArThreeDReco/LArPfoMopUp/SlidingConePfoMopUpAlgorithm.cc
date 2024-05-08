@@ -24,6 +24,7 @@ namespace lar_content
 
 SlidingConePfoMopUpAlgorithm::SlidingConePfoMopUpAlgorithm() :
     m_useVertex(true),
+    m_legacyMode(true),
     m_maxIterations(1000),
     m_maxHitsToConsider3DTrack(100),
     m_minHitsToConsider3DShower(20),
@@ -160,9 +161,32 @@ void SlidingConePfoMopUpAlgorithm::GetClusterMergeMap(const Vertex *const pVerte
                     : (vertexToMaxLayer > vertexToMinLayer) ? CONE_FORWARD_ONLY
                                                             : CONE_BACKWARD_ONLY);
 
-            slidingConeFitResult3D.GetSimpleConeList(m_nConeFitLayers, m_nConeFits, coneSelection, simpleConeList);
+            slidingConeFitResult3D.GetSimpleConeList(m_nConeFitLayers, m_nConeFits, coneSelection, simpleConeList, m_coneTanHalfAngle1, m_legacyMode);
             isShowerVertexAssociated =
                 this->IsVertexAssociated(pShowerCluster, pVertex, vertexAssociationMap, &(slidingConeFitResult3D.GetSlidingFitResult()));
+
+/*            PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1, 1, 1));
+            for (const SimpleCone &cone : simpleConeList)
+            {
+                const float length{cone.GetConeLength()};
+                const CartesianVector &apex(cone.GetConeApex());
+                const CartesianVector &direction(cone.GetConeDirection());
+                const CartesianVector direction2(direction.GetX(), direction.GetY() + 1., direction.GetZ());
+                const CartesianVector &transverse1(direction.GetCrossProduct(direction2).GetUnitVector());
+                const CartesianVector &transverse2(transverse1 * -1);
+
+                const CartesianVector &a(transverse1 * (length * cone.GetConeTanHalfAngle()) + apex + direction * length);
+                const CartesianVector &b(transverse2 * (length * cone.GetConeTanHalfAngle()) + apex + direction * length);
+                const CartesianVector &c(apex + direction * length);
+
+                ClusterList temp({pShowerCluster});
+                PANDORA_MONITORING_API(VisualizeClusters(this->GetPandora(), &temp, "cluster", RED));
+                PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &apex, &c, "dir", BLACK, 1, 1));
+                PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &apex, &a, "cone1", BLACK, 1, 1));
+                PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &apex, &b, "cone2", BLACK, 1, 1));
+                PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &a, &b, "stop", BLACK, 1, 1));
+                PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
+            }*/
         }
         catch (const StatusCodeException &)
         {
@@ -178,12 +202,23 @@ void SlidingConePfoMopUpAlgorithm::GetClusterMergeMap(const Vertex *const pVerte
 
             for (const SimpleCone &simpleCone : simpleConeList)
             {
-                const float boundedFraction1(simpleCone.GetBoundedHitFraction(pNearbyCluster, coneLength, m_coneTanHalfAngle1));
-                const float boundedFraction2(simpleCone.GetBoundedHitFraction(pNearbyCluster, coneLength, m_coneTanHalfAngle2));
-                const ClusterMerge clusterMerge(pShowerCluster, boundedFraction1, boundedFraction2);
+                if (m_legacyMode)
+                {
+                    const float boundedFraction1(simpleCone.GetBoundedHitFraction(pNearbyCluster, coneLength, m_coneTanHalfAngle1));
+                    const float boundedFraction2(simpleCone.GetBoundedHitFraction(pNearbyCluster, coneLength, m_coneTanHalfAngle2));
+                    const ClusterMerge clusterMerge(pShowerCluster, boundedFraction1, boundedFraction2);
 
-                if (clusterMerge < bestClusterMerge)
-                    bestClusterMerge = clusterMerge;
+                    if (clusterMerge < bestClusterMerge)
+                        bestClusterMerge = clusterMerge;
+                }
+                else
+                {
+                    const float boundedFraction(simpleCone.GetBoundedHitFraction(pNearbyCluster, coneLength, m_coneTanHalfAngle1));
+                    const ClusterMerge clusterMerge(pShowerCluster, boundedFraction, boundedFraction);
+
+                    if (clusterMerge < bestClusterMerge)
+                        bestClusterMerge = clusterMerge;
+                }
             }
 
             if (isShowerVertexAssociated && this->IsVertexAssociated(pNearbyCluster, pVertex, vertexAssociationMap))
@@ -332,6 +367,8 @@ StatusCode SlidingConePfoMopUpAlgorithm::ReadSettings(const TiXmlHandle xmlHandl
         STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadVectorOfValues(xmlHandle, "InputPfoListNames", m_inputPfoListNames));
 
     PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "UseVertex", m_useVertex));
+
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "LegacyMode", m_legacyMode));
 
     PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "MaxIterations", m_maxIterations));
 
