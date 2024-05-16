@@ -29,6 +29,9 @@ class LArCaloHitParameters : public object_creation::CaloHit::Parameters
 public:
     pandora::InputUInt m_larTPCVolumeId;   ///< The lar tpc volume id
     pandora::InputUInt m_daughterVolumeId; ///< The daughter volume id
+    pandora::InputUInt m_tick;             ///< The time tick
+    pandora::InputUInt m_wireId;           ///< The wire id
+    pandora::InputUInt m_partnerHit;       ///< Partner hit for ambiguous hits (0 if unambiguous)
 };
 
 //------------------------------------------------------------------------------------------------------------------------------------------
@@ -60,6 +63,26 @@ public:
      */
     unsigned int GetDaughterVolumeId() const;
 
+    /**
+     *  @brief  Get the time tick
+     *
+     *  @return the time tick
+     */
+    unsigned int GetTimeTick() const;
+
+    /**
+     *  @brief  Get the wire id
+     *
+     *  @return the wire id
+     */
+    unsigned int GetWireId() const;
+
+    /**
+     *  @brief  Get the partner hit id
+     *
+     *  @return the partner hit id
+     */
+    unsigned int GetPartnerHitId() const;
     /**
      *  @brief  Fill the parameters associated with this calo hit
      *
@@ -98,6 +121,9 @@ public:
 private:
     unsigned int m_larTPCVolumeId;   ///< The lar tpc volume id
     unsigned int m_daughterVolumeId; ///< The daughter volume id
+    unsigned int m_tick;             ///< The time tick
+    unsigned int m_wireId;           ///< The wire id
+    unsigned int m_partnerHit;       ///< Partner hit for ambiguous hits (0 if unambiguous)
     pandora::InputFloat m_pTrack;    ///< The probability that the hit is track-like
     pandora::InputFloat m_pShower;   ///< The probability that the hit is shower-like
 };
@@ -158,7 +184,10 @@ private:
 inline LArCaloHit::LArCaloHit(const LArCaloHitParameters &parameters) :
     object_creation::CaloHit::Object(parameters),
     m_larTPCVolumeId(parameters.m_larTPCVolumeId.Get()),
-    m_daughterVolumeId(parameters.m_daughterVolumeId.IsInitialized() ? parameters.m_daughterVolumeId.Get() : 0)
+    m_daughterVolumeId(parameters.m_daughterVolumeId.IsInitialized() ? parameters.m_daughterVolumeId.Get() : 0),
+    m_tick(parameters.m_tick.Get()),
+    m_wireId(parameters.m_wireId.Get()),
+    m_partnerHit(parameters.m_partnerHit.Get())
 {
 }
 
@@ -174,6 +203,27 @@ inline unsigned int LArCaloHit::GetLArTPCVolumeId() const
 inline unsigned int LArCaloHit::GetDaughterVolumeId() const
 {
     return m_daughterVolumeId;
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+inline unsigned int LArCaloHit::GetTimeTick() const
+{
+    return m_tick;
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+inline unsigned int LArCaloHit::GetWireId() const
+{
+    return m_wireId;
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+inline unsigned int LArCaloHit::GetPartnerHitId() const
+{
+    return m_partnerHit;
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
@@ -271,6 +321,9 @@ inline pandora::StatusCode LArCaloHitFactory::Read(Parameters &parameters, pando
     // ATTN: To receive this call-back must have already set file reader mc particle factory to this factory
     unsigned int larTPCVolumeId(std::numeric_limits<unsigned int>::max());
     unsigned int daughterVolumeId(0);
+    unsigned int tick(0);
+    unsigned int wireId(0);
+    unsigned int partnerHit(0);
 
     if (pandora::BINARY == fileReader.GetFileType())
     {
@@ -278,6 +331,12 @@ inline pandora::StatusCode LArCaloHitFactory::Read(Parameters &parameters, pando
         PANDORA_RETURN_RESULT_IF(pandora::STATUS_CODE_SUCCESS, !=, binaryFileReader.ReadVariable(larTPCVolumeId));
         if (m_version > 1)
             PANDORA_RETURN_RESULT_IF(pandora::STATUS_CODE_SUCCESS, !=, binaryFileReader.ReadVariable(daughterVolumeId));
+        if (m_version > 2)
+        {
+            PANDORA_RETURN_RESULT_IF(pandora::STATUS_CODE_SUCCESS, !=, binaryFileReader.ReadVariable(tick));
+            PANDORA_RETURN_RESULT_IF(pandora::STATUS_CODE_SUCCESS, !=, binaryFileReader.ReadVariable(wireId));
+            PANDORA_RETURN_RESULT_IF(pandora::STATUS_CODE_SUCCESS, !=, binaryFileReader.ReadVariable(partnerHit));
+        }
     }
     else if (pandora::XML == fileReader.GetFileType())
     {
@@ -285,6 +344,12 @@ inline pandora::StatusCode LArCaloHitFactory::Read(Parameters &parameters, pando
         PANDORA_RETURN_RESULT_IF(pandora::STATUS_CODE_SUCCESS, !=, xmlFileReader.ReadVariable("LArTPCVolumeId", larTPCVolumeId));
         if (m_version > 1)
             PANDORA_RETURN_RESULT_IF(pandora::STATUS_CODE_SUCCESS, !=, xmlFileReader.ReadVariable("DaughterVolumeId", daughterVolumeId));
+        if (m_version > 2)
+        {
+            PANDORA_RETURN_RESULT_IF(pandora::STATUS_CODE_SUCCESS, !=, xmlFileReader.ReadVariable("Tick", tick));
+            PANDORA_RETURN_RESULT_IF(pandora::STATUS_CODE_SUCCESS, !=, xmlFileReader.ReadVariable("WireId", wireId));
+            PANDORA_RETURN_RESULT_IF(pandora::STATUS_CODE_SUCCESS, !=, xmlFileReader.ReadVariable("PartnerHit", partnerHit));
+        }
     }
     else
     {
@@ -294,6 +359,9 @@ inline pandora::StatusCode LArCaloHitFactory::Read(Parameters &parameters, pando
     LArCaloHitParameters &larCaloHitParameters(dynamic_cast<LArCaloHitParameters &>(parameters));
     larCaloHitParameters.m_larTPCVolumeId = larTPCVolumeId;
     larCaloHitParameters.m_daughterVolumeId = daughterVolumeId;
+    larCaloHitParameters.m_tick = tick;
+    larCaloHitParameters.m_wireId = wireId;
+    larCaloHitParameters.m_partnerHit = partnerHit;
 
     return pandora::STATUS_CODE_SUCCESS;
 }
@@ -314,6 +382,12 @@ inline pandora::StatusCode LArCaloHitFactory::Write(const Object *const pObject,
         PANDORA_RETURN_RESULT_IF(pandora::STATUS_CODE_SUCCESS, !=, binaryFileWriter.WriteVariable(pLArCaloHit->GetLArTPCVolumeId()));
         if (m_version > 1)
             PANDORA_RETURN_RESULT_IF(pandora::STATUS_CODE_SUCCESS, !=, binaryFileWriter.WriteVariable(pLArCaloHit->GetDaughterVolumeId()));
+        if (m_version > 2)
+        {
+            PANDORA_RETURN_RESULT_IF(pandora::STATUS_CODE_SUCCESS, !=, binaryFileWriter.WriteVariable(pLArCaloHit->GetTimeTick()));
+            PANDORA_RETURN_RESULT_IF(pandora::STATUS_CODE_SUCCESS, !=, binaryFileWriter.WriteVariable(pLArCaloHit->GetWireId()));
+            PANDORA_RETURN_RESULT_IF(pandora::STATUS_CODE_SUCCESS, !=, binaryFileWriter.WriteVariable(pLArCaloHit->GetPartnerHitId()));
+        }
     }
     else if (pandora::XML == fileWriter.GetFileType())
     {
@@ -322,6 +396,12 @@ inline pandora::StatusCode LArCaloHitFactory::Write(const Object *const pObject,
         if (m_version > 1)
             PANDORA_RETURN_RESULT_IF(
                 pandora::STATUS_CODE_SUCCESS, !=, xmlFileWriter.WriteVariable("DaughterVolumeId", pLArCaloHit->GetDaughterVolumeId()));
+        if (m_version > 2)
+        {
+            PANDORA_RETURN_RESULT_IF(pandora::STATUS_CODE_SUCCESS, !=, xmlFileWriter.WriteVariable("Tick", pLArCaloHit->GetTimeTick()));
+            PANDORA_RETURN_RESULT_IF(pandora::STATUS_CODE_SUCCESS, !=, xmlFileWriter.WriteVariable("WireId", pLArCaloHit->GetWireId()));
+            PANDORA_RETURN_RESULT_IF(pandora::STATUS_CODE_SUCCESS, !=, xmlFileWriter.WriteVariable("PartnerHit", pLArCaloHit->GetPartnerHitId()));
+        }
     }
     else
     {
