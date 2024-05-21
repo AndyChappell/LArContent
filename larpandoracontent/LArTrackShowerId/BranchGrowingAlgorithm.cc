@@ -17,6 +17,13 @@ using namespace pandora;
 namespace lar_content
 {
 
+BranchGrowingAlgorithm::BranchGrowingAlgorithm() :
+    m_maxAssocHitRatio{0.f}
+{
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
 void BranchGrowingAlgorithm::FindAssociatedClusters(const Cluster *const pParticleSeed, ClusterVector &candidateClusters,
     ClusterUsageMap &forwardUsageMap, ClusterUsageMap &backwardUsageMap) const
 {
@@ -32,6 +39,9 @@ void BranchGrowingAlgorithm::FindAssociatedClusters(const Cluster *const pPartic
             const Cluster *const pCandidateCluster = *iterI;
 
             if (NULL == pCandidateCluster)
+                continue;
+            if (m_maxAssocHitRatio > std::numeric_limits<float>::epsilon() &&
+                pCandidateCluster->GetNCaloHits() > (m_maxAssocHitRatio * pParticleSeed->GetNCaloHits()))
                 continue;
 
             for (ClusterVector::iterator iterJ = currentSeedAssociations.begin(), iterJEnd = currentSeedAssociations.end(); iterJ != iterJEnd; ++iterJ)
@@ -134,8 +144,10 @@ void BranchGrowingAlgorithm::IdentifyClusterMerges(
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-StatusCode BranchGrowingAlgorithm::ReadSettings(const TiXmlHandle /*xmlHandle*/)
+StatusCode BranchGrowingAlgorithm::ReadSettings(const TiXmlHandle xmlHandle)
 {
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "MaxAssocHitRatio", m_maxAssocHitRatio));
+
     return STATUS_CODE_SUCCESS;
 }
 

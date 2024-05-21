@@ -56,7 +56,7 @@ StatusCode VertexHitAssociationAlgorithm::Run()
     // Consider groups of hits (in close proximity and "matched" to some fit trajectory
     // Decide which association is best
 
-    PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1, 1, 1));
+    //PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1, 1, 1));
 
     typedef std::tuple<const Cluster *, CaloHitVector, CaloHitVector, FloatVector, FloatVector> ClusterAssociation;
     std::vector<ClusterAssociation> clusterAssociations;
@@ -214,9 +214,12 @@ StatusCode VertexHitAssociationAlgorithm::Run()
         const CaloHitVector clusterHits{std::get<1>(assoc)};
         const CaloHitList tempClusterHits(clusterHits.begin(), clusterHits.end());
         const CaloHitList tempNewHits(candidateCluster.begin(), candidateCluster.end());
-        //PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &tempClusterHits, "base", BLACK));
-        //PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &tempNewHits, "new", AUTOITER));
-        //PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
+        /*if (clusterHits.front()->GetHitType() == TPC_VIEW_W)
+        {
+            PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &tempClusterHits, "base", BLACK));
+            PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &tempNewHits, "new", AUTOITER));
+            PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
+        }*/
     }
 
     const ClusterList *pOutputClusterList{nullptr};
