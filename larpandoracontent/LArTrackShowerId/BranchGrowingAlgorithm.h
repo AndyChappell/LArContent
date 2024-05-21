@@ -20,6 +20,9 @@ namespace lar_content
  */
 class BranchGrowingAlgorithm : public pandora::Algorithm
 {
+public:
+    BranchGrowingAlgorithm();
+
 protected:
     /**
      *  @brief  AssociationType enum
@@ -31,6 +34,8 @@ protected:
         STANDARD = 2,
         STRONG = 3
     };
+
+    float m_maxAssocHitRatio;   ///< The largest size of cluster that can be absorbed relative to the seed
 
     /**
      *  @brief  Association class

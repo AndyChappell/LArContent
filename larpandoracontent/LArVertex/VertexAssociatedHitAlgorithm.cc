@@ -106,6 +106,14 @@ void VertexAssociatedHitAlgorithm::IdentifyAssociatedHits(const CaloHitList &cal
         }
     }
 
+    /*if (retainedHits.front()->GetHitType() == TPC_VIEW_W)
+    {
+        PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1, 1, 1));
+        PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &retainedHits, "keep", BLUE));
+        PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &vetoedHits, "veto", RED));
+        PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
+    }*/
+
     PandoraContentApi::SaveList(*this, vetoedHits, m_vetoedHitListName);
     PandoraContentApi::SaveList(*this, retainedHits, m_retainedHitListName);
 }
