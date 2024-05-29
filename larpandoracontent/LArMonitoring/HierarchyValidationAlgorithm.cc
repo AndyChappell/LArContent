@@ -372,11 +372,17 @@ void HierarchyValidationAlgorithm::MCValidation(const LArHierarchyHelper::MatchI
                     completenessAdcVectorW.emplace_back(matches.GetCompleteness(pRecoNode, TPC_VIEW_W, true));
                     if (nMatches > 0)
                     {
-                        const CartesianVector recoVertex{LArPfoHelper::GetVertex(pRecoNode->GetLeadingPfo())->GetPosition()};
-                        vtxDx = recoVertex.GetX() - trueVertex.GetX();
-                        vtxDy = recoVertex.GetY() - trueVertex.GetY();
-                        vtxDz = recoVertex.GetZ() - trueVertex.GetZ();
-                        vtxDr = std::sqrt(vtxDx * vtxDx + vtxDy * vtxDy + vtxDz * vtxDz);
+                        try
+                        {
+                            const CartesianVector recoVertex{LArPfoHelper::GetVertex(pRecoNode->GetLeadingPfo())->GetPosition()};
+                            vtxDx = recoVertex.GetX() - trueVertex.GetX();
+                            vtxDy = recoVertex.GetY() - trueVertex.GetY();
+                            vtxDz = recoVertex.GetZ() - trueVertex.GetZ();
+                            vtxDr = std::sqrt(vtxDx * vtxDx + vtxDy * vtxDy + vtxDz * vtxDz);
+                        }
+                        catch(const StatusCodeException &)
+                        {
+                        }
                     }
                 }
 
