@@ -10,6 +10,8 @@
 
 #include "Pandora/Algorithm.h"
 
+#include "larpandoradlcontent/LArHelpers/LArDLHelper.h"
+
 #include <unordered_map>
 
 using namespace lar_content;
@@ -32,6 +34,8 @@ public:
 
 private:
     pandora::StatusCode Run();
+    pandora::StatusCode Infer();
+    pandora::StatusCode PrepareTrainingSample() const;
     void IdentifyAssociatedClusters(const pandora::ClusterList &clusterList, const pandora::VertexList &vertexList) const;
     pandora::StatusCode ReadSettings(const pandora::TiXmlHandle xmlHandle);
 
@@ -43,6 +47,7 @@ private:
     bool m_trainingMode;                ///< Whether or not we're running in training mode
     std::string m_rootTreeName;         ///< The ROOT tree name
     std::string m_rootFileName;         ///< The ROOT file name
+    LArDLHelper::TorchModel m_model;    ///< The model for the U view
 };
 
 } // namespace lar_content

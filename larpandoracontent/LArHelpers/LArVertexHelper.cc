@@ -14,6 +14,8 @@
 #include "larpandoracontent/LArHelpers/LArPointingClusterHelper.h"
 #include "larpandoracontent/LArHelpers/LArVertexHelper.h"
 
+#include <Eigen/Dense>
+
 #include <algorithm>
 #include <limits>
 
@@ -21,6 +23,44 @@ using namespace pandora;
 
 namespace lar_content
 {
+
+bool LArVertexHelper::GetBestFitPoint(const CartesianPointVector &intercepts, const CartesianPointVector &directions,
+    const FloatVector &weights, CartesianVector &bestFitPoint)
+{
+    const int n(intercepts.size());
+
+    Eigen::VectorXd d = Eigen::VectorXd::Zero(3 * n);
+    Eigen::MatrixXd G = Eigen::MatrixXd::Zero(3 * n, n + 3);
+
+    for (int i = 0; i < n; ++i)
+    {
+        d(3 * i) = intercepts[i].GetX() * weights[i];
+        d(3 * i + 1) = intercepts[i].GetY() * weights[i];
+        d(3 * i + 2) = intercepts[i].GetZ() * weights[i];
+
+        G(3 * i, 0) = weights[i];
+        G(3 * i + 1, 1) = weights[i];
+        G(3 * i + 2, 2) = weights[i];
+
+        G(3 * i, i + 3) = -directions[i].GetX() * weights[i];
+        G(3 * i + 1, i + 3) = -directions[i].GetY() * weights[i];
+        G(3 * i + 2, i + 3) = -directions[i].GetZ() * weights[i];
+    }
+
+    if ((G.transpose() * G).determinant() < std::numeric_limits<float>::epsilon())
+    {
+        bestFitPoint.SetValues(std::numeric_limits<float>::max(), std::numeric_limits<float>::max(), std::numeric_limits<float>::max());
+        return false;
+    }
+
+    Eigen::VectorXd m = (G.transpose() * G).inverse() * G.transpose() * d;
+
+    bestFitPoint.SetValues(m[0], m[1], m[2]);
+
+    return true;
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
 
 LArVertexHelper::ClusterDirection LArVertexHelper::GetClusterDirectionInZ(
     const Pandora &pandora, const Vertex *const pVertex, const Cluster *const pCluster, const float tanAngle, const float apexShift)
