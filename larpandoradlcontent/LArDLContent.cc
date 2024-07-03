@@ -33,7 +33,7 @@
     d("LArDLHitValidation", DlHitValidationAlgorithm)                                                                                      \
     d("LArDLTrackShowerStreamSelection", DlTrackShowerStreamSelectionAlgorithm)                                                            \
     d("LArDLVertexing", DlVertexingAlgorithm)                                                                                              \
-    d("LArVertexAssociatedCluster", DlVertexAssociatedClusterAlgorithm)                                                                      \
+    d("LArDLVertexAssociatedCluster", DlVertexAssociatedClusterAlgorithm)                                                                      \
     d("LArDLSecondaryVertexing", DlSecondaryVertexingAlgorithm)
 
 #define LAR_DL_ALGORITHM_TOOL_LIST(d)

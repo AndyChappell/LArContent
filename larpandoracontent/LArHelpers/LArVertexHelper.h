@@ -31,6 +31,19 @@ public:
     };
 
     /**
+     *  @brief  Calculate the best fit point of a set of lines using a matrix equation
+     *
+     *  @param  intercepts the vector of the defining points of the lines
+     *  @param  directions the vector of line directions
+     *  @param  weights the vector of weights for each line
+     *  @param  bestFitPoint the resulting best fit point
+     *
+     *  @return true if fit successful, false otherwise
+     */
+    static bool GetBestFitPoint(const pandora::CartesianPointVector &intercepts, const pandora::CartesianPointVector &directions,
+        const pandora::FloatVector &weights, pandora::CartesianVector &bestFitPoint);
+
+    /**
      *  @brief  Get the direction of the cluster in z, using a projection of the provided vertex
      *
      *  @param  pandora the pandora instance
