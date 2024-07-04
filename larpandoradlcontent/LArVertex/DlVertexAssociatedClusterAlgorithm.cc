@@ -309,8 +309,8 @@ StatusCode DlVertexAssociatedClusterAlgorithm::Infer()
                 const float weightFactor{totalWeight > 0 ? 1.f / totalWeight : 1.f};
                 std::for_each(weights.begin(), weights.end(), [nWeights, weightFactor](float& weight) { weight *= nWeights * weightFactor; });
 
-                CartesianVector bestFitPoint(pos);
-                if (LArVertexHelper::GetBestFitPoint(intercepts, directions, weights, bestFitPoint))
+                //CartesianVector bestFitPoint(pos);
+                //if (LArVertexHelper::GetBestFitPoint(intercepts, directions, weights, bestFitPoint))
                 {
                     // Split cluster into two CaloHit lists
                     PandoraContentApi::Cluster::Parameters firstParameters, secondParameters;
