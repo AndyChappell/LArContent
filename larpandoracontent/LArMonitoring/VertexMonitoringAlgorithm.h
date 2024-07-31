@@ -32,6 +32,7 @@ private:
     pandora::StatusCode Run();
     pandora::StatusCode ReadSettings(const pandora::TiXmlHandle xmlHandle);
 
+    int m_event;                    //< The event number
     bool m_visualise;               // Whether to produce visual monitoring output
     bool m_writeFile;               // Whether to produce ROOT output file
     bool m_fromList;                // Use the vertex list instead of the root pfo
