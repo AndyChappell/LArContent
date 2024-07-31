@@ -8,6 +8,7 @@
 
 #include <chrono>
 #include <cmath>
+#include <sys/resource.h>
 
 #include <torch/script.h>
 #include <torch/torch.h>
@@ -43,6 +44,10 @@ DlVertexingAlgorithm::DlVertexingAlgorithm() :
 
 DlVertexingAlgorithm::~DlVertexingAlgorithm()
 {
+    if (this->m_pass == 1)
+    {
+        PANDORA_MONITORING_API(SaveTree(this->GetPandora(), "compute", "compute.root", "UPDATE"));
+    }
     if (m_writeTree)
     {
         try
@@ -170,8 +175,12 @@ StatusCode DlVertexingAlgorithm::PrepareTrainingSample()
 
 StatusCode DlVertexingAlgorithm::Infer()
 {
+    static int tot_time{0};
     if (m_pass == 1)
+    {
+        tot_time = 0;
         ++m_event;
+    }
 
     std::map<HitType, float> wireMin, wireMax;
     float driftMin{std::numeric_limits<float>::max()}, driftMax{-std::numeric_limits<float>::max()};
@@ -189,6 +198,10 @@ StatusCode DlVertexingAlgorithm::Infer()
         driftMax = std::max(viewDriftMax, driftMax);
     }
 
+    struct rusage usage;
+    getrusage(RUSAGE_SELF, &usage);
+    long baseline{usage.ru_maxrss};
+    long t0{usage.ru_utime.tv_usec + 1000000 * usage.ru_utime.tv_sec};
     CartesianPointVector vertexCandidatesU, vertexCandidatesV, vertexCandidatesW;
     for (const std::string &listName : m_caloHitListNames)
     {
@@ -214,7 +227,7 @@ StatusCode DlVertexingAlgorithm::Infer()
             LArDLHelper::Forward(m_modelV, inputs, output);
         else
             LArDLHelper::Forward(m_modelW, inputs, output);
-
+        
         int colOffset{0}, rowOffset{0}, canvasWidth{m_width}, canvasHeight{m_height};
         this->GetCanvasParameters(output, pixelVector, colOffset, rowOffset, canvasWidth, canvasHeight);
 
@@ -289,6 +302,22 @@ StatusCode DlVertexingAlgorithm::Infer()
         for (int row = 0; row < canvasHeight; ++row)
             delete[] canvas[row];
         delete[] canvas;
+    }
+
+    getrusage(RUSAGE_SELF, &usage);
+    long current{usage.ru_maxrss};
+    long t1{usage.ru_utime.tv_usec + 1000000 * usage.ru_utime.tv_sec};
+    tot_time += static_cast<int>(t1 - t0);
+
+    if (this->m_pass == 1)
+    {
+        const int max_rss{static_cast<int>(current - baseline)};
+        PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "compute", "max_rss", max_rss));
+    }
+    else
+    {
+        PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "compute", "time", tot_time));
+        PANDORA_MONITORING_API(FillTree(this->GetPandora(), "compute"));
     }
 
     int nEmptyLists{0};
