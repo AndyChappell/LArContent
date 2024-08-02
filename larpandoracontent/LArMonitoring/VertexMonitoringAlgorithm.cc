@@ -69,6 +69,8 @@ void VertexMonitoringAlgorithm::Print(const MCParticle *const pMC, const std::st
 {
     if (pMC)
     {
+        if (indent.length() > 3)
+            return;
         std::cout << indent << pMC->GetParticleId() << ": " << pMC->GetEnergy() << std::endl;
         for (const MCParticle *const pChild : pMC->GetDaughterList())
         {
@@ -134,7 +136,7 @@ StatusCode VertexMonitoringAlgorithm::AssessVertices() const
         }
     }
 
-    this->Print(pTrueNeutrino, "");
+    //this->Print(pTrueNeutrino, "");
 
     if (!m_fromList)
     {
@@ -154,23 +156,22 @@ StatusCode VertexMonitoringAlgorithm::AssessVertices() const
     const LArMCParticleHelper::FinalStateDescriptor descriptor(*pCaloHitList, *pMCParticleList);
 
     float trueInelasticity{1.f};
-    float trueLeptonEnergy{0.f};
+    float trueLeptonicEnergy{0.f};
     float trueHadronicEnergy{0.f};
     float trueNeutrinoEnergy{0.f};
     if (pTrueNeutrino)
     {
         trueNeutrinoEnergy = pTrueNeutrino->GetEnergy();
-        // Get the fraction of hadroninc energy in the event
+        // Get the fraction of hadronic energy in the event
         for (const MCParticle *const pChild : pTrueNeutrino->GetDaughterList())
         {
             const int pdg{std::abs(pChild->GetParticleId())};
             if (pdg >= 11 && pdg <= 16)
-                trueLeptonEnergy += pChild->GetEnergy();
-            else if (pdg != 22)
-                trueHadronicEnergy += pChild->GetEnergy();
+                trueLeptonicEnergy += pChild->GetEnergy();
         }
-        if (trueLeptonEnergy > 0.f && trueNeutrinoEnergy > 0.f)
-            trueInelasticity = 1.f - trueLeptonEnergy / trueNeutrinoEnergy;
+        if (trueLeptonicEnergy > 0.f && trueNeutrinoEnergy > 0.f)
+            trueInelasticity = 1.f - trueLeptonicEnergy / trueNeutrinoEnergy;
+        trueHadronicEnergy = trueNeutrinoEnergy - trueLeptonicEnergy;
     }
 
     const bool recoAvailable{pRecoNeutrino || (pVertexList && !pVertexList->empty())};
@@ -204,12 +205,11 @@ StatusCode VertexMonitoringAlgorithm::AssessVertices() const
             PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &rw, "W reco vertex", RED, 2));
         }
 
-        if (m_writeFile && LArVertexHelper::IsInFiducialVolume(this->GetPandora(), trueVertex, "dune_fd_hd"))
+        if (m_writeFile) // && LArVertexHelper::IsInFiducialVolume(this->GetPandora(), trueVertex, "dune_fd_hd"))
         {
             const CartesianVector delta{recoVertex - trueVertex};
             const float dx{delta.GetX()}, dy{delta.GetY()}, dz{delta.GetZ()}, dr{delta.GetMagnitude()};
             const float trueNuEnergy{pTrueNeutrino->GetEnergy()};
-            //std::cout << "E(nu): " << trueNuEnergy << " True Vertex: " << trueVertex << std::endl;
             const int success{1};
             const int nE{static_cast<int>(descriptor.GetNumElectrons())};
             const int nMu{static_cast<int>(descriptor.GetNumMuons())};
@@ -223,13 +223,18 @@ StatusCode VertexMonitoringAlgorithm::AssessVertices() const
             const int nKC{static_cast<int>(descriptor.GetNumChargedKs())};
             const int nK0{static_cast<int>(descriptor.GetNumKZeros())};
             const int nOther{static_cast<int>(descriptor.GetNumOther())};
-            const int isCC{static_cast<int>((nE + nMu +  nTau) > 0)};
+            const LArMCParticle *const pLArNu{dynamic_cast<const LArMCParticle *const>(pTrueNeutrino)};
+            const int isCC{pLArNu ? pLArNu->IsCC() : 0};
+            const int isHadronicTauDecay{(std::abs(pTrueNeutrino->GetParticleId()) == 16) && (isCC == 1) && ((nE + nMu) == 0)};
 
             PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "event", m_event));
             PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "success", success));
             PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "trueNuEnergy", trueNuEnergy));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "trueLeptonicEnergy", trueLeptonicEnergy));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "trueHadronicEnergy", trueHadronicEnergy));
             PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "trueInelasticity", trueInelasticity));
             PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "isCC", isCC));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "isHadronicTauDecay", isHadronicTauDecay));
             PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "nE", nE));
             PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "nMu", nMu));
             PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "nTau", nTau));
@@ -255,8 +260,9 @@ StatusCode VertexMonitoringAlgorithm::AssessVertices() const
     else if (pTrueNeutrino)
     {
         const CartesianVector &trueVertex{pTrueNeutrino->GetVertex()};
+        (void)trueVertex;
 
-        if (m_writeFile && LArVertexHelper::IsInFiducialVolume(this->GetPandora(), trueVertex, "dune_fd_hd"))
+        if (m_writeFile) // && LArVertexHelper::IsInFiducialVolume(this->GetPandora(), trueVertex, "dune_fd_hd"))
         {
             const int success{0};
             const float dx{-999.f}, dy{-999.f}, dz{-999.f}, dr{-999.f};
@@ -272,13 +278,18 @@ StatusCode VertexMonitoringAlgorithm::AssessVertices() const
             const int nKC{static_cast<int>(descriptor.GetNumChargedKs())};
             const int nK0{static_cast<int>(descriptor.GetNumKZeros())};
             const int nOther{static_cast<int>(descriptor.GetNumOther())};
-            const int isCC{static_cast<int>((nE + nMu +  nTau) > 0)};
+            const LArMCParticle *const pLArNu{dynamic_cast<const LArMCParticle *const>(pTrueNeutrino)};
+            const int isCC{pLArNu ? pLArNu->IsCC() : 0};
+            const int isHadronicTauDecay{(std::abs(pTrueNeutrino->GetParticleId()) == 16) && (isCC == 1) && ((nE + nMu) == 0)};
 
             PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "event", m_event));
             PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "success", success));
             PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "trueNuEnergy", trueNuEnergy));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "trueLeptonicEnergy", trueLeptonicEnergy));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "trueHadronicEnergy", trueHadronicEnergy));
             PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "trueInelasticity", trueInelasticity));
             PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "isCC", isCC));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "isHadronicTauDecay", isHadronicTauDecay));
             PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "nE", nE));
             PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "nMu", nMu));
             PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "nTau", nTau));
