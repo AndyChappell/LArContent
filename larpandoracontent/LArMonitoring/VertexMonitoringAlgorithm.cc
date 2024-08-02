@@ -65,6 +65,20 @@ StatusCode VertexMonitoringAlgorithm::Run()
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
+void VertexMonitoringAlgorithm::Print(const MCParticle *const pMC, const std::string &indent) const
+{
+    if (pMC)
+    {
+        std::cout << indent << pMC->GetParticleId() << ": " << pMC->GetEnergy() << std::endl;
+        for (const MCParticle *const pChild : pMC->GetDaughterList())
+        {
+            this->Print(pChild, indent + "  ");
+        }
+    }
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
 StatusCode VertexMonitoringAlgorithm::AssessVertices() const
 {
 #ifdef MONITORING
@@ -105,23 +119,22 @@ StatusCode VertexMonitoringAlgorithm::AssessVertices() const
         PandoraContentApi::GetList(*this, m_vertexListName, pVertexList);
     }
 
-    LArMCParticleHelper::MCContributionMap mcToHitsMap;
-    MCParticleVector primaries;
-    LArMCParticleHelper::GetPrimaryMCParticleList(pMCParticleList, primaries);
-    const MCParticle *pTrueNeutrino{nullptr};
     const ParticleFlowObject *pRecoNeutrino{nullptr};
-    if (!primaries.empty())
+    const MCParticle *pTrueNeutrino{nullptr};
+    float energy{-std::numeric_limits<float>::max()};
+    for (const MCParticle *const pMC : *pMCParticleList)
     {
-        for (const MCParticle *primary : primaries)
+        if (LArMCParticleHelper::IsNeutrino(pMC))
         {
-            const MCParticleList &parents{primary->GetParentList()};
-            if (parents.size() == 1 && LArMCParticleHelper::IsNeutrino(parents.front()))
+            if (pMC->GetParentList().empty() && pMC->GetEnergy() > energy)
             {
-                pTrueNeutrino = parents.front();
-                break;
+                pTrueNeutrino = pMC;
+                energy = pMC->GetEnergy();
             }
         }
     }
+
+    this->Print(pTrueNeutrino, "");
 
     if (!m_fromList)
     {
@@ -141,18 +154,23 @@ StatusCode VertexMonitoringAlgorithm::AssessVertices() const
     const LArMCParticleHelper::FinalStateDescriptor descriptor(*pCaloHitList, *pMCParticleList);
 
     float trueInelasticity{1.f};
+    float trueLeptonEnergy{0.f};
+    float trueHadronicEnergy{0.f};
+    float trueNeutrinoEnergy{0.f};
     if (pTrueNeutrino)
     {
+        trueNeutrinoEnergy = pTrueNeutrino->GetEnergy();
         // Get the fraction of hadroninc energy in the event
-        float trueLeptonEnergy{0.f};
         for (const MCParticle *const pChild : pTrueNeutrino->GetDaughterList())
         {
             const int pdg{std::abs(pChild->GetParticleId())};
             if (pdg >= 11 && pdg <= 16)
                 trueLeptonEnergy += pChild->GetEnergy();
+            else if (pdg != 22)
+                trueHadronicEnergy += pChild->GetEnergy();
         }
-        if (trueLeptonEnergy > 0.f && pTrueNeutrino->GetEnergy() > 0.f)
-            trueInelasticity = 1.f - trueLeptonEnergy / pTrueNeutrino->GetEnergy();
+        if (trueLeptonEnergy > 0.f && trueNeutrinoEnergy > 0.f)
+            trueInelasticity = 1.f - trueLeptonEnergy / trueNeutrinoEnergy;
     }
 
     const bool recoAvailable{pRecoNeutrino || (pVertexList && !pVertexList->empty())};

@@ -32,6 +32,8 @@ private:
     pandora::StatusCode Run();
     pandora::StatusCode ReadSettings(const pandora::TiXmlHandle xmlHandle);
 
+    void Print(const pandora::MCParticle *const pMC, const std::string &indent) const;
+
     int m_event;                    //< The event number
     bool m_visualise;               // Whether to produce visual monitoring output
     bool m_writeFile;               // Whether to produce ROOT output file
