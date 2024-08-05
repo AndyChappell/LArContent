@@ -68,8 +68,7 @@ StatusCode DlVertexAssociatedClusterAlgorithm::Run()
 
 StatusCode DlVertexAssociatedClusterAlgorithm::Infer()
 {
-    PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1, 1, 1));
-
+    //PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1, 1, 1));
     const ClusterList *pClusterList{nullptr};
     PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetList(*this, m_clusterListName, pClusterList));
     const VertexList *pVertexList{nullptr};
@@ -82,15 +81,6 @@ StatusCode DlVertexAssociatedClusterAlgorithm::Infer()
     if (!pClusterList || pClusterList->empty() || !pVertexList || pVertexList->empty())
         return STATUS_CODE_SUCCESS;
 
-    std::map<const Cluster *, CaloHitList> clusterToHitsMap;
-    for (const Cluster *pCluster : *pClusterList)
-    {
-        CaloHitList clusterHits;
-        LArClusterHelper::GetAllHits(pCluster, clusterHits);
-        if (clusterHits.empty())
-            continue;
-        clusterToHitsMap[pCluster] = clusterHits;
-    }
     const LArTransformationPlugin *transform{this->GetPandora().GetPlugins()->GetLArTransformationPlugin()};
 
     typedef std::map<const Cluster *, CaloHitList> ClusterHitMap;
@@ -98,12 +88,28 @@ StatusCode DlVertexAssociatedClusterAlgorithm::Infer()
     // Gather the hits within a given radii of the vertices
     for (const Vertex *const pVertex : *pVertexList)
     {
+        PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetList(*this, m_clusterListName, pClusterList));
+        if (!pClusterList || pClusterList->empty())
+            return STATUS_CODE_SUCCESS;
+
+        std::map<const Cluster *, CaloHitList> clusterToHitsMap;
+        for (const Cluster *pCluster : *pClusterList)
+        {
+            CaloHitList clusterHits;
+            LArClusterHelper::GetAllHits(pCluster, clusterHits);
+            if (clusterHits.empty())
+                continue;
+            clusterToHitsMap[pCluster] = clusterHits;
+        }
+
         ClusterHitMap targetHits, backgroundHits;
         ClusterClusterMap contextClusters;
         const CartesianVector &pos3D{pVertex->GetPosition()};
         CartesianVector pos(0, 0, 0), low(0, 0, 0), high(0, 0, 0);
         for (const Cluster *pCluster : *pClusterList)
         {
+            if (clusterToHitsMap.find(pCluster) == clusterToHitsMap.end())
+                continue;
             const CaloHitList &clusterHits{clusterToHitsMap.at(pCluster)};
             HitType view{clusterHits.front()->GetHitType()};
             switch (view)
@@ -140,6 +146,8 @@ StatusCode DlVertexAssociatedClusterAlgorithm::Infer()
 
             for (const Cluster *pOtherCluster : *pClusterList)
             {
+                if (clusterToHitsMap.find(pOtherCluster) == clusterToHitsMap.end())
+                    continue;
                 if (pOtherCluster == pCluster)
                     continue;
                 for (const CaloHit *const pCaloHit : clusterToHitsMap.at(pOtherCluster))
@@ -219,7 +227,7 @@ StatusCode DlVertexAssociatedClusterAlgorithm::Infer()
             }
         }
 
-        PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &pos, "vtx", BLACK, 2));
+        //PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &pos, "vtx", BLACK, 2));
         // Iterate over bad clusters and use good clusters to add precision vertex identification for splitting
         for (const Cluster *const pBadCluster : badClusters)
         {
@@ -229,7 +237,7 @@ StatusCode DlVertexAssociatedClusterAlgorithm::Infer()
                 if (std::find(goodClusters.begin(), goodClusters.end(), pContextCluster) != goodClusters.end())
                     goodContext.emplace_back(pContextCluster);
             }
-            PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &clusterToHitsMap[pBadCluster], "Bad Cluster", RED));
+            //PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &clusterToHitsMap[pBadCluster], "Bad Cluster", RED));
             if (goodContext.empty())
             {
                 PandoraContentApi::Cluster::Parameters firstParameters, secondParameters;
@@ -248,8 +256,8 @@ StatusCode DlVertexAssociatedClusterAlgorithm::Infer()
 
                 if (firstParameters.m_caloHitList.empty() || secondParameters.m_caloHitList.empty())
                     continue;
-                PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &firstParameters.m_caloHitList, "Good Cluster", BLUE));
-                PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &secondParameters.m_caloHitList, "Leftover Cluster", MAGENTA));
+                //PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &firstParameters.m_caloHitList, "Good Cluster", BLUE));
+                //PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &secondParameters.m_caloHitList, "Leftover Cluster", MAGENTA));
 
                 // Begin cluster fragmentation operations
                 const ClusterList clusterList(1, pBadCluster);
@@ -258,12 +266,15 @@ StatusCode DlVertexAssociatedClusterAlgorithm::Infer()
                 if (STATUS_CODE_SUCCESS != PandoraContentApi::InitializeFragmentation(*this, clusterList, clusterListToDeleteName,
                     clusterListToSaveName))
                     continue;
+                clusterToHitsMap.erase(clusterToHitsMap.find(pBadCluster));
                 // Create new clusters
                 const Cluster *pFirstCluster(nullptr), *pSecondCluster(nullptr);
                 if (STATUS_CODE_SUCCESS != PandoraContentApi::Cluster::Create(*this, firstParameters, pFirstCluster))
                     continue;
+                clusterToHitsMap[pFirstCluster] = firstParameters.m_caloHitList;
                 if (STATUS_CODE_SUCCESS != PandoraContentApi::Cluster::Create(*this, secondParameters, pSecondCluster))
                     continue;
+                clusterToHitsMap[pSecondCluster] = secondParameters.m_caloHitList;
 
                 // End cluster fragmentation operations
                 if (STATUS_CODE_SUCCESS != PandoraContentApi::EndFragmentation(*this, clusterListToSaveName, clusterListToDeleteName))
@@ -275,7 +286,6 @@ StatusCode DlVertexAssociatedClusterAlgorithm::Infer()
                 HitType view{LArClusterHelper::GetClusterHitType(pBadCluster)};
                 CartesianPointVector intercepts, directions;
                 FloatVector weights;
-                std::cout << "Bad Cluster (" << goodContext.size() << ")" << std::endl;
                 float totalWeight{0.f};
                 for (const Cluster *const pContextCluster : goodContext)
                 {
@@ -334,8 +344,8 @@ StatusCode DlVertexAssociatedClusterAlgorithm::Infer()
                     if (firstParameters.m_caloHitList.empty() || secondParameters.m_caloHitList.empty())
                         continue;
 
-                    PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &firstParameters.m_caloHitList, "Good Cluster", BLUE));
-                    PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &secondParameters.m_caloHitList, "Leftover Cluster", MAGENTA));
+                    //PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &firstParameters.m_caloHitList, "Good Cluster", BLUE));
+                    //PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &secondParameters.m_caloHitList, "Leftover Cluster", MAGENTA));
 
                     // Begin cluster fragmentation operations
                     const ClusterList clusterList(1, pBadCluster);
@@ -344,18 +354,21 @@ StatusCode DlVertexAssociatedClusterAlgorithm::Infer()
                     if (STATUS_CODE_SUCCESS != PandoraContentApi::InitializeFragmentation(*this, clusterList, clusterListToDeleteName,
                         clusterListToSaveName))
                         continue;
+                    clusterToHitsMap.erase(clusterToHitsMap.find(pBadCluster));
                     // Create new clusters
                     const Cluster *pFirstCluster(nullptr), *pSecondCluster(nullptr);
                     if (STATUS_CODE_SUCCESS != PandoraContentApi::Cluster::Create(*this, firstParameters, pFirstCluster))
                         continue;
+                    clusterToHitsMap[pFirstCluster] = firstParameters.m_caloHitList;
                     if (STATUS_CODE_SUCCESS != PandoraContentApi::Cluster::Create(*this, secondParameters, pSecondCluster))
                         continue;
+                    clusterToHitsMap[pSecondCluster] = secondParameters.m_caloHitList;
 
                     // End cluster fragmentation operations
                     if (STATUS_CODE_SUCCESS != PandoraContentApi::EndFragmentation(*this, clusterListToSaveName, clusterListToDeleteName))
                         continue;
                 }
-                PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
+                //PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
             }
         }
     }
