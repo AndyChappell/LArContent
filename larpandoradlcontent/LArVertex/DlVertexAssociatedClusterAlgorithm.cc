@@ -16,6 +16,8 @@
 #include "larpandoracontent/LArHelpers/LArFileHelper.h"
 #include "larpandoracontent/LArHelpers/LArGeometryHelper.h"
 #include "larpandoracontent/LArHelpers/LArMCParticleHelper.h"
+#include "larpandoracontent/LArHelpers/LArPcaHelper.h"
+#include "larpandoracontent/LArHelpers/LArUtilityHelper.h"
 #include "larpandoracontent/LArHelpers/LArVertexHelper.h"
 #include "larpandoracontent/LArObjects/LArPointingCluster.h"
 
@@ -239,11 +241,60 @@ StatusCode DlVertexAssociatedClusterAlgorithm::Infer()
         //std::cout << "Cluster: " << pCluster << " Balance: " << balance << std::endl;
         if (balance >= 0)
             continue;
+        const CaloHitList clusterHits{clusterToHitsMap.at(pCluster)};
+        CartesianVector centroid(0, 0, 0);
+        LArPcaHelper::EigenValues eigenValues(0, 0, 0);
+        LArPcaHelper::EigenVectors eigenVectors;
+        LArPcaHelper::RunPca(clusterHits, centroid, eigenValues, eigenVectors);
+        FloatVector projection, isGood;
+        CaloHitVector sortedHits;
+        for (const CaloHit *const pCaloHit : clusterHits)
+        {
+            sortedHits.emplace_back(pCaloHit);
+            if (std::find(clusterToBadHitsMap[pCluster].begin(), clusterToBadHitsMap[pCluster].end(), pCaloHit) == clusterToBadHitsMap[pCluster].end())
+                isGood.emplace_back(1);
+            else
+                isGood.emplace_back(0);
+            const CartesianVector posVec{pCaloHit->GetPositionVector() - centroid};
+            float dot{posVec.GetDotProduct(eigenVectors[0])};
+            projection.emplace_back(dot);
+        }
+
+        auto comparator{[](const float a, const float b){ return a < b; }};
+        std::vector<size_t> order{LArUtilityHelper::GetSortIndices(projection, comparator)};
+        LArUtilityHelper::SortByIndices(order, sortedHits);
+        LArUtilityHelper::SortByIndices(order, projection);
+        LArUtilityHelper::SortByIndices(order, isGood);
+        size_t currentStreak{0}, longestStreak{0};
+        size_t currentStart{0}, longestStart{0};
+        for (size_t i = 0; i < isGood.size(); ++i)
+        {
+            if (isGood[i])
+            {
+                ++currentStreak;
+            }
+            else
+            {
+                if (currentStreak > longestStreak)
+                {
+                    longestStreak = currentStreak;
+                    longestStart = currentStart;
+                }
+                currentStart = i + 1;
+                currentStreak = 0;
+            }
+        }
+        if (currentStreak > longestStreak)
+        {
+            longestStreak = currentStreak;
+            longestStart = currentStart;
+        }
         const CaloHitSet badHits{clusterToBadHitsMap[pCluster]};
         PandoraContentApi::Cluster::Parameters firstParameters, secondParameters;
-        for (const CaloHit *const pCaloHit : clusterToHitsMap.at(pCluster))
+        for (size_t i = 0; i < isGood.size(); ++i)
         {
-            if (std::find(badHits.begin(), badHits.end(), pCaloHit) == badHits.end())
+            const CaloHit *const pCaloHit{sortedHits[i]};
+            if (i >= longestStart && i < (longestStart + longestStreak))
             {
                 firstParameters.m_caloHitList.emplace_back(pCaloHit);
             }
