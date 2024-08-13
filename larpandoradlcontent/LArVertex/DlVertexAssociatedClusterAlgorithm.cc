@@ -290,7 +290,7 @@ StatusCode DlVertexAssociatedClusterAlgorithm::Infer()
             longestStart = currentStart;
         }
         const CaloHitSet badHits{clusterToBadHitsMap[pCluster]};
-        PandoraContentApi::Cluster::Parameters firstParameters, secondParameters;
+        PandoraContentApi::Cluster::Parameters firstParameters, secondParameters, thirdParameters;
         for (size_t i = 0; i < isGood.size(); ++i)
         {
             const CaloHit *const pCaloHit{sortedHits[i]};
@@ -298,9 +298,13 @@ StatusCode DlVertexAssociatedClusterAlgorithm::Infer()
             {
                 firstParameters.m_caloHitList.emplace_back(pCaloHit);
             }
-            else
+            else if (i < longestStart)
             {
                 secondParameters.m_caloHitList.emplace_back(pCaloHit);
+            }
+            else
+            {
+                thirdParameters.m_caloHitList.emplace_back(pCaloHit);
             }
         }
         //const CaloHitList &originalHits{clusterToHitsMap.at(pCluster)};
@@ -309,7 +313,7 @@ StatusCode DlVertexAssociatedClusterAlgorithm::Infer()
         //PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &secondParameters.m_caloHitList, "Split Hits", RED));
         //PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
 
-        if (firstParameters.m_caloHitList.empty() || secondParameters.m_caloHitList.empty())
+        if (firstParameters.m_caloHitList.empty() || (secondParameters.m_caloHitList.empty() && thirdParameters.m_caloHitList.empty()))
             continue;
 
         // Begin cluster fragmentation operations
@@ -320,13 +324,27 @@ StatusCode DlVertexAssociatedClusterAlgorithm::Infer()
             clusterListToSaveName))
             continue;
         // Create new clusters
-        const Cluster *pFirstCluster(nullptr), *pSecondCluster(nullptr);
-        if (STATUS_CODE_SUCCESS != PandoraContentApi::Cluster::Create(*this, firstParameters, pFirstCluster))
-            continue;
-        clusterToHitsMap[pFirstCluster] = firstParameters.m_caloHitList;
-        if (STATUS_CODE_SUCCESS != PandoraContentApi::Cluster::Create(*this, secondParameters, pSecondCluster))
-            continue;
-        clusterToHitsMap[pSecondCluster] = secondParameters.m_caloHitList;
+        if (!firstParameters.m_caloHitList.empty())
+        {
+            const Cluster *pFirstCluster(nullptr);
+            if (STATUS_CODE_SUCCESS != PandoraContentApi::Cluster::Create(*this, firstParameters, pFirstCluster))
+                continue;
+            clusterToHitsMap[pFirstCluster] = firstParameters.m_caloHitList;
+        }
+        if (!secondParameters.m_caloHitList.empty())
+        {
+            const Cluster *pSecondCluster(nullptr);
+            if (STATUS_CODE_SUCCESS != PandoraContentApi::Cluster::Create(*this, secondParameters, pSecondCluster))
+                continue;
+            clusterToHitsMap[pSecondCluster] = secondParameters.m_caloHitList;
+        }
+        if (!thirdParameters.m_caloHitList.empty())
+        {
+            const Cluster *pThirdCluster{nullptr};
+            if (STATUS_CODE_SUCCESS != PandoraContentApi::Cluster::Create(*this, thirdParameters, pThirdCluster))
+                continue;
+            clusterToHitsMap[pThirdCluster] = thirdParameters.m_caloHitList;
+        }
 
         // End cluster fragmentation operations
         if (STATUS_CODE_SUCCESS != PandoraContentApi::EndFragmentation(*this, clusterListToSaveName, clusterListToDeleteName))
