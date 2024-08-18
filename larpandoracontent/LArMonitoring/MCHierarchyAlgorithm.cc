@@ -252,9 +252,9 @@ StatusCode MCHierarchyAlgorithm::Run()
     const int isNue{std::abs(pLArMC->GetParticleId()) == 12};
     const int isNumu{std::abs(pLArMC->GetParticleId()) == 14};
     const int isNutau{std::abs(pLArMC->GetParticleId()) == 16};
-    const int isTestbeam(LArMCParticleHelper::IsTriggeredBeamParticle(pRoot));
+    const int isTestbeam(LArMCParticleHelper::IsTriggeredBeamParticle(pRoot) ? 1 : 0);
     int decaysHadronically{0};
-    if (isCC and isNutau)
+    if (isCC && isNutau)
     {
         for (const MCParticle *const pChild : pLArMC->GetDaughterList())
         {
@@ -276,6 +276,7 @@ StatusCode MCHierarchyAlgorithm::Run()
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_eventTreeName, "is_testbeam", isTestbeam));
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_eventTreeName, "n_visible_final_state_particles",
         static_cast<int>(mcChildMap.at(pRoot).size())));
+    PANDORA_MONITORING_API(FillTree(this->GetPandora(), m_eventTreeName));
 
     return STATUS_CODE_SUCCESS;
 }
