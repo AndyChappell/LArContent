@@ -33,6 +33,15 @@ MCHierarchyAlgorithm::MCHierarchyAlgorithm() :
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
+MCHierarchyAlgorithm::~MCHierarchyAlgorithm()
+{
+    PANDORA_MONITORING_API(SaveTree(this->GetPandora(), m_mcTreeName, m_mcFileName, "UPDATE"));
+    PANDORA_MONITORING_API(SaveTree(this->GetPandora(), m_hitsTreeName, m_hitsFileName, "UPDATE"));
+    PANDORA_MONITORING_API(SaveTree(this->GetPandora(), m_eventTreeName, m_eventFileName, "UPDATE"));
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
 StatusCode MCHierarchyAlgorithm::Run()
 {
     static int event{-1};
@@ -68,6 +77,9 @@ StatusCode MCHierarchyAlgorithm::Run()
         else
             mcToLeadingMap[pMC] = pMC;
     }
+
+    if (!pRoot)
+        return STATUS_CODE_SUCCESS;
 
     for (const CaloHit *const pCaloHit : *pCaloHitList)
     {
@@ -196,13 +208,74 @@ StatusCode MCHierarchyAlgorithm::Run()
         PANDORA_MONITORING_API(FillTree(this->GetPandora(), m_mcTreeName));
     }
 
+    // Need a separate tree for the hits, x, z, adc, and also need to consider creating 3D particles
+    // with x, y, z, adc from the MC
+    IntVector plane, mcId;
+    FloatVector drift, width, channel, adc;
+    for (const auto &[pMC, caloHits] : m_mcToHitsMap)
+    {
+        for (const CaloHit *const pCaloHit : caloHits)
+        {
+            switch (pCaloHit->GetHitType())
+            {
+                case TPC_VIEW_W:
+                    plane.emplace_back(0);
+                    break;
+                case TPC_VIEW_V:
+                    plane.emplace_back(1);
+                    break;
+                case TPC_VIEW_U:
+                    plane.emplace_back(2);
+                    break;
+                default:
+                    continue;
+            }
+            mcId.emplace_back(mcToIdMap.at(pMC));
+            drift.emplace_back(pCaloHit->GetPositionVector().GetX());
+            drift.emplace_back(pCaloHit->GetCellSize1());
+            channel.emplace_back(pCaloHit->GetPositionVector().GetZ());
+            adc.emplace_back(pCaloHit->GetInputEnergy());
+        }
+    }
 
-/*
-        PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_mcTreeName, "isCC", isCC));
-        PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_mcTreeName, "isNuE", isNuE));
-        PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_mcTreeName, "isNuMu", isNuMu));
-        PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_mcTreeName, "nFinalStateParticles", nFinalStateParticles));
-*/
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_hitsTreeName, "event_id", event));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_hitsTreeName, "plane", &plane));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_hitsTreeName, "mc_id", &mcId));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_hitsTreeName, "drift", &drift));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_hitsTreeName, "width", &width));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_hitsTreeName, "channel", &channel));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_hitsTreeName, "adc", &adc));
+    PANDORA_MONITORING_API(FillTree(this->GetPandora(), m_hitsTreeName));
+
+    const LArMCParticle *const pLArMC{dynamic_cast<const LArMCParticle *>(pRoot)};
+    const int isCC{pLArMC->IsCC()};
+    const int isNue{std::abs(pLArMC->GetParticleId()) == 12};
+    const int isNumu{std::abs(pLArMC->GetParticleId()) == 14};
+    const int isNutau{std::abs(pLArMC->GetParticleId()) == 16};
+    const int isTestbeam(LArMCParticleHelper::IsTriggeredBeamParticle(pRoot));
+    int decaysHadronically{0};
+    if (isCC and isNutau)
+    {
+        for (const MCParticle *const pChild : pLArMC->GetDaughterList())
+        {
+            const int pdg{std::abs(pChild->GetParticleId())};
+            if (pdg == E_MINUS || pdg == MU_MINUS)
+            {
+                decaysHadronically = 1;
+                break;
+            }
+        }
+    }
+
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_eventTreeName, "event_id", event));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_eventTreeName, "is_cc", isCC));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_eventTreeName, "is_nu_e", isNue));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_eventTreeName, "is_nu_mu", isNumu));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_eventTreeName, "is_nu_tau", isNutau));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_eventTreeName, "tau_decays_hadronically", decaysHadronically));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_eventTreeName, "is_testbeam", isTestbeam));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_eventTreeName, "n_visible_final_state_particles",
+        static_cast<int>(mcChildMap.at(pRoot).size())));
 
     return STATUS_CODE_SUCCESS;
 }
