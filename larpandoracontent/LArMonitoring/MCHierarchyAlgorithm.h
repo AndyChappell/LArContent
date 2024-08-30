@@ -40,6 +40,10 @@ private:
     std::string m_eventTreeName; ///< Name of the event output tree
     std::string m_hitsFileName; ///< Name of the hits output file
     std::string m_hitsTreeName; ///< Name of the hits output tree
+    float m_correctionX; ///< Truth correction to apply in x
+    float m_correctionY; ///< Truth correction to apply in y
+    float m_correctionZ; ///< Truth correction to apply in z
+    bool m_visualize; // Whether to visualize the event
     LArMCParticleHelper::MCContributionMap m_mcToHitsMap;
 };
 

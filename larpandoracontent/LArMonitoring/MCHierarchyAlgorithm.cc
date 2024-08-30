@@ -27,7 +27,11 @@ MCHierarchyAlgorithm::MCHierarchyAlgorithm() :
     m_eventFileName{"events.root"},
     m_eventTreeName{"events"},
     m_hitsFileName{"hits.root"},
-    m_hitsTreeName{"hits"}
+    m_hitsTreeName{"hits"},
+    m_correctionX{0.f},
+    m_correctionY{0.f},
+    m_correctionZ{0.f},
+    m_visualize{false}
 {
 }
 
@@ -44,6 +48,13 @@ MCHierarchyAlgorithm::~MCHierarchyAlgorithm()
 
 StatusCode MCHierarchyAlgorithm::Run()
 {
+    m_mcToHitsMap.clear();
+    const CartesianVector geoCorrection(m_correctionX, m_correctionY, m_correctionZ);
+    if (m_visualize)
+    {
+        PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1.f, 1.f, 1.f));
+    }
+
     static int event{-1};
     ++event;
     const CaloHitList *pCaloHitList{nullptr};
@@ -60,10 +71,7 @@ StatusCode MCHierarchyAlgorithm::Run()
     for (const MCParticle *const pMC : *pMCParticleList)
     {
         if ((LArMCParticleHelper::IsNeutrino(pMC) || LArMCParticleHelper::IsTriggeredBeamParticle(pMC)) && pMC->GetParentList().empty())
-        {
-            std::cout << "Found root " << pMC->GetParticleId() << std::endl;
             pRoot = pMC;
-        }
         const MCParticle *pParent{pMC}, *pLeadingEM{nullptr};
         while (!pParent->GetParentList().empty())
         {
@@ -79,6 +87,10 @@ StatusCode MCHierarchyAlgorithm::Run()
     }
 
     if (!pRoot)
+        return STATUS_CODE_SUCCESS;
+    const CartesianVector trueVtx(pRoot->GetVertex().GetX() + geoCorrection.GetX(), 0, pRoot->GetVertex().GetZ() + geoCorrection.GetZ());
+    // Veto events interacting in the beamline instrumentation
+    if (trueVtx.GetZ() < -2.f)
         return STATUS_CODE_SUCCESS;
 
     for (const CaloHit *const pCaloHit : *pCaloHitList)
@@ -107,7 +119,6 @@ StatusCode MCHierarchyAlgorithm::Run()
         else
             mcList.emplace_front(pMC);
     }
-    std::cout << "Map Length: " << m_mcToHitsMap.size() << " List Length: " << mcList.size() << std::endl;
 
     int i{0};
     typedef std::map<const MCParticle *, int> MCToIndexMap;
@@ -125,7 +136,7 @@ StatusCode MCHierarchyAlgorithm::Run()
     for (const auto &[pMC, caloHits] : m_mcToHitsMap)
     {
         const MCParticle *pParent{pMC};
-        while (!pParent->GetParentList().empty())
+        while (pParent->GetParentList().size() == 1)
         {
             pParent = pParent->GetParentList().front();
             if (m_mcToHitsMap.find(pParent) != m_mcToHitsMap.end())
@@ -149,13 +160,12 @@ StatusCode MCHierarchyAlgorithm::Run()
     const LArTransformationPlugin *const transform{this->GetPandora().GetPlugins()->GetLArTransformationPlugin()};
     for (const auto &[pMC, caloHits] : m_mcToHitsMap)
     {
-        // Want event level tree for things like CC/NC, flavour, num final state particles and possibly final state track/shower count
-        // Need a separate tree for the hits, x, z, adc, and also need to consider creating 3D particles
-        // with x, y, z, adc from the MC
         const int mcId{mcToIdMap.at(pMC)};
+        const int isTriggeredBeam{LArMCParticleHelper::IsTriggeredBeamParticle(pMC) ? 1 : 0};
+        const int isBeamInduced{!isTriggeredBeam && LArMCParticleHelper::IsBeamParticle(pMC) ? 1 : 0};
         const CartesianVector &mom{pMC->GetMomentum()};
         FloatVector momVec{mom.GetX(), mom.GetY(), mom.GetZ()};
-        const CartesianVector &vtx{pMC->GetParticleId() != 22 ? pMC->GetVertex() : pMC->GetEndpoint()};
+        const CartesianVector &vtx{pMC->GetParticleId() != 22 ? pMC->GetVertex() + geoCorrection : pMC->GetEndpoint() + geoCorrection};
         FloatVector vtxVec{vtx.GetX(), vtx.GetY(), vtx.GetZ()};
         const float xVtx{vtx.GetX()};
         const float uVtx{static_cast<float>(transform->YZtoU(vtx.GetY(), vtx.GetZ()))};
@@ -187,9 +197,22 @@ StatusCode MCHierarchyAlgorithm::Run()
         }
         int nHitsU{static_cast<int>(uHits.size())}, nHitsV{static_cast<int>(vHits.size())}, nHitsW{static_cast<int>(wHits.size())};
 
-        // Need to construct arbitrary id for MC so we can have parent and child indices
+        if (m_visualize)
+        {
+            if (LArMCParticleHelper::IsTriggeredBeamParticle(pMC))
+            {
+                PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &wHits, "trig", RED));
+            }
+            else if (LArMCParticleHelper::IsBeamParticle(pMC))
+            {
+                PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &wHits, "beam", BLACK));
+            }
+        }
+
         PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_mcTreeName, "event_id", event));
         PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_mcTreeName, "mc_id", mcId));
+        PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_mcTreeName, "is_triggered_beam", isTriggeredBeam));
+        PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_mcTreeName, "is_beam_induced", isBeamInduced));
         PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_mcTreeName, "pdg", pMC->GetParticleId()));
         PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_mcTreeName, "energy", pMC->GetEnergy()));
         PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_mcTreeName, "mom_vec", &momVec));
@@ -199,7 +222,6 @@ StatusCode MCHierarchyAlgorithm::Run()
         PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_mcTreeName, "n_hits_u", nHitsU));
         PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_mcTreeName, "n_hits_v", nHitsV));
         PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_mcTreeName, "n_hits_w", nHitsW));
-        // Want a particle tier related to the visible particles
         PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_mcTreeName, "vtx_vec", &vtxVec));
         PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_mcTreeName, "vtx_x", xVtx));
         PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_mcTreeName, "vtx_u", uVtx));
@@ -207,9 +229,13 @@ StatusCode MCHierarchyAlgorithm::Run()
         PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_mcTreeName, "vtx_w", wVtx));
         PANDORA_MONITORING_API(FillTree(this->GetPandora(), m_mcTreeName));
     }
+    if (m_visualize)
+    {
+        PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &trueVtx, "true", BLUE, 3));
+        PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
+    }
 
-    // Need a separate tree for the hits, x, z, adc, and also need to consider creating 3D particles
-    // with x, y, z, adc from the MC
+    // Consider creating 3D particles with x, y, z, adc from the MC
     IntVector plane, mcId;
     FloatVector drift, width, channel, adc;
     for (const auto &[pMC, caloHits] : m_mcToHitsMap)
@@ -232,7 +258,7 @@ StatusCode MCHierarchyAlgorithm::Run()
             }
             mcId.emplace_back(mcToIdMap.at(pMC));
             drift.emplace_back(pCaloHit->GetPositionVector().GetX());
-            drift.emplace_back(pCaloHit->GetCellSize1());
+            width.emplace_back(pCaloHit->GetCellSize1());
             channel.emplace_back(pCaloHit->GetPositionVector().GetZ());
             adc.emplace_back(pCaloHit->GetInputEnergy());
         }
@@ -293,6 +319,10 @@ StatusCode MCHierarchyAlgorithm::ReadSettings(const TiXmlHandle xmlHandle)
     PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "EventTreeName", m_eventTreeName));
     PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "HitsFileName", m_hitsFileName));
     PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "HitsTreeName", m_hitsTreeName));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "CorrectionX", m_correctionX));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "CorrectionY", m_correctionY));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "CorrectionZ", m_correctionZ));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "Visualize", m_visualize));
 
     return STATUS_CODE_SUCCESS;
 }
