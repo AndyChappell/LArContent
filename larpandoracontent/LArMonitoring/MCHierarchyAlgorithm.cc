@@ -10,6 +10,7 @@
 
 #include "larpandoracontent/LArMonitoring/MCHierarchyAlgorithm.h"
 
+#include "larpandoracontent/LArHelpers/LArGeometryHelper.h"
 #include "larpandoracontent/LArHelpers/LArPfoHelper.h"
 #include "larpandoracontent/LArObjects/LArCaloHit.h"
 #include "larpandoracontent/LArObjects/LArMCParticle.h"
@@ -240,6 +241,8 @@ StatusCode MCHierarchyAlgorithm::Run()
     FloatVector drift, width, channel, adc;
     for (const auto &[pMC, caloHits] : m_mcToHitsMap)
     {
+        CaloHitList hits3D;
+        this->Make3DHits(caloHits, hits3D);
         for (const CaloHit *const pCaloHit : caloHits)
         {
             switch (pCaloHit->GetHitType())
@@ -305,6 +308,110 @@ StatusCode MCHierarchyAlgorithm::Run()
     PANDORA_MONITORING_API(FillTree(this->GetPandora(), m_eventTreeName));
 
     return STATUS_CODE_SUCCESS;
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+void MCHierarchyAlgorithm::Make3DHits(const CaloHitList &hits2D,  CaloHitList &hits3D) const
+{
+    (void)hits3D;
+    if (hits2D.empty())
+        return;
+    float xMin{std::numeric_limits<float>::max()}, xMax{std::numeric_limits<float>::lowest()};
+    for (const CaloHit *const pCaloHit : hits2D)
+    {
+        const float low{pCaloHit->GetPositionVector().GetX() - 0.5f * pCaloHit->GetCellSize1()};
+        const float high{low + pCaloHit->GetCellSize1()};
+        if (low < xMin)
+            xMin = low;
+        if (high > xMax)
+            xMax = high;
+    }
+    if (xMin == xMax)
+    {
+        xMin -= std::numeric_limits<float>::epsilon();
+        xMax += std::numeric_limits<float>::epsilon();
+    }
+    const int N{static_cast<int>(std::ceil((xMax - xMin) / 0.5f))};
+
+    std::map<int, CaloHitVector> uHits, vHits, wHits;
+    for (const CaloHit *const pCaloHit : hits2D)
+    {
+        const float low{pCaloHit->GetPositionVector().GetX() - 0.5f * pCaloHit->GetCellSize1()};
+        const float high{low + pCaloHit->GetCellSize1()};
+        const int bin0{static_cast<int>(std::floor((low - xMin) / 0.5f))};
+        const int bin1{static_cast<int>(std::floor((high - xMin) / 0.5f))};
+        for (int b = bin0; b <= bin1; ++b)
+        {
+            switch (pCaloHit->GetHitType())
+            {
+                case TPC_VIEW_U:
+                    uHits[b].emplace_back(pCaloHit);
+                    break;
+                case TPC_VIEW_V:
+                    vHits[b].emplace_back(pCaloHit);
+                    break;
+                case TPC_VIEW_W:
+                    wHits[b].emplace_back(pCaloHit);
+                    break;
+                default:
+                    break;
+            }
+        }
+    }
+
+    std::map<int, std::map<int, std::map<int, float>>> matrix;
+    // In each bin, identify the best combination of hits based on chi2, reject chi2 > 1.5 (maybe 6 due to dof)
+    // Need to track used hits, their best chi2, the 3D pos and the hits that accompany them
+    for (int b = 0; b < N; ++b)
+    {
+        if (uHits[b].empty() || vHits[b].empty() || wHits[b].empty())
+            continue;
+        matrix.clear();
+
+        // Index using [] because it's likely we'll have gaps in the binning which we can just skip
+        for (size_t i = 0; i < uHits[b].size(); ++i)
+        {
+            const CaloHit *const pCaloHitU{uHits[b].at(i)};
+            const CartesianVector &posU{pCaloHitU->GetPositionVector()};
+            for (size_t j = 0; j < vHits[b].size(); ++j)
+            {
+                const CaloHit *const pCaloHitV{vHits[b].at(j)};
+                const CartesianVector &posV{pCaloHitV->GetPositionVector()};
+                for (size_t k = 0; k < wHits[b].size(); ++k)
+                {
+                    const CaloHit *const pCaloHitW{wHits[b].at(k)};
+                    const CartesianVector &posW{pCaloHitW->GetPositionVector()};
+                    float chi2{std::numeric_limits<float>::max()};
+                    CartesianVector pos3D(0, 0, 0);
+                    LArGeometryHelper::MergeThreeWidePositions3D(this->GetPandora(), TPC_VIEW_U, TPC_VIEW_V, TPC_VIEW_W, posU, posV, posW,
+                        0.5f * pCaloHitU->GetCellSize1(), 0.5f * pCaloHitV->GetCellSize1(), 0.5f * pCaloHitW->GetCellSize1(), pos3D, chi2);
+                    matrix[i][j][k] = chi2;
+                }
+            }
+        }
+
+        // Iterate through the map, create a vector with all o the tuples and chi2
+        // sort that vector by ascending chi2
+        // Collect in sequence, recording used indices in each view to avoid duplicates
+        // Veto excessive chi2 values (probably anything more than 6 should be veto'd, maybe less)
+        // Check what's left over, maybe make 2 hit 3D hits from the leftover cases, perhaps checking proximity
+        // to the existing confirmed hits as a way to ensure some kind of consistency (enfore closest approach of e.g. < 5 cm)
+        for (size_t i = 0; i < uHits[b].size(); ++i)
+        {
+            for (size_t j = 0; j < vHits[b].size(); ++j)
+            {
+                std::cout << " { ";
+                for (size_t k = 0; k < wHits[b].size(); ++k)
+                {
+                    std::cout << std::setprecision(2) << matrix[i][j][k] << " ";
+                }
+                std::cout << "} ";
+            }
+            std::cout << std::endl;
+        }
+        std::cout << std::endl;
+    }
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
