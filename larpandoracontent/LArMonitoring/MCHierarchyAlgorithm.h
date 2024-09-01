@@ -48,6 +48,8 @@ private:
     float m_correctionZ; ///< Truth correction to apply in z
     bool m_visualize; // Whether to visualize the event
     LArMCParticleHelper::MCContributionMap m_mcToHitsMap;
+
+    typedef std::tuple<int, int, int, float> CandidateHit;
 };
 
 } // namespace lar_content

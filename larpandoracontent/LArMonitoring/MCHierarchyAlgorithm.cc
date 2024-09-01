@@ -391,26 +391,39 @@ void MCHierarchyAlgorithm::Make3DHits(const CaloHitList &hits2D,  CaloHitList &h
             }
         }
 
-        // Iterate through the map, create a vector with all o the tuples and chi2
-        // sort that vector by ascending chi2
-        // Collect in sequence, recording used indices in each view to avoid duplicates
-        // Veto excessive chi2 values (probably anything more than 6 should be veto'd, maybe less)
         // Check what's left over, maybe make 2 hit 3D hits from the leftover cases, perhaps checking proximity
         // to the existing confirmed hits as a way to ensure some kind of consistency (enfore closest approach of e.g. < 5 cm)
+
+        std::vector<CandidateHit> candidateHits;
         for (size_t i = 0; i < uHits[b].size(); ++i)
         {
             for (size_t j = 0; j < vHits[b].size(); ++j)
             {
-                std::cout << " { ";
                 for (size_t k = 0; k < wHits[b].size(); ++k)
-                {
-                    std::cout << std::setprecision(2) << matrix[i][j][k] << " ";
-                }
-                std::cout << "} ";
+                    candidateHits.emplace_back(std::make_tuple(i, j, k, matrix[i][j][k]));
             }
-            std::cout << std::endl;
         }
-        std::cout << std::endl;
+        std::sort(candidateHits.begin(), candidateHits.end(), [] (const CandidateHit &hit1, const CandidateHit &hit2)
+            { return std::get<3>(hit1) < std::get<3>(hit2); });
+        // Note these should be promoted to broader scope, because in principle hits can turn up in multiple bins
+        CaloHitSet usedHitsU, usedHitsV, usedHitsW;
+        std::vector<CandidateHit> confirmedHits;
+        for (const CandidateHit &candidateHit : candidateHits)
+        {
+            if (usedHitsU.find(uHits[b].at(std::get<0>(candidateHit))) != usedHitsU.end())
+                continue;
+            if (usedHitsV.find(vHits[b].at(std::get<1>(candidateHit))) != usedHitsV.end())
+                continue;
+            if (usedHitsW.find(wHits[b].at(std::get<2>(candidateHit))) != usedHitsW.end())
+                continue;
+            if (std::get<3>(candidateHit) > 6)
+                continue;
+            usedHitsU.insert(uHits[b].at(std::get<0>(candidateHit)));
+            usedHitsV.insert(vHits[b].at(std::get<1>(candidateHit)));
+            usedHitsW.insert(wHits[b].at(std::get<2>(candidateHit)));
+            confirmedHits.emplace_back(candidateHit);
+        }
+        std::cout << "In: " << uHits[b].size() << " " << vHits[b].size() << " " << wHits[b].size() << " Out: " << confirmedHits.size() << std::endl;
     }
 }
 
