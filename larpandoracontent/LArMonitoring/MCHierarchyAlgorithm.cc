@@ -236,7 +236,7 @@ StatusCode MCHierarchyAlgorithm::Run()
         PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
     }
 
-    // Consider creating 3D particles with x, y, z, adc from the MC
+    PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1.f, 1.f, 1.f));
     IntVector plane, mcId;
     FloatVector drift, width, channel, adc;
     for (const auto &[pMC, caloHits] : m_mcToHitsMap)
@@ -265,7 +265,9 @@ StatusCode MCHierarchyAlgorithm::Run()
             channel.emplace_back(pCaloHit->GetPositionVector().GetZ());
             adc.emplace_back(pCaloHit->GetInputEnergy());
         }
+        PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &hits3D, "3D", AUTOITER));
     }
+    PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
 
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_hitsTreeName, "event_id", event));
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_hitsTreeName, "plane", &plane));
@@ -361,6 +363,7 @@ void MCHierarchyAlgorithm::Make3DHits(const CaloHitList &hits2D,  CaloHitList &h
     }
 
     std::map<int, std::map<int, std::map<int, float>>> matrix;
+    CaloHitSet usedHitsU, usedHitsV, usedHitsW;
     // In each bin, identify the best combination of hits based on chi2, reject chi2 > 1.5 (maybe 6 due to dof)
     // Need to track used hits, their best chi2, the 3D pos and the hits that accompany them
     for (int b = 0; b < N; ++b)
@@ -393,7 +396,6 @@ void MCHierarchyAlgorithm::Make3DHits(const CaloHitList &hits2D,  CaloHitList &h
 
         // Check what's left over, maybe make 2 hit 3D hits from the leftover cases, perhaps checking proximity
         // to the existing confirmed hits as a way to ensure some kind of consistency (enfore closest approach of e.g. < 5 cm)
-
         std::vector<CandidateHit> candidateHits;
         for (size_t i = 0; i < uHits[b].size(); ++i)
         {
@@ -406,7 +408,6 @@ void MCHierarchyAlgorithm::Make3DHits(const CaloHitList &hits2D,  CaloHitList &h
         std::sort(candidateHits.begin(), candidateHits.end(), [] (const CandidateHit &hit1, const CandidateHit &hit2)
             { return std::get<3>(hit1) < std::get<3>(hit2); });
         // Note these should be promoted to broader scope, because in principle hits can turn up in multiple bins
-        CaloHitSet usedHitsU, usedHitsV, usedHitsW;
         std::vector<CandidateHit> confirmedHits;
         for (const CandidateHit &candidateHit : candidateHits)
         {
@@ -423,7 +424,44 @@ void MCHierarchyAlgorithm::Make3DHits(const CaloHitList &hits2D,  CaloHitList &h
             usedHitsW.insert(wHits[b].at(std::get<2>(candidateHit)));
             confirmedHits.emplace_back(candidateHit);
         }
-        std::cout << "In: " << uHits[b].size() << " " << vHits[b].size() << " " << wHits[b].size() << " Out: " << confirmedHits.size() << std::endl;
+
+        for (const CandidateHit &hit : confirmedHits)
+        {
+            const CaloHit *pCaloHit3D{nullptr};
+            const CaloHit *uHit{uHits[b].at(std::get<0>(hit))};
+            const CaloHit *vHit{vHits[b].at(std::get<1>(hit))};
+            const CaloHit *wHit{wHits[b].at(std::get<2>(hit))};
+            float chi2{0.f};
+            CartesianVector pos3D(0, 0, 0);
+            LArGeometryHelper::MergeThreeWidePositions3D(this->GetPandora(), TPC_VIEW_U, TPC_VIEW_V, TPC_VIEW_W,
+                uHit->GetPositionVector(), vHit->GetPositionVector(), wHit->GetPositionVector(), 0.5f * uHit->GetCellSize1(),
+                0.5f * vHit->GetCellSize1(), 0.5f * wHit->GetCellSize1(), pos3D, chi2);
+
+            PandoraContentApi::CaloHit::Parameters parameters;
+            parameters.m_hitType = TPC_3D;
+            const CaloHit *const pCaloHit2D(wHit);
+            parameters.m_positionVector = pos3D;
+            parameters.m_pParentAddress = static_cast<const void *>(pCaloHit2D);
+            parameters.m_cellThickness = pCaloHit2D->GetCellThickness();
+            parameters.m_cellGeometry = RECTANGULAR;
+            parameters.m_cellSize0 = pCaloHit2D->GetCellLengthScale();
+            parameters.m_cellSize1 = pCaloHit2D->GetCellLengthScale();
+            parameters.m_cellNormalVector = pCaloHit2D->GetCellNormalVector();
+            parameters.m_expectedDirection = pCaloHit2D->GetExpectedDirection();
+            parameters.m_nCellRadiationLengths = pCaloHit2D->GetNCellRadiationLengths();
+            parameters.m_nCellInteractionLengths = pCaloHit2D->GetNCellInteractionLengths();
+            parameters.m_time = pCaloHit2D->GetTime();
+            parameters.m_inputEnergy = pCaloHit2D->GetInputEnergy();
+            parameters.m_mipEquivalentEnergy = pCaloHit2D->GetMipEquivalentEnergy();
+            parameters.m_electromagneticEnergy = pCaloHit2D->GetElectromagneticEnergy();
+            parameters.m_hadronicEnergy = pCaloHit2D->GetHadronicEnergy();
+            parameters.m_isDigital = pCaloHit2D->IsDigital();
+            parameters.m_hitRegion = pCaloHit2D->GetHitRegion();
+            parameters.m_layer = pCaloHit2D->GetLayer();
+            parameters.m_isInOuterSamplingLayer = pCaloHit2D->IsInOuterSamplingLayer();
+            PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::CaloHit::Create(*this, parameters, pCaloHit3D));
+            hits3D.emplace_back(pCaloHit3D);
+        }
     }
 }
 
