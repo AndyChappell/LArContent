@@ -31,7 +31,8 @@ public:
 private:
     pandora::StatusCode Run();
 
-    void Make3DHits(const pandora::CaloHitList &hits2D, pandora::CaloHitList &hits3D) const;
+    void Make3DHits(const pandora::CaloHitList &hits2D, pandora::CaloHitList &hits3D, pandora::CaloHitList &remainingHits) const;
+    void MopUp3DHits(const pandora::CaloHitList &hits2D, pandora::CaloHitList &hits3D) const;
 
     pandora::StatusCode ReadSettings(const pandora::TiXmlHandle xmlHandle);
 
