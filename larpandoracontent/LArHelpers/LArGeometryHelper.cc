@@ -217,6 +217,75 @@ void LArGeometryHelper::MergeTwoPositions(const Pandora &pandora, const HitType 
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
+void LArGeometryHelper::MergeTwoWidePositions(const Pandora &pandora, const HitType view1, const HitType view2, const CartesianVector &position1,
+    const CartesianVector &position2, const float driftError1, const float driftError2, CartesianVector &outputU, CartesianVector &outputV,
+    CartesianVector &outputW, float &chiSquared)
+{
+    float Y{0.f}, Z{0.f};
+    if (view1 == TPC_VIEW_U && view2 == TPC_VIEW_V)
+    {
+        Y = pandora.GetPlugins()->GetLArTransformationPlugin()->UVtoY(position1.GetZ(), position2.GetZ());
+        Z = pandora.GetPlugins()->GetLArTransformationPlugin()->UVtoZ(position1.GetZ(), position2.GetZ());
+    }
+    if (view1 == TPC_VIEW_U && view2 == TPC_VIEW_W)
+    {
+        Y = pandora.GetPlugins()->GetLArTransformationPlugin()->UWtoY(position1.GetZ(), position2.GetZ());
+        Z = pandora.GetPlugins()->GetLArTransformationPlugin()->UWtoZ(position1.GetZ(), position2.GetZ());
+    }
+    if (view1 == TPC_VIEW_V && view2 == TPC_VIEW_W)
+    {
+        Y = pandora.GetPlugins()->GetLArTransformationPlugin()->VWtoY(position1.GetZ(), position2.GetZ());
+        Z = pandora.GetPlugins()->GetLArTransformationPlugin()->VWtoZ(position1.GetZ(), position2.GetZ());
+    }
+    if (view2 == TPC_VIEW_U && view1 == TPC_VIEW_V)
+    {
+        Y = pandora.GetPlugins()->GetLArTransformationPlugin()->UVtoY(position2.GetZ(), position1.GetZ());
+        Z = pandora.GetPlugins()->GetLArTransformationPlugin()->UVtoZ(position2.GetZ(), position1.GetZ());
+    }
+    if (view2 == TPC_VIEW_U && view1 == TPC_VIEW_W)
+    {
+        Y = pandora.GetPlugins()->GetLArTransformationPlugin()->UWtoY(position2.GetZ(), position1.GetZ());
+        Z = pandora.GetPlugins()->GetLArTransformationPlugin()->UWtoZ(position2.GetZ(), position1.GetZ());
+    }
+    if (view2 == TPC_VIEW_V && view1 == TPC_VIEW_W)
+    {
+        Y = pandora.GetPlugins()->GetLArTransformationPlugin()->VWtoY(position2.GetZ(), position1.GetZ());
+        Z = pandora.GetPlugins()->GetLArTransformationPlugin()->VWtoZ(position2.GetZ(), position1.GetZ());
+    }
+
+    const float driftErrorSum{driftError1 + driftError2};
+    float xWeight1{driftErrorSum / driftError1}, xWeight2{driftErrorSum / driftError2};
+    const float xWeightSum{xWeight1 + xWeight2};
+    xWeight1 /= xWeightSum;
+    xWeight2 /= xWeightSum;
+    const float aveX{xWeight1 * position1.GetX() + xWeight2 * position2.GetX()};
+    // Wire pitch errors are very similar, so weight evenly
+
+    const float aveU(pandora.GetPlugins()->GetLArTransformationPlugin()->YZtoU(Y, Z));
+    const float aveV(pandora.GetPlugins()->GetLArTransformationPlugin()->YZtoV(Y, Z));
+    const float aveW(pandora.GetPlugins()->GetLArTransformationPlugin()->YZtoW(Y, Z));
+
+    outputU.SetValues(aveX, 0.f, aveU);
+    outputV.SetValues(aveX, 0.f, aveV);
+    outputW.SetValues(aveX, 0.f, aveW);
+
+    chiSquared = 0;
+    if (view1 == TPC_VIEW_U)
+        chiSquared += ((outputU.GetX() - position1.GetX()) * (outputU.GetX() - position1.GetX())) / (driftError1 * driftError1);
+    else if (view1 == TPC_VIEW_V)
+        chiSquared += ((outputV.GetX() - position1.GetX()) * (outputV.GetX() - position1.GetX())) / (driftError1 * driftError1);
+    else
+        chiSquared += ((outputW.GetX() - position1.GetX()) * (outputW.GetX() - position1.GetX())) / (driftError1 * driftError1);
+    if (view2 == TPC_VIEW_U)
+        chiSquared += ((outputU.GetX() - position2.GetX()) * (outputU.GetX() - position2.GetX())) / (driftError2 * driftError2);
+    else if (view2 == TPC_VIEW_V)
+        chiSquared += ((outputV.GetX() - position2.GetX()) * (outputV.GetX() - position2.GetX())) / (driftError2 * driftError2);
+    else
+        chiSquared += ((outputW.GetX() - position2.GetX()) * (outputW.GetX() - position2.GetX())) / (driftError2 * driftError2);
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
 void LArGeometryHelper::MergeThreePositions(const Pandora &pandora, const HitType view1, const HitType view2, const HitType view3,
     const CartesianVector &position1, const CartesianVector &position2, const CartesianVector &position3, CartesianVector &outputU,
     CartesianVector &outputV, CartesianVector &outputW, float &chiSquared)
@@ -394,6 +463,19 @@ void LArGeometryHelper::MergeTwoPositions3D(const Pandora &pandora, const HitTyp
 {
     CartesianVector positionU(0.f, 0.f, 0.f), positionV(0.f, 0.f, 0.f), positionW(0.f, 0.f, 0.f);
     LArGeometryHelper::MergeTwoPositions(pandora, view1, view2, position1, position2, positionU, positionV, positionW, chiSquared);
+
+    position3D.SetValues(positionW.GetX(), pandora.GetPlugins()->GetLArTransformationPlugin()->UVtoY(positionU.GetZ(), positionV.GetZ()),
+        pandora.GetPlugins()->GetLArTransformationPlugin()->UVtoZ(positionU.GetZ(), positionV.GetZ()));
+}
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+void LArGeometryHelper::MergeTwoWidePositions3D(const Pandora &pandora, const HitType view1, const HitType view2,
+    const CartesianVector &position1, const CartesianVector &position2, const float driftError1, const float driftError2,
+    CartesianVector &position3D, float &chiSquared)
+{
+    CartesianVector positionU(0.f, 0.f, 0.f), positionV(0.f, 0.f, 0.f), positionW(0.f, 0.f, 0.f);
+    LArGeometryHelper::MergeTwoWidePositions(pandora, view1, view2, position1, position2, driftError1, driftError2, positionU, positionV,
+        positionW, chiSquared);
 
     position3D.SetValues(positionW.GetX(), pandora.GetPlugins()->GetLArTransformationPlugin()->UVtoY(positionU.GetZ(), positionV.GetZ()),
         pandora.GetPlugins()->GetLArTransformationPlugin()->UVtoZ(positionU.GetZ(), positionV.GetZ()));
