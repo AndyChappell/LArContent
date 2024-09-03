@@ -243,9 +243,6 @@ StatusCode MCHierarchyAlgorithm::Run()
     FloatVector drift, width, channel, adc;
     for (const auto &[pMC, caloHits] : m_mcToHitsMap)
     {
-        CaloHitList hits3D, remainingHits;
-        this->Make3DHits(caloHits, hits3D, remainingHits);
-        this->MopUp3DHits(remainingHits, hits3D);
         for (const CaloHit *const pCaloHit : caloHits)
         {
             switch (pCaloHit->GetHitType())
