@@ -72,43 +72,35 @@ StatusCode DlSageVertexingAlgorithm::PrepareTrainingSample()
         const LArGraph::EdgeVector &edgeVector{graph.GetEdges()};
         int id{0};
         std::map<const CaloHit *, int> nodeIdMap;
-        IntVector node0Vector, node1Vector;
-        float x{0.f}, z{0.f}, adc{0.f};
+        IntVector node0Vector, node1Vector, nodeIdVector;
+        FloatVector xVector, zVector, adcVector;
         for (const LArGraph::Edge *pEdge : edgeVector)
         {
             const CaloHit *pNode0{pEdge->m_v0};
             const CaloHit *pNode1{pEdge->m_v1};
-            if (nodeIdMap.find(pNode0) == nodeIdMap.end())
+            for (const CaloHit *pNode : {pNode0, pNode1})
             {
-                nodeIdMap[pNode0] = id++;
-                // Update and fill the node tree - think about scaling here, probably want to get to a final feature set
-                // at this stage, rather than computing things in Python
-                x = pNode0->GetPositionVector().GetX();
-                z = pNode0->GetPositionVector().GetZ();
-                adc = pNode0->GetInputEnergy();
-                PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_nodeTreeName, "idx", id));
-                PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_nodeTreeName, "x", x));
-                PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_nodeTreeName, "z", z));
-                PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_nodeTreeName, "adc", adc));
-                PANDORA_MONITORING_API(FillTree(this->GetPandora(), m_nodeTreeName));
-            }
-            if (nodeIdMap.find(pNode1) == nodeIdMap.end())
-            {
-                nodeIdMap[pNode1] = id++;
-                // Update and fill the node tree
-                x = pNode1->GetPositionVector().GetX();
-                z = pNode1->GetPositionVector().GetZ();
-                adc = pNode1->GetInputEnergy();
-                PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_nodeTreeName, "idx", id));
-                PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_nodeTreeName, "x", x));
-                PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_nodeTreeName, "z", z));
-                PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_nodeTreeName, "adc", adc));
-                PANDORA_MONITORING_API(FillTree(this->GetPandora(), m_nodeTreeName));
+                if (nodeIdMap.find(pNode) == nodeIdMap.end())
+                {
+                    nodeIdMap[pNode] = id++;
+                    // Update and fill the node tree - think about scaling here, probably want to get to a final feature set
+                    // at this stage, rather than computing things in Python
+                    nodeIdVector.emplace_back(id);
+                    xVector.emplace_back(pNode->GetPositionVector().GetX());
+                    zVector.emplace_back(pNode->GetPositionVector().GetZ());
+                    adcVector.emplace_back(pNode->GetInputEnergy());
+                }
             }
             // Update the edge tree
             node0Vector.emplace_back(nodeIdMap.at(pNode0));
             node1Vector.emplace_back(nodeIdMap.at(pNode1));
         }
+        PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_nodeTreeName, "id_vector", &nodeIdVector));
+        PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_nodeTreeName, "x_vector", &xVector));
+        PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_nodeTreeName, "z_vector", &zVector));
+        PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_nodeTreeName, "adc_vector", &adcVector));
+        PANDORA_MONITORING_API(FillTree(this->GetPandora(), m_nodeTreeName));
+
         // Provisionally this will need to be done for each of u, v, and w, so we'll need unique tree names
         PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_edgeTreeName, "node0_vector", &node0Vector));
         PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_edgeTreeName, "node1_vector", &node1Vector));
