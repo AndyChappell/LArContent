@@ -8,6 +8,8 @@
 #ifndef LAR_DL_VERTEXING_ALGORITHM_H
 #define LAR_DL_VERTEXING_ALGORITHM_H 1
 
+#include "Objects/Event.h"
+
 #include "Pandora/Algorithm.h"
 #include "Pandora/AlgorithmHeaders.h"
 
@@ -102,6 +104,19 @@ private:
     std::string m_rootTreeName; ///< The ROOT tree name
     std::string m_rootFileName; ///< The ROOT file name
     std::mt19937 m_rng;         ///< The random number generator
+};
+
+class VertexObject : public pandora::EventObject
+{
+public:
+    VertexObject(const int value);
+
+    int GetAnswer() const;
+
+    void Clear() override;
+
+private:
+    int m_theAnswer;
 };
 
 } // namespace lar_dl_content

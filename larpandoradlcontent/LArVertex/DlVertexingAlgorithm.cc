@@ -54,6 +54,53 @@ DlVertexingAlgorithm::~DlVertexingAlgorithm()
 
 StatusCode DlVertexingAlgorithm::Run()
 {
+    Event *pEvent(this->GetPandora().GetEvent());
+    std::cout << "Event Object exists? " << pEvent << std::endl;
+    if (pEvent->Exists("pass1"))
+    {
+        const VertexObject *pObj{dynamic_cast<const VertexObject *>(pEvent->GetEventObject("pass1"))};
+        if (pObj)
+            std::cout << "Confirm pass 1 exist on alg start: " << pObj->GetAnswer() << std::endl;
+    }
+    else
+    {
+        std::cout << "No Pass 1 answer exists on alg start" << std::endl;
+    }
+    if (pEvent->Exists("pass2"))
+    {
+        const VertexObject *pObj{dynamic_cast<const VertexObject *>(pEvent->GetEventObject("pass2"))};
+        if (pObj)
+            std::cout << "Confirm pass 2 exist on alg start: " << pObj->GetAnswer() << std::endl;
+    }
+    else
+    {
+        std::cout << "No Pass 2 answer exists on alg start" << std::endl;
+    }
+
+    if (m_pass == 1)
+    {
+        if (!pEvent->Exists("pass1"))
+            pEvent->AddEventObject("pass1", *new VertexObject(42));
+        else
+            std::cout << "Pass 1 answer already exists" << std::endl;
+    }
+    else if (m_pass == 2)
+    {
+        pEvent->AddEventObject("pass2", *new VertexObject(7));
+        if (pEvent->Exists("pass1"))
+        {
+            const VertexObject *pObj1{dynamic_cast<const VertexObject *>(pEvent->GetEventObject("pass1"))};
+            if (pObj1)
+                std::cout << "Confirm pass 1 exists: " << pObj1->GetAnswer() << std::endl;
+        }
+        else
+        {
+            std::cout << "Pass 2 could not find pass1 answer" << std::endl;
+        }
+        const VertexObject *pObj2{dynamic_cast<const VertexObject *>(pEvent->GetEventObject("pass2"))};
+        if (pObj2)
+            std::cout << "Confirm pass 2 exists: " << pObj2->GetAnswer() << std::endl;
+    }
     if (m_trainingMode)
         return this->PrepareTrainingSample();
     else
