@@ -8,6 +8,8 @@
 #ifndef LAR_DL_VERTEXING_ALGORITHM_H
 #define LAR_DL_VERTEXING_ALGORITHM_H 1
 
+#include "Objects/Event.h"
+
 #include "Pandora/Algorithm.h"
 #include "Pandora/AlgorithmHeaders.h"
 
@@ -237,6 +239,19 @@ private:
     std::mt19937 m_rng;                       ///< The random number generator
     std::vector<double> m_thresholds;         ///< Distance class thresholds
     std::string m_volumeType;                 ///< The name of the fiducial volume type for the monitoring output
+};
+
+class VertexObject : public pandora::EventObject
+{
+public:
+    VertexObject(const int value);
+
+    int GetAnswer() const;
+
+    void Clear() override;
+
+private:
+    int m_theAnswer;
 };
 
 } // namespace lar_dl_content
