@@ -10,6 +10,8 @@
 
 #include "Pandora/Algorithm.h"
 
+#include <Eigen/Dense>
+
 namespace lar_content
 {
 
@@ -28,58 +30,47 @@ private:
     pandora::StatusCode Run();
 
     /**
-     *  @brief  Get the input cluster lists
-     *
-     *  @param  inputClusterListNames the input cluster list names
-     *  @param  clusterListU the U-view cluster list to populate
-     *  @param  clusterListV the V-view cluster list to populate
-     *  @param  clusterListW the W-view cluster list to populate
-     */
-    void GetClusterLists(const pandora::StringVector &inputClusterListNames, pandora::ClusterList &clusterListU,
-        pandora::ClusterList &clusterListV, pandora::ClusterList &clusterListW) const;
-
-    /**
      *  @brief  Perform the refinement proceduce on a list of vertices
      *
      *  @param  pVertexList address of the vertex list
-     *  @param  clusterListU the list of U-view clusters
-     *  @param  clusterListV the list of V-view clusters
-     *  @param  clusterListW the list of W-view clusters
+     *  @param  caloHitList the list of calo hits (all views) to use in refining the vertex
      */
-    void RefineVertices(const pandora::VertexList *const pVertexList, const pandora::ClusterList &clusterListU,
-        const pandora::ClusterList &clusterListV, const pandora::ClusterList &clusterListW) const;
+    void RefineVertices(const pandora::VertexList &vertexList, const pandora::CaloHitList &caloHitList) const;
 
     /**
-     *  @brief  Refine the position of a two dimensional projection of a vertex using the clusters in that view
+     *  @brief  Refine the position of a two dimensional projection of a vertex using the calo hits in that view
      *
-     *  @param  clusterList the list of two dimensional clusters
-     *  @param  originalVtxPos the original vertex position projected into two dimensions
+     *  @param  caloHitList the list of calo hits in a given view
      *
      *  @return the new refined position
      */
-    pandora::CartesianVector RefineVertexTwoD(const pandora::ClusterList &clusterList, const pandora::CartesianVector &originalVtxPos) const;
+    pandora::CartesianVector RefineVertexTwoD(const pandora::CaloHitList &caloHitList) const;
 
     /**
-     *  @brief  Calculate the best fit point of a set of lines using a matrix equation
+     *  @brief  Convert a container of calo hits into an Eigen matrix.
      *
-     *  @param  intercepts the vector of the defining points of the lines
-     *  @param  directions the vector of line directions
-     *  @param  weights the vector of weights for each line
-     *  @param  bestFitPoint the resulting best fit point
+     *  @param  caloHitContainer the calo hit list containing the hits from which to construct a graph
+     *  @param  hitMatrix the output Eigen matrix
      */
-    void GetBestFitPoint(const pandora::CartesianPointVector &intercepts, const pandora::CartesianPointVector &directions,
-        const pandora::FloatVector &weights, pandora::CartesianVector &bestFitPoint) const;
+    template <class T>
+    void Vectorize(const T &caloHitContainer, Eigen::MatrixXf &hitMatrix, Eigen::RowVectorXf &weigthVector) const;
+
+    /**
+     *  @brief  Retrieve the hits within m_hitRadii of a given centroid.
+     *
+     *  @param  hitVector the vector describing input hit positions
+     *  @param  centroid the centre of the region to be searched
+     *  @param  nearbyHitList the output calo hit list
+     */
+    void GetNearbyHits(const pandora::CaloHitVector &hitVector, const pandora::CartesianVector &centroid, pandora::CaloHitList &nearbyHitMatrix) const;
 
     pandora::StatusCode ReadSettings(const pandora::TiXmlHandle xmlHandle);
 
-    pandora::StringVector m_inputClusterListNames; ///< The list of input cluster list names
-    std::string m_inputVertexListName;             ///< The initial vertex list
-    std::string m_outputVertexListName;            ///< The refined vertex list to be outputted
+    std::string m_caloHitListName; ///< The name of the input calo hit list
+    std::string m_inputVertexListName; ///< The initial vertex list
+    std::string m_outputVertexListName; ///< The refined vertex list to be outputted
 
-    float m_chiSquaredCut;         ///< The maximum chi2 value a refined vertex can have to be kept
-    float m_distanceCut;           ///< The maximum distance a refined vertex can be from the original position to be kept
-    unsigned int m_minimumHitsCut; ///< The minimum size of a cluster to be used in refinement
-    float m_twoDDistanceCut;       ///< The maximum distance a cluster can be from the original position to be used in refinement
+    float m_hitRadii; ///< The search radius to collect hits around the vertex
 };
 
 } // namespace lar_content
