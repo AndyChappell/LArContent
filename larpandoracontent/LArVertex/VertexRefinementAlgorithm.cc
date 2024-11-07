@@ -98,8 +98,9 @@ void VertexRefinementAlgorithm::RefineVertices(const VertexList &vertexList, con
 
         CaloHitList nearbyHitListU;
         this->GetNearbyHits(caloHitVectorU, originalVtxU, nearbyHitListU);
-        const CartesianVector vtxU(this->RefineVertexTwoD(nearbyHitListU));
+        const CartesianVector vtxU(this->RefineVertexTwoD(nearbyHitListU, originalVtxU));
         (void)vtxU;
+        break;
 
 /*        CaloHitList caloHitListU, caloHitListV, caloHitListW;
         // Collect calo hits around this vertex here
@@ -156,15 +157,18 @@ void VertexRefinementAlgorithm::RefineVertices(const VertexList &vertexList, con
 //------------------------------------------------------------------------------------------------------------------------------------------
 
 template<class T>
-void VertexRefinementAlgorithm::Vectorize(const T &caloHitContainer, Eigen::MatrixXf &hitMatrix, Eigen::RowVectorXf &weightVector) const
+void VertexRefinementAlgorithm::Vectorize(const T &caloHitContainer, Eigen::MatrixXf &centre, Eigen::MatrixXf &low, Eigen::MatrixXf &high) const
 {
     int i{0};
     for (const CaloHit *const pCaloHit : caloHitContainer)
     {
         const CartesianVector &pos{pCaloHit->GetPositionVector()};
-        hitMatrix(i, 0) = pos.GetX();
-        hitMatrix(i, 1) = pos.GetZ();
-        weightVector(i) = std::pow(1.f / (pCaloHit->GetCellSize1() / 0.5f), 2);
+        centre(i, 0) = pos.GetX();
+        centre(i, 1) = pos.GetZ();
+        low(i, 0) = pos.GetX() - pCaloHit->GetCellSize1() * 0.5f;
+        low(i, 1) = pos.GetZ();
+        high(i, 0) = pos.GetX() + pCaloHit->GetCellSize1() * 0.5f;
+        high(i, 1) = pos.GetZ();
         ++i;
     }
 }
@@ -174,8 +178,8 @@ void VertexRefinementAlgorithm::Vectorize(const T &caloHitContainer, Eigen::Matr
 void VertexRefinementAlgorithm::GetNearbyHits(const CaloHitVector &hitVector, const CartesianVector &centroid, CaloHitList &nearbyHitList) const
 {
     Eigen::MatrixXf hitMatrix(hitVector.size(), 2);
-    Eigen::RowVectorXf dummy(hitVector.size());
-    this->Vectorize(hitVector, hitMatrix, dummy);
+    Eigen::MatrixXf dummy(hitVector.size(), 2);
+    this->Vectorize(hitVector, hitMatrix, dummy, dummy);
     Eigen::RowVectorXf vertex(2);
     vertex << centroid.GetX(), centroid.GetZ();
     Eigen::MatrixXf norms((hitMatrix.rowwise() - vertex).array().pow(2).rowwise().sum());
@@ -188,69 +192,77 @@ void VertexRefinementAlgorithm::GetNearbyHits(const CaloHitVector &hitVector, co
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-CartesianVector VertexRefinementAlgorithm::RefineVertexTwoD(const CaloHitList &caloHitList) const
+CartesianVector VertexRefinementAlgorithm::RefineVertexTwoD(const CaloHitList &caloHitList, const CartesianVector &seedVertex) const
 {
-    const int nBins{36};  // 72 //180
+    const int nBins{72};
     const float pi{static_cast<float>(M_PI)};
     Eigen::RowVectorXf piVec{Eigen::RowVectorXf::Constant(caloHitList.size(), pi)};
     Eigen::RowVectorXf zeroVec{Eigen::RowVectorXf::Zero(caloHitList.size())};
     Eigen::RowVectorXf unitVec{Eigen::RowVectorXf::Constant(caloHitList.size(), 1.f)};
     Eigen::MatrixXf hitMatrix(caloHitList.size(), 2);
-    Eigen::RowVectorXf weightVector(caloHitList.size());
-    this->Vectorize(caloHitList, hitMatrix, weightVector);
-    Eigen::RowVectorXi results{Eigen::RowVectorXi::Zero(hitMatrix.rows())};
+    Eigen::MatrixXf loMatrix(caloHitList.size(), 2);
+    Eigen::MatrixXf hiMatrix(caloHitList.size(), 2);
+    this->Vectorize(caloHitList, hitMatrix, loMatrix, hiMatrix);
+    Eigen::RowVectorXf results{Eigen::RowVectorXf::Zero(hitMatrix.rows())};
     float best{0.f};
+    const float threshold{5.f};
     for (int r = 0; r < hitMatrix.rows(); ++r)
     {
         Eigen::RowVectorXf row(2);
         row << hitMatrix(r, 0), hitMatrix(r, 1);
         // Compute dx, dz and angle between each hit and the candidate vertex hit
         Eigen::MatrixXf deltas(hitMatrix.rowwise() - row);
-        Eigen::RowVectorXf norms(deltas.array().pow(2).rowwise().sum());
-        Eigen::RowVectorXf invNorms(25.f / norms.array());
-        Eigen::RowVectorXf phis(hitMatrix.rows());
-        for (int i = 0; i < deltas.rows(); ++i)
-            phis(i) = std::atan2(deltas(i, 1), deltas(i, 0));
-        // Compute 180 degree rotation to suppress mid-track hits
-        Eigen::RowVectorXf phisRot = (phis.array() >= 0).select(-piVec, piVec);
-        Eigen::RowVectorXf rWeightVector = (norms.array() >= 25.f).select(invNorms, unitVec);
-        phisRot += phis;
-
-        phis = (phis.array() >= pi).select(zeroVec, phis);
-        phisRot = (phisRot.array() >= pi).select(zeroVec, phisRot);
-        Eigen::RowVectorXf counts{Eigen::RowVectorXf::Zero(nBins)};
-        Eigen::RowVectorXf counts2{Eigen::RowVectorXf::Zero(nBins)};
-        phis = phis.array() + pi;
-        phis = phis.array() * nBins / (2 * pi);
-        phisRot = phisRot.array() + pi;
-        phisRot = phisRot.array() * nBins / (2 * pi);
-
-        std::map<int, int> populated;
+        Eigen::MatrixXf loDeltas(loMatrix.rowwise() - row);
+        Eigen::MatrixXf hiDeltas(hiMatrix.rowwise() - row);
+        Eigen::RowVectorXf norms(deltas.array().pow(2).rowwise().sum().sqrt());
+        Eigen::RowVectorXf invNorms(threshold / norms.array());
+        Eigen::RowVectorXf loPhis(loMatrix.rows());
+        Eigen::RowVectorXf hiPhis(hiMatrix.rows());
         for (int i = 0; i < deltas.rows(); ++i)
         {
-            if (populated.find(static_cast<int>(phis(i))) != populated.end())
-                ++populated[static_cast<int>(phis(i))];
-            else
-                populated[static_cast<int>(phis(i))] = 1;
-            counts(static_cast<int>(phis(i))) += weightVector(i) * rWeightVector(i);
-            counts2(static_cast<int>(phisRot(i))) += weightVector(i) * rWeightVector(i);
+            loPhis(i) = std::atan2(loDeltas(i, 1), loDeltas(i, 0));
+            hiPhis(i) = std::atan2(hiDeltas(i, 1), hiDeltas(i, 0));
         }
-        int populatedBins{0};
-        for (const auto &[key, value] : populated)
-            populatedBins += value;
-        if (populatedBins == 0)
-            populatedBins = 1;
-        results(r) = counts.array().pow(2).sum();// / populatedBins;
+        // Compute 180 degree rotation to suppress mid-track hits
+        Eigen::RowVectorXf rWeightVector = (norms.array() >= threshold).select(invNorms, unitVec);
+        // Move from [-pi, +pi] to [0, 2pi)
+        loPhis = (loPhis.array() < 0).select(piVec * 2 + loPhis, loPhis);
+        hiPhis = (hiPhis.array() < 0).select(piVec * 2 + hiPhis, hiPhis);
+        loPhis = (loPhis.array() < 2 * pi).select(loPhis, zeroVec);
+        hiPhis = (hiPhis.array() < 2 * pi).select(hiPhis, zeroVec);
+        loPhis = loPhis.array() * nBins / (2 * pi);
+        hiPhis = hiPhis.array() * nBins / (2 * pi);
+
+        Eigen::RowVectorXf counts{Eigen::RowVectorXf::Zero(nBins)};
+        Eigen::RowVectorXf counts2{Eigen::RowVectorXf::Zero(nBins)};
+        for (int i = 0; i < deltas.rows(); ++i)
+        {
+            if (i == r)
+                continue;
+            const float lo{loPhis(i) < hiPhis(i) ? loPhis(i) : hiPhis(i)};
+            const float hi{loPhis(i) < hiPhis(i) ? hiPhis(i) : loPhis(i)};
+            const float arc{hi - lo};
+            const int bin0{loPhis(i) < hiPhis(i) ? static_cast<int>(loPhis(i)) : static_cast<int>(hiPhis(i))};
+            const int bin1{loPhis(i) < hiPhis(i) ? static_cast<int>(hiPhis(i)) : static_cast<int>(loPhis(i))};
+            for (int b = bin0; b <= bin1; ++b)
+            {
+                const float theta0{std::max(lo, static_cast<float>(b))}, theta1{std::min(hi, static_cast<float>(b + 1))};
+                const float frac{(theta1 - theta0) / arc};
+                counts(b) += frac;// * rWeightVector(i);
+                counts2(b > (nBins >> 1) ? b - (nBins >> 1) : b + (nBins >> 1)) -= frac; // * rWeightVector(i);
+            }
+        }
+        const CartesianVector centroid(hitMatrix(r, 0), 0, hitMatrix(r, 1));
+        const float shift{(centroid - seedVertex).GetMagnitude()};
+        if (shift > 3.f)
+            results(r) = (counts + counts2).array().pow(2).sum() / (shift / 3.f);
+        else
+            results(r) = (counts + counts2).array().pow(2).sum();
         if (results(r) > best)
         {
             best = results(r);
-            for (int i = 0; i < nBins; ++i)
-            {
-                std::cout << i << ": " << counts(i) << "   " << counts2(i) << std::endl;
-            }
             std::cout << "Total: " << results(r) << std::endl;
 
-            const CartesianVector centroid(hitMatrix(r, 0), 0, hitMatrix(r, 1));
             PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1.f, 1.f, 1.f));
             PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &caloHitList, "near", BLACK));
             PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &centroid, "vtx", RED, 3));
@@ -268,6 +280,7 @@ CartesianVector VertexRefinementAlgorithm::RefineVertexTwoD(const CaloHitList &c
 
     const CartesianVector centroid(hitMatrix(index, 0), 0, hitMatrix(index, 1));
     PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1.f, 1.f, 1.f));
+    PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &seedVertex, "seed", MAGENTA, 1));
     PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &centroid, "vtx", RED, 1));
     PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &caloHitList, "near", BLUE));
     PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
