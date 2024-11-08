@@ -90,27 +90,23 @@ void VertexRefinementAlgorithm::RefineVertices(const VertexList &vertexList, con
 
     for (const Vertex *const pVertex : vertexList)
     {
-
         const CartesianVector originalPosition(pVertex->GetPosition());
         const CartesianVector &originalVtxU{LArGeometryHelper::ProjectPosition(this->GetPandora(), originalPosition, TPC_VIEW_U)};
-        //const CartesianVector &originalVtxV{LArGeometryHelper::ProjectPosition(this->GetPandora(), originalPosition, TPC_VIEW_V)};
-        //const CartesianVector &originalVtxW{LArGeometryHelper::ProjectPosition(this->GetPandora(), originalPosition, TPC_VIEW_W)};
+        const CartesianVector &originalVtxV{LArGeometryHelper::ProjectPosition(this->GetPandora(), originalPosition, TPC_VIEW_V)};
+        const CartesianVector &originalVtxW{LArGeometryHelper::ProjectPosition(this->GetPandora(), originalPosition, TPC_VIEW_W)};
 
         CaloHitList nearbyHitListU;
         this->GetNearbyHits(caloHitVectorU, originalVtxU, nearbyHitListU);
         const CartesianVector vtxU(this->RefineVertexTwoD(nearbyHitListU, originalVtxU));
-        (void)vtxU;
-        break;
-
-/*        CaloHitList caloHitListU, caloHitListV, caloHitListW;
-        // Collect calo hits around this vertex here
-
-        const CartesianVector vtxU(this->RefineVertexTwoD(caloHitListU, originalVtxU));
-        const CartesianVector vtxV(this->RefineVertexTwoD(caloHitListV, originalVtxV));
-        const CartesianVector vtxW(this->RefineVertexTwoD(caloHitListW, originalVtxW));
+        CaloHitList nearbyHitListV;
+        this->GetNearbyHits(caloHitVectorV, originalVtxV, nearbyHitListV);
+        const CartesianVector vtxV(this->RefineVertexTwoD(nearbyHitListV, originalVtxV));
+        CaloHitList nearbyHitListW;
+        this->GetNearbyHits(caloHitVectorW, originalVtxW, nearbyHitListW);
+        const CartesianVector vtxW(this->RefineVertexTwoD(nearbyHitListW, originalVtxW));
 
         CartesianVector vtxUV(0.f, 0.f, 0.f), vtxUW(0.f, 0.f, 0.f), vtxVW(0.f, 0.f, 0.f), vtx3D(0.f, 0.f, 0.f), position3D(0.f, 0.f, 0.f);
-        float chi2UV(0.f), chi2UW(0.f), chi2VW(0.f), chi23D(0.f), chi2(0.f);
+        float chi2UV(0.f), chi2UW(0.f), chi2VW(0.f), chi23D(0.f);
 
         LArGeometryHelper::MergeTwoPositions3D(this->GetPandora(), TPC_VIEW_U, TPC_VIEW_V, vtxU, vtxV, vtxUV, chi2UV);
         LArGeometryHelper::MergeTwoPositions3D(this->GetPandora(), TPC_VIEW_U, TPC_VIEW_W, vtxU, vtxW, vtxUW, chi2UW);
@@ -118,31 +114,13 @@ void VertexRefinementAlgorithm::RefineVertices(const VertexList &vertexList, con
         LArGeometryHelper::MergeThreePositions3D(this->GetPandora(), TPC_VIEW_U, TPC_VIEW_V, TPC_VIEW_W, vtxU, vtxV, vtxW, vtx3D, chi23D);
 
         if (chi2UV < chi2UW && chi2UV < chi2VW && chi2UV < chi23D)
-        {
             position3D = vtxUV;
-            chi2 = chi2UV;
-        }
         else if (chi2UW < chi2VW && chi2UW < chi23D)
-        {
             position3D = vtxUW;
-            chi2 = chi2UW;
-        }
         else if (chi2VW < chi23D)
-        {
             position3D = vtxVW;
-            chi2 = chi2VW;
-        }
         else
-        {
             position3D = vtx3D;
-            chi2 = chi23D;
-        }
-
-        if (chi2 > m_chiSquaredCut)
-            position3D = originalPosition;
-
-        if ((position3D - originalPosition).GetMagnitude() > m_distanceCut)
-            position3D = originalPosition;
 
         PandoraContentApi::Vertex::Parameters parameters;
         parameters.m_position = position3D;
@@ -150,7 +128,7 @@ void VertexRefinementAlgorithm::RefineVertices(const VertexList &vertexList, con
         parameters.m_vertexType = VERTEX_3D;
 
         const Vertex *pNewVertex(NULL);
-        PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::Vertex::Create(*this, parameters, pNewVertex));*/
+        PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::Vertex::Create(*this, parameters, pNewVertex));
     }
 }
 
@@ -194,6 +172,8 @@ void VertexRefinementAlgorithm::GetNearbyHits(const CaloHitVector &hitVector, co
 
 CartesianVector VertexRefinementAlgorithm::RefineVertexTwoD(const CaloHitList &caloHitList, const CartesianVector &seedVertex) const
 {
+    if (caloHitList.empty())
+        return seedVertex;
     const int nBins{72};
     const float pi{static_cast<float>(M_PI)};
     Eigen::RowVectorXf piVec{Eigen::RowVectorXf::Constant(caloHitList.size(), pi)};
@@ -261,7 +241,7 @@ CartesianVector VertexRefinementAlgorithm::RefineVertexTwoD(const CaloHitList &c
         if (results(r) > best)
         {
             best = results(r);
-            std::cout << "Total: " << results(r) << std::endl;
+/*            std::cout << "Total: " << results(r) << std::endl;
 
             PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1.f, 1.f, 1.f));
             PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &caloHitList, "near", BLACK));
@@ -272,7 +252,7 @@ CartesianVector VertexRefinementAlgorithm::RefineVertexTwoD(const CaloHitList &c
                 const CartesianVector b{CartesianVector(std::cos(theta), 0, std::sin(theta)) * 2 * m_hitRadii + centroid};
                 PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &centroid, &b, "bin " + std::to_string(i), GRAY, 1, 1));
             }
-            PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
+            PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));*/
         }
     }
     Eigen::Index index;

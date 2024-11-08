@@ -341,7 +341,7 @@
     d("LArHitAngleVertexSelection",             HitAngleVertexSelectionAlgorithm)                                               \
     d("LArBdtVertexSelection",                  BdtVertexSelectionAlgorithm)                                                    \
     d("LArSvmVertexSelection",                  SvmVertexSelectionAlgorithm)                                                    \
-    d("LArVertexAssociatedHit",                    VertexAssociatedHitAlgorithm)                                                \
+    d("LArVertexAssociatedHit",                 VertexAssociatedHitAlgorithm)                                                \
     d("LArVertexRefinement",                    VertexRefinementAlgorithm)
 
 #define LAR_ALGORITHM_TOOL_LIST(d)                                                                                              \
