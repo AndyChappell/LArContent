@@ -12,6 +12,7 @@
 #include "Pandora/AlgorithmHeaders.h"
 
 #include "larpandoracontent/LArHelpers/LArMCParticleHelper.h"
+#include "larpandoracontent/LArObjects/LArGraph.h"
 
 #include "larpandoradlcontent/LArHelpers/LArDLHelper.h"
 
@@ -34,6 +35,11 @@ public:
 
     ~DlSageVertexingAlgorithm();
 
+    /**
+     *  @brief Visualize the graph
+     **/
+    void Visualize(const LArGraph &graph) const;
+
 private:
     pandora::StatusCode Run();
     pandora::StatusCode ReadSettings(const pandora::TiXmlHandle xmlHandle);
@@ -50,6 +56,9 @@ private:
     LArDLHelper::TorchModel m_modelW;         ///< The model for the W view
     int m_event;                              ///< The current event number
     int m_nClasses;                           ///< The number of distance classes
+    int m_nEdges;                             ///< The maximum number of node connections
+    float m_maxSecondaryDistance;             ///< The maximum distance between extra connected nodes
+    float m_maxSecondaryCosine;               ///< The maximum cosine between primary and secondary edges
     std::mt19937 m_rng;                       ///< The random number generator
     std::vector<double> m_thresholds;         ///< Distance class thresholds
 };

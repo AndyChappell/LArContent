@@ -15,7 +15,6 @@
 #include "larpandoracontent/LArHelpers/LArFileHelper.h"
 #include "larpandoracontent/LArHelpers/LArGeometryHelper.h"
 #include "larpandoracontent/LArHelpers/LArVertexHelper.h"
-#include "larpandoracontent/LArObjects/LArGraph.h"
 
 #include "larpandoradlcontent/LArVertex/DlSageVertexingAlgorithm.h"
 
@@ -29,6 +28,9 @@ DlSageVertexingAlgorithm::DlSageVertexingAlgorithm() :
     m_trainingMode{false},
     m_event{-1},
     m_nClasses{0},
+    m_nEdges{5},
+    m_maxSecondaryDistance{3.f},
+    m_maxSecondaryCosine{0.996f},
     m_rng(static_cast<std::mt19937::result_type>(std::chrono::high_resolution_clock::now().time_since_epoch().count()))
 {
 }
@@ -46,6 +48,21 @@ DlSageVertexingAlgorithm::~DlSageVertexingAlgorithm()
     }
 }
 
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+void DlSageVertexingAlgorithm::Visualize(const LArGraph &graph) const
+{
+#ifdef MONITORING
+    PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1.f, 1.f, 1.f));
+    for (const auto pEdge : graph.GetEdges())
+    {
+        const CartesianVector &p0{pEdge->m_v0->GetPositionVector()}, &p1{pEdge->m_v1->GetPositionVector()};
+        PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &p0, &p1, "edge", BLUE, 1, 1));
+    }
+    PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
+#endif
+}
+
 //-----------------------------------------------------------------------------------------------------------------------------------------
 
 StatusCode DlSageVertexingAlgorithm::Run()
@@ -60,6 +77,23 @@ StatusCode DlSageVertexingAlgorithm::Run()
 
 StatusCode DlSageVertexingAlgorithm::PrepareTrainingSample()
 {
+    const MCParticleList *pMCParticleList{nullptr};
+    PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetCurrentList(*this, pMCParticleList));
+    if (!pMCParticleList || pMCParticleList->empty())
+        return STATUS_CODE_NOT_FOUND;
+
+    const MCParticle *pNeutrino{nullptr};
+    for (const MCParticle *const pMC : *pMCParticleList)
+    {
+        if (LArMCParticleHelper::IsNeutrino(pMC) && pMC->GetParentList().empty())
+            pNeutrino = pMC;
+    }
+    if (!pNeutrino)
+        return STATUS_CODE_SUCCESS;
+
+    const CartesianVector &vertex(pNeutrino->GetVertex());
+    const LArTransformationPlugin *transform{this->GetPandora().GetPlugins()->GetLArTransformationPlugin()};
+    const float xVtx{vertex.GetX()};
     for (const std::string &listname : m_caloHitListNames)
     {
         const CaloHitList *pCaloHitList(nullptr);
@@ -67,13 +101,30 @@ StatusCode DlSageVertexingAlgorithm::PrepareTrainingSample()
         if (pCaloHitList->empty())
             continue;
 
-        LArGraph graph;
+        float zVtx{0.f};
+        switch (pCaloHitList->front()->GetHitType())
+        {
+            case TPC_VIEW_U:
+                zVtx = transform->YZtoU(vertex.GetY(), vertex.GetZ());
+                break;
+            case TPC_VIEW_V:
+                zVtx = transform->YZtoV(vertex.GetY(), vertex.GetZ());
+                break;
+            case TPC_VIEW_W:
+                zVtx = transform->YZtoW(vertex.GetY(), vertex.GetZ());
+                break;
+            default:
+                continue;
+        }
+
+        LArGraph graph(false, this->m_nEdges, this->m_maxSecondaryCosine, this->m_maxSecondaryDistance);
         graph.MakeGraph(*pCaloHitList);
+        //this->Visualize(graph);
         const LArGraph::EdgeVector &edgeVector{graph.GetEdges()};
         int id{0};
         std::map<const CaloHit *, int> nodeIdMap;
         IntVector node0Vector, node1Vector, nodeIdVector;
-        FloatVector xVector, zVector, adcVector;
+        FloatVector xVector, zVector, adcVector, distanceVector;
         for (const LArGraph::Edge *pEdge : edgeVector)
         {
             const CaloHit *pNode0{pEdge->m_v0};
@@ -82,23 +133,29 @@ StatusCode DlSageVertexingAlgorithm::PrepareTrainingSample()
             {
                 if (nodeIdMap.find(pNode) == nodeIdMap.end())
                 {
-                    nodeIdMap[pNode] = id++;
-                    // Update and fill the node tree - think about scaling here, probably want to get to a final feature set
-                    // at this stage, rather than computing things in Python
+                    nodeIdMap[pNode] = id;
                     nodeIdVector.emplace_back(id);
                     xVector.emplace_back(pNode->GetPositionVector().GetX());
                     zVector.emplace_back(pNode->GetPositionVector().GetZ());
                     adcVector.emplace_back(pNode->GetInputEnergy());
+                    const float dx{pNode->GetPositionVector().GetX() - xVtx};
+                    const float dz{pNode->GetPositionVector().GetZ() - zVtx};
+                    const float dr{std::sqrt(dx * dx + dz * dz)};
+                    distanceVector.emplace_back(dr);
+                    ++id;
                 }
             }
             // Update the edge tree
             node0Vector.emplace_back(nodeIdMap.at(pNode0));
             node1Vector.emplace_back(nodeIdMap.at(pNode1));
+            node0Vector.emplace_back(nodeIdMap.at(pNode1));
+            node1Vector.emplace_back(nodeIdMap.at(pNode0));
         }
         PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_nodeTreeName, "id_vector", &nodeIdVector));
         PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_nodeTreeName, "x_vector", &xVector));
         PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_nodeTreeName, "z_vector", &zVector));
         PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_nodeTreeName, "adc_vector", &adcVector));
+        PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_nodeTreeName, "distance_vector", &distanceVector));
         PANDORA_MONITORING_API(FillTree(this->GetPandora(), m_nodeTreeName));
 
         // Provisionally this will need to be done for each of u, v, and w, so we'll need unique tree names
@@ -127,6 +184,9 @@ StatusCode DlSageVertexingAlgorithm::ReadSettings(const TiXmlHandle xmlHandle)
     PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "TrainingMode", m_trainingMode));
     PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadVectorOfValues(xmlHandle, "DistanceThresholds", m_thresholds));
     m_nClasses = m_thresholds.size() - 1;
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "MaxNodeEdges", m_nEdges));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "MaxSecondaryDistance", m_maxSecondaryDistance));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "MaxSecondaryCosine", m_maxSecondaryCosine));
 
     if (m_trainingMode)
     {
