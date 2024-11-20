@@ -190,6 +190,7 @@
 #include "larpandoracontent/LArTwoDReco/LArClusterCreation/ClusteringParentAlgorithm.h"
 #include "larpandoracontent/LArTwoDReco/LArClusterCreation/SimpleClusterCreationAlgorithm.h"
 #include "larpandoracontent/LArTwoDReco/LArClusterCreation/TrackClusterCreationAlgorithm.h"
+#include "larpandoracontent/LArTwoDReco/LArClusterCreation/VertexClusterCreationAlgorithm.h"
 
 #include "larpandoracontent/LArTwoDReco/LArClusterMopUp/BoundedClusterMopUpAlgorithm.h"
 #include "larpandoracontent/LArTwoDReco/LArClusterMopUp/ConeClusterMopUpAlgorithm.h"
@@ -317,6 +318,7 @@
     d("LArVertexHitAssociation",                VertexHitAssociationAlgorithm)                                                  \
     d("LArSimpleClusterCreation",               SimpleClusterCreationAlgorithm)                                                 \
     d("LArTrackClusterCreation",                TrackClusterCreationAlgorithm)                                                  \
+    d("LArVertexClusterCreation",               VertexClusterCreationAlgorithm)                                                 \
     d("LArClusteringParent",                    ClusteringParentAlgorithm)                                                      \
     d("LArBoundedClusterMopUp",                 BoundedClusterMopUpAlgorithm)                                                   \
     d("LArConeClusterMopUp",                    ConeClusterMopUpAlgorithm)                                                      \
