@@ -48,15 +48,6 @@ private:
     pandora::CartesianVector RefineVertexTwoD(const pandora::CaloHitList &caloHitList, const pandora::CartesianVector &seedVertex) const;
 
     /**
-     *  @brief  Convert a container of calo hits into an Eigen matrix.
-     *
-     *  @param  caloHitContainer the calo hit list containing the hits from which to construct a graph
-     *  @param  hitMatrix the output Eigen matrix
-     */
-    template <class T>
-    void Vectorize(const T &caloHitContainer, Eigen::MatrixXf &centre, Eigen::MatrixXf &low, Eigen::MatrixXf &high) const;
-
-    /**
      *  @brief  Retrieve the hits within m_hitRadii of a given centroid.
      *
      *  @param  hitVector the vector describing input hit positions

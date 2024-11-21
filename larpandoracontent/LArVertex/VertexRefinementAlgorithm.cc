@@ -8,6 +8,7 @@
 
 #include "Pandora/AlgorithmHeaders.h"
 
+#include "larpandoracontent/LArHelpers/LArEigenHelper.h"
 #include "larpandoracontent/LArHelpers/LArGeometryHelper.h"
 
 #include "larpandoracontent/LArVertex/VertexRefinementAlgorithm.h"
@@ -134,30 +135,10 @@ void VertexRefinementAlgorithm::RefineVertices(const VertexList &vertexList, con
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-template<class T>
-void VertexRefinementAlgorithm::Vectorize(const T &caloHitContainer, Eigen::MatrixXf &centre, Eigen::MatrixXf &low, Eigen::MatrixXf &high) const
-{
-    int i{0};
-    for (const CaloHit *const pCaloHit : caloHitContainer)
-    {
-        const CartesianVector &pos{pCaloHit->GetPositionVector()};
-        centre(i, 0) = pos.GetX();
-        centre(i, 1) = pos.GetZ();
-        low(i, 0) = pos.GetX() - pCaloHit->GetCellSize1() * 0.5f;
-        low(i, 1) = pos.GetZ();
-        high(i, 0) = pos.GetX() + pCaloHit->GetCellSize1() * 0.5f;
-        high(i, 1) = pos.GetZ();
-        ++i;
-    }
-}
-
-//------------------------------------------------------------------------------------------------------------------------------------------
-
 void VertexRefinementAlgorithm::GetNearbyHits(const CaloHitVector &hitVector, const CartesianVector &centroid, CaloHitList &nearbyHitList) const
 {
     Eigen::MatrixXf hitMatrix(hitVector.size(), 2);
-    Eigen::MatrixXf dummy(hitVector.size(), 2);
-    this->Vectorize(hitVector, hitMatrix, dummy, dummy);
+    LArEigenHelper::Vectorize(hitVector, hitMatrix);
     Eigen::RowVectorXf vertex(2);
     vertex << centroid.GetX(), centroid.GetZ();
     Eigen::MatrixXf norms((hitMatrix.rowwise() - vertex).array().pow(2).rowwise().sum());
@@ -176,46 +157,27 @@ CartesianVector VertexRefinementAlgorithm::RefineVertexTwoD(const CaloHitList &c
         return seedVertex;
     const int nBins{72};
     const float pi{static_cast<float>(M_PI)};
-    Eigen::RowVectorXf piVec{Eigen::RowVectorXf::Constant(caloHitList.size(), pi)};
-    Eigen::RowVectorXf zeroVec{Eigen::RowVectorXf::Zero(caloHitList.size())};
-    Eigen::RowVectorXf unitVec{Eigen::RowVectorXf::Constant(caloHitList.size(), 1.f)};
     Eigen::MatrixXf hitMatrix(caloHitList.size(), 2);
     Eigen::MatrixXf loMatrix(caloHitList.size(), 2);
     Eigen::MatrixXf hiMatrix(caloHitList.size(), 2);
-    this->Vectorize(caloHitList, hitMatrix, loMatrix, hiMatrix);
+    LArEigenHelper::Vectorize(caloHitList, hitMatrix, loMatrix, hiMatrix);
     Eigen::RowVectorXf results{Eigen::RowVectorXf::Zero(hitMatrix.rows())};
     float best{0.f};
-    const float threshold{5.f};
     for (int r = 0; r < hitMatrix.rows(); ++r)
     {
         Eigen::RowVectorXf row(2);
         row << hitMatrix(r, 0), hitMatrix(r, 1);
         // Compute dx, dz and angle between each hit and the candidate vertex hit
-        Eigen::MatrixXf deltas(hitMatrix.rowwise() - row);
-        Eigen::MatrixXf loDeltas(loMatrix.rowwise() - row);
-        Eigen::MatrixXf hiDeltas(hiMatrix.rowwise() - row);
-        Eigen::RowVectorXf norms(deltas.array().pow(2).rowwise().sum().sqrt());
-        Eigen::RowVectorXf invNorms(threshold / norms.array());
         Eigen::RowVectorXf loPhis(loMatrix.rows());
         Eigen::RowVectorXf hiPhis(hiMatrix.rows());
-        for (int i = 0; i < deltas.rows(); ++i)
-        {
-            loPhis(i) = std::atan2(loDeltas(i, 1), loDeltas(i, 0));
-            hiPhis(i) = std::atan2(hiDeltas(i, 1), hiDeltas(i, 0));
-        }
-        // Compute 180 degree rotation to suppress mid-track hits
-        Eigen::RowVectorXf rWeightVector = (norms.array() >= threshold).select(invNorms, unitVec);
-        // Move from [-pi, +pi] to [0, 2pi)
-        loPhis = (loPhis.array() < 0).select(piVec * 2 + loPhis, loPhis);
-        hiPhis = (hiPhis.array() < 0).select(piVec * 2 + hiPhis, hiPhis);
-        loPhis = (loPhis.array() < 2 * pi).select(loPhis, zeroVec);
-        hiPhis = (hiPhis.array() < 2 * pi).select(hiPhis, zeroVec);
+        LArEigenHelper::GetAngles(loMatrix, row, loPhis);
+        LArEigenHelper::GetAngles(hiMatrix, row, hiPhis);
         loPhis = loPhis.array() * nBins / (2 * pi);
         hiPhis = hiPhis.array() * nBins / (2 * pi);
 
         Eigen::RowVectorXf counts{Eigen::RowVectorXf::Zero(nBins)};
         Eigen::RowVectorXf counts2{Eigen::RowVectorXf::Zero(nBins)};
-        for (int i = 0; i < deltas.rows(); ++i)
+        for (int i = 0; i < hitMatrix.rows(); ++i)
         {
             if (i == r)
                 continue;
@@ -259,11 +221,11 @@ CartesianVector VertexRefinementAlgorithm::RefineVertexTwoD(const CaloHitList &c
     results.maxCoeff(&index);
 
     const CartesianVector centroid(hitMatrix(index, 0), 0, hitMatrix(index, 1));
-    PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1.f, 1.f, 1.f));
+    /*PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1.f, 1.f, 1.f));
     PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &seedVertex, "seed", MAGENTA, 1));
     PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &centroid, "vtx", RED, 1));
     PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &caloHitList, "near", BLUE));
-    PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
+    PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));*/
 
     return centroid;
 }
