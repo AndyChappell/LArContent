@@ -10,11 +10,15 @@
 
 #include "larpandoracontent/LArTwoDReco/LArClusterCreation/VertexClusterCreationAlgorithm.h"
 
+#include "larpandoracontent/LArHelpers/LArClusterHelper.h"
+#include "larpandoracontent/LArHelpers/LArEigenHelper.h"
 #include "larpandoracontent/LArHelpers/LArGeometryHelper.h"
 #include "larpandoracontent/LArHelpers/LArInteractionTypeHelper.h"
 #include "larpandoracontent/LArHelpers/LArMCParticleHelper.h"
 #include "larpandoracontent/LArHelpers/LArPfoHelper.h"
 #include "larpandoracontent/LArHelpers/LArVertexHelper.h"
+
+#include <Eigen/Dense>
 
 #define _USE_MATH_DEFINES
 #include <cmath>
@@ -54,70 +58,81 @@ StatusCode VertexClusterCreationAlgorithm::Run()
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
+void VertexClusterCreationAlgorithm::GetListOfCleanClusters(const ClusterList *const pClusterList, ClusterVector &clusterVector) const
+{
+    for (const Cluster *const pCluster : *pClusterList)
+    {
+        if (pCluster->GetOrderedCaloHitList().size() > 2)
+            clusterVector.emplace_back(pCluster);
+    }
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
 void VertexClusterCreationAlgorithm::IdentifyTrackStubs(const CaloHitList &caloHitList, const Vertex &vertex) const
 {
     const CartesianVector pos{LArGeometryHelper::ProjectPosition(this->GetPandora(), vertex.GetPosition(), caloHitList.front()->GetHitType())};
 
-    // Gather the hits within a given radii of the vertex - tracks should be straighter nearby their interaction vertex
-    CaloHitList selectedHits;
-    for (const CaloHit *const pCaloHit : caloHitList)
+    const ClusterList *pClusterList{nullptr};
+    PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetCurrentList(*this, pClusterList));
+    ClusterVector cleanClusters, innerClusters, outerClusters;
+    this->GetListOfCleanClusters(pClusterList, cleanClusters);
+    for (const Cluster *const pCluster : cleanClusters)
     {
-        if (!PandoraContentApi::IsAvailable(*this, pCaloHit))
-            continue;
-
-        const CartesianVector &hitPos{pCaloHit->GetPositionVector()};
-        const float distanceSquared{hitPos.GetDistanceSquared(pos)};
-        if (distanceSquared <= m_hitRadii * m_hitRadii)
-            selectedHits.emplace_back(pCaloHit);
+        const LArPointingCluster pointingCluster(pCluster, 10, LArGeometryHelper::GetWirePitch(this->GetPandora(), LArClusterHelper::GetClusterHitType(pCluster)));
+        const CartesianVector &innerPos{pointingCluster.GetInnerVertex().GetPosition()};
+        if (innerPos.GetDistanceSquared(pos) <= (1.5f * m_hitRadii) * (1.5f * m_hitRadii))
+            innerClusters.emplace_back(pCluster);
+        const CartesianVector &outerPos{pointingCluster.GetOuterVertex().GetPosition()};
+        if (outerPos.GetDistanceSquared(pos) <= (1.5f * m_hitRadii) * (1.5f * m_hitRadii))
+            outerClusters.emplace_back(pCluster);
     }
 
-    // Use a narrow angular binning to try to isolate the track stubs
-    // Do this twice with a phase offset to reduce sensitivity to tracks straddling bins
-    const int binAngle{5};
-    const int nBins{360 / binAngle};
-    int hitBins[nBins]{};
-    float closestApproach[nBins]{};
-    CaloHitVector caloHits[nBins];
-    for (int bin = 0; bin < nBins; ++bin)
-        closestApproach[bin] = std::numeric_limits<float>::max();
-    const float stepAngle{2 * M_PI * binAngle / 360.f};
-    const float phase{0};
-    for (const CaloHit *const pCaloHit : selectedHits)
-    {
-        const CartesianVector delta{pCaloHit->GetPositionVector() - pos};
-        float dr{delta.GetMagnitudeSquared()};
-        float theta{std::atan2(delta.GetZ(), delta.GetX())};
-        if (theta < 0)
-            theta += 2 * static_cast<float>(M_PI);
-        theta -= phase;
-        if (theta < 0)
-            theta = 2 * static_cast<float>(M_PI) - theta;
+    // Vectorize thie hits
+    const CaloHitVector caloHitVector(caloHitList.begin(), caloHitList.end());
+    Eigen::MatrixXf hitMatrix(caloHitVector.size(), 2), loMatrix(caloHitVector.size(), 2), hiMatrix(caloHitVector.size(), 2);
+    LArEigenHelper::Vectorize(caloHitVector, hitMatrix, loMatrix, hiMatrix);
+    // Compute the distance between the hits and the vertex
+    Eigen::RowVectorXf vtx(2);
+    vtx << pos.GetX(), pos.GetZ();
+    Eigen::MatrixXf deltas(hitMatrix.rowwise() - vtx);
+    Eigen::MatrixXf norms(deltas.array().pow(2).rowwise().sum().sqrt());
+    // Compute the angles of the hit extrema
+    Eigen::RowVectorXf loPhis(loMatrix.rows());
+    Eigen::RowVectorXf hiPhis(hiMatrix.rows());
+    LArEigenHelper::GetAngles(loMatrix, vtx, loPhis);
+    LArEigenHelper::GetAngles(hiMatrix, vtx, hiPhis);
+    // Determine angular binning (still floating point at this stage)
+    const int nBins{72};
+    const float pi{static_cast<float>(M_PI)};
+    loPhis = loPhis.array() * nBins / (2 * pi);
+    hiPhis = hiPhis.array() * nBins / (2 * pi);
 
-        const int bin{static_cast<int>(std::floor(theta / stepAngle))};
-        ++hitBins[bin];
-        if (dr < closestApproach[bin])
-            closestApproach[bin] = dr;
-        caloHits[bin].emplace_back(pCaloHit);
+    // Allocate to bins (hits can be added to multiple bins if they're wide enough)
+    std::map<int, std::vector<int>> selectedHitBinMap;
+    for (int i = 0; i < norms.rows(); ++i)
+    {
+        if (norms(i) <= m_hitRadii)
+        {
+            const int bin0{loPhis(i) < hiPhis(i) ? static_cast<int>(loPhis(i)) : static_cast<int>(hiPhis(i))};
+            const int bin1{loPhis(i) < hiPhis(i) ? static_cast<int>(hiPhis(i)) : static_cast<int>(loPhis(i))};
+            for (int b = bin0; b <= bin1; ++b)
+                selectedHitBinMap[b].emplace_back(i);
+        }
     }
-    IntVector sortedBins;
-    for (int bin = 0; bin < nBins; ++bin)
+
+    /*PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1.f, 1.f, 1.f));
+    PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &pos, "vtx", MAGENTA, 1));
+    for (const auto &[bin, hitIds] : selectedHitBinMap)
     {
-        if (hitBins[bin] > 0)
-            sortedBins.emplace_back(bin);
+        CaloHitList hits;
+        for (const int hitId : hitIds)
+            hits.emplace_back(caloHitVector.at(hitId));
+        PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &hits, "bin", AUTOITER));
     }
-    auto SortBinsFunc = [&hitBins] (const int bin1, const int bin2) { return hitBins[bin1] > hitBins[bin2]; };
-    std::sort(sortedBins.begin(), sortedBins.end(), SortBinsFunc);
-    auto SortCaloHitsFunc = [&pos] (const CaloHit *pCaloHit1, const CaloHit *pCaloHit2)
-    {
-        const float dr1{(pCaloHit1->GetPositionVector() - pos).GetMagnitudeSquared()};
-        const float dr2{(pCaloHit2->GetPositionVector() - pos).GetMagnitudeSquared()};
+    PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));*/
 
-        return dr1 < dr2;
-    };
-    for (CaloHitVector &caloHitVector : caloHits)
-        std::sort(caloHitVector.begin(), caloHitVector.end(), SortCaloHitsFunc);
-
-    bool clusterMade{true};
+    /*bool clusterMade{true};
     while (clusterMade)
     {
         clusterMade = false;
@@ -171,7 +186,7 @@ void VertexClusterCreationAlgorithm::IdentifyTrackStubs(const CaloHitList &caloH
                 caloHits[target].insert(caloHits[target].begin(), pSeedHit);
             }
         }
-    }
+    }*/
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
