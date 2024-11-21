@@ -10,7 +10,9 @@
 
 #include "Pandora/Algorithm.h"
 
-#include <unordered_map>
+#include "larpandoracontent/LArObjects/LArPointingCluster.h"
+
+#include <vector>
 
 namespace lar_content
 {
@@ -28,6 +30,7 @@ public:
 
 private:
     pandora::StatusCode Run();
+    void GetListOfCleanClusters(const pandora::ClusterList *const pClusterList, pandora::ClusterVector &clusterVector) const;
     void IdentifyTrackStubs(const pandora::CaloHitList &caloHitList, const pandora::Vertex &vertex) const;
     bool ClusterHits(const pandora::CaloHit *const pSeedHit, const pandora::CaloHitVector &caloHitVector, const pandora::CartesianVector &vertex) const;
     float GetClosestApproach(const pandora::CaloHitVector &caloHitVector, const pandora::CartesianVector &vertex) const;
