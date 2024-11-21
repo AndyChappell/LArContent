@@ -231,13 +231,14 @@ bool VertexClusterCreationAlgorithm::ClusterHits(const CaloHit *const pSeedHit, 
         }
     }
 
-    const ClusterList *pOutputClusterList{nullptr};
-    std::string originalClusterListName, tempListName{"temp"};
-    PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetCurrentListName<Cluster>(*this, originalClusterListName));
-    PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::CreateTemporaryListAndSetCurrent(*this, pOutputClusterList, tempListName));
     const Cluster *pCluster{nullptr};
     if (clusteredHits.size() > 1)
     {
+        const ClusterList *pOutputClusterList{nullptr};
+        std::string originalClusterListName, tempListName{"temp"};
+        PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetCurrentListName<Cluster>(*this, originalClusterListName));
+        PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::CreateTemporaryListAndSetCurrent(*this, pOutputClusterList, tempListName));
+
         for (const CaloHit *const pCaloHit : clusteredHits)
         {
             if (!PandoraContentApi::IsAvailable(*this, pCaloHit))
@@ -254,7 +255,10 @@ bool VertexClusterCreationAlgorithm::ClusterHits(const CaloHit *const pSeedHit, 
                 PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::AddToCluster(*this, pCluster, pCaloHit));
             }
         }
-        PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::SaveList<Cluster>(*this, originalClusterListName));
+        if (pCluster)
+        {
+            PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::SaveList<Cluster>(*this, originalClusterListName));
+        }
         PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::ReplaceCurrentList<Cluster>(*this, originalClusterListName));
     }
 
