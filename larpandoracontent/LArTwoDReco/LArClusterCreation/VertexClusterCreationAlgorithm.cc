@@ -15,6 +15,7 @@
 #include "larpandoracontent/LArHelpers/LArGeometryHelper.h"
 #include "larpandoracontent/LArHelpers/LArInteractionTypeHelper.h"
 #include "larpandoracontent/LArHelpers/LArMCParticleHelper.h"
+#include "larpandoracontent/LArHelpers/LArPcaHelper.h"
 #include "larpandoracontent/LArHelpers/LArPfoHelper.h"
 #include "larpandoracontent/LArHelpers/LArVertexHelper.h"
 
@@ -88,7 +89,7 @@ void VertexClusterCreationAlgorithm::IdentifyTrackStubs(const CaloHitList &caloH
             outerClusters.emplace_back(pCluster);
     }
 
-    // Vectorize thie hits
+    // Vectorize the hits
     const CaloHitVector caloHitVector(caloHitList.begin(), caloHitList.end());
     Eigen::MatrixXf hitMatrix(caloHitVector.size(), 2), loMatrix(caloHitVector.size(), 2), hiMatrix(caloHitVector.size(), 2);
     LArEigenHelper::Vectorize(caloHitVector, hitMatrix, loMatrix, hiMatrix);
@@ -109,7 +110,7 @@ void VertexClusterCreationAlgorithm::IdentifyTrackStubs(const CaloHitList &caloH
     hiPhis = hiPhis.array() * nBins / (2 * pi);
 
     // Allocate to bins (hits can be added to multiple bins if they're wide enough)
-    std::map<int, std::vector<int>> selectedHitBinMap;
+    std::map<int, IntVector> selectedHitBinMap;
     for (int i = 0; i < norms.rows(); ++i)
     {
         if (norms(i) <= m_hitRadii)
@@ -118,6 +119,118 @@ void VertexClusterCreationAlgorithm::IdentifyTrackStubs(const CaloHitList &caloH
             const int bin1{loPhis(i) < hiPhis(i) ? static_cast<int>(hiPhis(i)) : static_cast<int>(loPhis(i))};
             for (int b = bin0; b <= bin1; ++b)
                 selectedHitBinMap[b].emplace_back(i);
+        }
+    }
+
+    //PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1.f, 1.f, 1.f));
+    //PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &pos, "vtx", MAGENTA, 1));
+
+    // Compute principal components for the candidate clusters and consider fit quality
+    typedef std::tuple<float, float, float> FOM;
+    typedef std::pair<int, FOM> BinFOM;
+    std::vector<BinFOM> metrics;
+    for (const auto &[bin, hitIds] : selectedHitBinMap)
+    {
+        if (hitIds.size() <= 2)
+            continue;
+        LArPcaHelper::WeightedPointVector pointVector;
+        for (const int hitId : hitIds)
+        {
+            const CaloHit *const pCaloHit{caloHitVector.at(hitId)};
+            pointVector.emplace_back(LArPcaHelper::WeightedPoint(pCaloHit->GetPositionVector(), 1.f / pCaloHit->GetCellSize1()));
+        }
+        CartesianVector centroid(0, 0, 0);
+        LArPcaHelper::EigenValues eigenValues(0, 0, 0);
+        LArPcaHelper::EigenVectors eigenVectors;
+        LArPcaHelper::RunPca(pointVector, centroid, eigenValues, eigenVectors);
+        float min{std::numeric_limits<float>::max()}, max{std::numeric_limits<float>::lowest()};
+        float deviation{0.f};
+        // Consider sorting the longitudinal projections and checking for gaps
+        for (const auto &[point, weight] : pointVector)
+        {
+            const CartesianVector &dir{point - centroid};
+            const float longitudinal{dir.GetDotProduct(eigenVectors[0])};
+            if (longitudinal > max)
+                max = longitudinal;
+            if (longitudinal < min)
+                min = longitudinal;
+            const float transverse{dir.GetDotProduct(eigenVectors[1])};
+            deviation += transverse * transverse;
+            //std::cout << "dt: " << transverse << " dw: " << (1.f / weight) << std::endl;
+        }
+        const int nHits{static_cast<int>(pointVector.size())};
+        const float length{(max - min) > 0 ? max - min : 1.f};
+        const float deviationPerHit{deviation / nHits};
+        const float deviationPerLength{deviation / length};
+        const FOM fom{std::make_tuple(length, deviationPerHit, deviationPerLength)};
+        metrics.emplace_back(std::make_pair(bin, fom));
+        //std::cout << "Length: " << length << " Avg Dev: " << deviationPerHit << " " << deviationPerLength << std::endl;
+
+        CaloHitList hits;
+        for (const int hitId : hitIds)
+            hits.emplace_back(caloHitVector.at(hitId));
+        const CartesianVector start{centroid - eigenVectors[0] * 0.5f * length};
+        const CartesianVector finish{centroid + eigenVectors[0] * 0.5f * length};
+        //PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &hits, "bin", AUTOITER));
+        //PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &start, &finish, "pca", BLUE, 1, 1));
+        //PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
+    }
+
+    std::sort(metrics.begin(), metrics.end(), [&](const BinFOM a, const BinFOM b){ return std::get<0>(a.second) > std::get<0>(b.second); });
+    IntVector duplicates;
+    for (size_t i = 1; i < metrics.size(); ++i)
+    {
+        if (std::get<0>(metrics[i].second) == std::get<0>(metrics[i - 1].second))
+        {
+            IntVector hitIds1{selectedHitBinMap.at(metrics[i - 1].first)};
+            IntVector hitIds2{selectedHitBinMap.at(metrics[i].first)};
+            if (hitIds1.size() == hitIds2.size())
+            {
+                std::sort(hitIds1.begin(), hitIds1.end());
+                std::sort(hitIds2.begin(), hitIds2.end());
+                bool duplicate{true};
+                for (size_t j = 0; j < hitIds1.size(); ++j)
+                {
+                    if (hitIds1[j] != hitIds2[j])
+                    {
+                        duplicate = false;
+                        break;
+                    }
+                }
+                if (duplicate)
+                    duplicates.emplace_back(metrics[i].first);
+            }
+        }
+    }
+
+    for (const int id : duplicates)
+    {
+        for (auto iter = metrics.begin(); iter != metrics.end(); )
+        {
+            if ((*iter).first == id)
+                iter = metrics.erase(iter);
+            else
+                ++iter;
+        }
+    }
+
+    IntVector selectedBins, usedHitIds;
+    std::map<int, IntVector> clusterHitIds;
+    for (const auto &[bin, fom] : metrics)
+    {
+        if (std::get<1>(fom) < 0.012)
+        {
+            selectedBins.emplace_back(bin);
+            for (const int hitId : selectedHitBinMap.at(bin))
+            {
+                // For now, just add the hits in turn and veto used hits
+                // In future do some checking to see which cluster is the best fit for a duplicated hit
+                if (std::find(usedHitIds.begin(), usedHitIds.end(), hitId) == usedHitIds.end())
+                {
+                    clusterHitIds[bin].emplace_back(hitId);
+                    usedHitIds.emplace_back(hitId);
+                }
+            }
         }
     }
 
@@ -132,152 +245,47 @@ void VertexClusterCreationAlgorithm::IdentifyTrackStubs(const CaloHitList &caloH
     }
     PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));*/
 
-    /*bool clusterMade{true};
-    while (clusterMade)
+    for (const auto &[bin, hitIds] : clusterHitIds)
     {
-        clusterMade = false;
-        for (const int bin : sortedBins)
-        {
-            int target{bin};
-            int binAlt1{bin > 0 ? bin - 1 : nBins - 1};
-            int binAlt2{bin < (nBins - 1) ? bin + 1 : 0};
-            float delta{closestApproach[bin]};
-            float deltaAlt{closestApproach[binAlt1]};
-            if (deltaAlt < delta)
-            {
-                target = binAlt1;
-                delta = deltaAlt;
-            }
-            deltaAlt = closestApproach[binAlt2];
-            if (deltaAlt < delta)
-            {
-                target = binAlt2;
-                delta = deltaAlt;
-            }
-            // Candidate clusters are sorted by the number of hits, if there aren't two hits there's nothing to cluster
-            if (hitBins[target] < 2)
-            {
-                hitBins[target] = 0;
-                closestApproach[target] = std::numeric_limits<float>::max();
-                // Need to allow for sparse adjacent bins that happen to be closer than the nominal bin
-                if (target != bin)
-                    clusterMade = true;
-                std::sort(sortedBins.begin(), sortedBins.end(), SortBinsFunc);
-                break;
-            }
-            const CaloHit *const pSeedHit{caloHits[target].front()};
-            caloHits[target].erase(caloHits[target].begin());
-            clusterMade = this->ClusterHits(pSeedHit, caloHits[target], pos);
-            if (clusterMade)
-            {
-                caloHits[target].erase(std::remove_if(caloHits[target].begin(), caloHits[target].end(),
-                    [this](const CaloHit *const pCaloHit)
-                    {
-                        return !PandoraContentApi::IsAvailable(*this, pCaloHit);
-                    }), caloHits[target].end());
-                hitBins[target] = caloHits[target].size();
-                closestApproach[target] = this->GetClosestApproach(caloHits[target], pos);
-                std::sort(sortedBins.begin(), sortedBins.end(), SortBinsFunc);
-                break;
-            }
-            else
-            {
-                // If we didn't make a cluster re-insert the seed into the hit list
-                caloHits[target].insert(caloHits[target].begin(), pSeedHit);
-            }
-        }
-    }*/
+        CaloHitVector caloHits;
+        for (const int hitId : hitIds)
+            caloHits.emplace_back(caloHitVector.at(hitId));
+        if (caloHits.size() > 2)
+            this->ClusterHits(caloHits);
+    }
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-bool VertexClusterCreationAlgorithm::ClusterHits(const CaloHit *const pSeedHit, const CaloHitVector &caloHitVector,
-    const CartesianVector &vertex) const
+void VertexClusterCreationAlgorithm::ClusterHits(const CaloHitVector &caloHitVector) const
 {
-    // We know the seed hit is not null and the hit vector must have at least one element
-    CaloHitVector clusteredHits;
-    clusteredHits.emplace_back(pSeedHit);
-    CartesianVector clusterDirection{(pSeedHit->GetPositionVector() - vertex).GetUnitVector()};
+    const Cluster *pCluster{nullptr};
+    const ClusterList *pOutputClusterList{nullptr};
+    std::string originalClusterListName, tempListName{"temp"};
+    PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetCurrentListName<Cluster>(*this, originalClusterListName));
+    PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::CreateTemporaryListAndSetCurrent(*this, pOutputClusterList, tempListName));
 
-    for (size_t i = 0; i < caloHitVector.size(); ++i)
+    for (const CaloHit *const pCaloHit : caloHitVector)
     {
-        const CaloHit *pCurrentHit{caloHitVector.at(i)};
-        const int N{static_cast<int>(clusteredHits.size())};
-        const CaloHit *pAnchorHit{nullptr};
-        float tolerance{0.9969f};
-        switch (N)
-        {
-            case 1:
-                pAnchorHit = clusteredHits[0];
-                tolerance = 0.985f;
-                break;
-            case 2:
-                pAnchorHit = clusteredHits[0];
-                tolerance = 0.9875f;
-                break;
-            case 3:
-                pAnchorHit = clusteredHits[0];
-                tolerance = 0.99f;
-                break;
-            case 4:
-                pAnchorHit = clusteredHits[0];
-                tolerance = 0.9925f;
-                break;
-            default:
-                pAnchorHit = clusteredHits[N - 5];
-                tolerance = 0.9925f;
-                break;
-        }
-        CartesianVector localDirection{(pCurrentHit->GetPositionVector() - pAnchorHit->GetPositionVector()).GetUnitVector()};
-        const float dr{(pCurrentHit->GetPositionVector() - clusteredHits[N - 1]->GetPositionVector()).GetMagnitudeSquared()};
+        if (!PandoraContentApi::IsAvailable(*this, pCaloHit))
+            continue;
 
-        if (dr <= 4.f)
+        if (!pCluster)
         {
-            // If we aren't too far from the last cluster and the direction is within tight angular constraints, cluster
-            // Also allow some latitude if we've only clustered the seed hit so far
-            const float dotProduct{clusterDirection.GetDotProduct(localDirection)};
-            if (dotProduct >= tolerance)
-                clusteredHits.emplace_back(pCurrentHit);
+            PandoraContentApi::Cluster::Parameters parameters;
+            parameters.m_caloHitList.emplace_back(pCaloHit);
+            PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::Cluster::Create(*this, parameters, pCluster));
         }
         else
         {
-            // No downstream hits can be closer than the last, we're done
-            break;
+            PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::AddToCluster(*this, pCluster, pCaloHit));
         }
     }
-
-    const Cluster *pCluster{nullptr};
-    if (clusteredHits.size() > 1)
+    if (pCluster)
     {
-        const ClusterList *pOutputClusterList{nullptr};
-        std::string originalClusterListName, tempListName{"temp"};
-        PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetCurrentListName<Cluster>(*this, originalClusterListName));
-        PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::CreateTemporaryListAndSetCurrent(*this, pOutputClusterList, tempListName));
-
-        for (const CaloHit *const pCaloHit : clusteredHits)
-        {
-            if (!PandoraContentApi::IsAvailable(*this, pCaloHit))
-                continue;
-
-            if (!pCluster)
-            {
-                PandoraContentApi::Cluster::Parameters parameters;
-                parameters.m_caloHitList.emplace_back(pCaloHit);
-                PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::Cluster::Create(*this, parameters, pCluster));
-            }
-            else
-            {
-                PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::AddToCluster(*this, pCluster, pCaloHit));
-            }
-        }
-        if (pCluster)
-        {
-            PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::SaveList<Cluster>(*this, originalClusterListName));
-        }
-        PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::ReplaceCurrentList<Cluster>(*this, originalClusterListName));
+        PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::SaveList<Cluster>(*this, originalClusterListName));
     }
-
-    return pCluster;
+    PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::ReplaceCurrentList<Cluster>(*this, originalClusterListName));
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
