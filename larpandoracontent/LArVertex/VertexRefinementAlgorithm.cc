@@ -23,7 +23,8 @@ namespace lar_content
 
 VertexRefinementAlgorithm::VertexRefinementAlgorithm() :
     m_caloHitListName{"CaloHitList2D"},
-    m_hitRadii(10.f)
+    m_hitRadii(10.f),
+    m_vetoPrimaryRegion{true}
 {
 }
 
@@ -32,12 +33,12 @@ VertexRefinementAlgorithm::VertexRefinementAlgorithm() :
 StatusCode VertexRefinementAlgorithm::Run()
 {
     const VertexList *pInputVertexList{nullptr};
-    PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetCurrentList(*this, pInputVertexList));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_INITIALIZED, !=, PandoraContentApi::GetList(*this, m_inputVertexListName, pInputVertexList));
 
     if (!pInputVertexList || pInputVertexList->empty())
     {
         if (PandoraContentApi::GetSettings(*this)->ShouldDisplayAlgorithmInfo())
-            std::cout << "VertexRefinementAlgorithm: unable to find current vertex list " << std::endl;
+            std::cout << "VertexRefinementAlgorithm: unable to find input vertex list " << std::endl;
 
         return STATUS_CODE_SUCCESS;
     }
@@ -70,6 +71,18 @@ StatusCode VertexRefinementAlgorithm::Run()
 
 void VertexRefinementAlgorithm::RefineVertices(const VertexList &vertexList, const CaloHitList &caloHitList) const
 {
+    const VertexList *pPrimaryVertexList{nullptr};
+    PandoraContentApi::GetList(*this, m_primaryVertexListName, pPrimaryVertexList);
+
+    if (m_vetoPrimaryRegion && (!pPrimaryVertexList || pPrimaryVertexList->empty()))
+    {
+        if (PandoraContentApi::GetSettings(*this)->ShouldDisplayAlgorithmInfo())
+            std::cout << "VertexRefinementAlgorithm: unable to find primary vertex list " << std::endl;
+
+        return;
+    }
+    const CartesianVector &primaryVertex{pPrimaryVertexList->front()->GetPosition()};
+
     CaloHitVector caloHitVectorU, caloHitVectorV, caloHitVectorW;
     for (const CaloHit *const pCaloHit : caloHitList)
     {
@@ -92,6 +105,8 @@ void VertexRefinementAlgorithm::RefineVertices(const VertexList &vertexList, con
     for (const Vertex *const pVertex : vertexList)
     {
         const CartesianVector originalPosition(pVertex->GetPosition());
+        if (m_vetoPrimaryRegion && ((originalPosition - primaryVertex).GetMagnitude() < m_hitRadii))
+            continue;
         const CartesianVector &originalVtxU{LArGeometryHelper::ProjectPosition(this->GetPandora(), originalPosition, TPC_VIEW_U)};
         const CartesianVector &originalVtxV{LArGeometryHelper::ProjectPosition(this->GetPandora(), originalPosition, TPC_VIEW_V)};
         const CartesianVector &originalVtxW{LArGeometryHelper::ProjectPosition(this->GetPandora(), originalPosition, TPC_VIEW_W)};
@@ -237,7 +252,9 @@ StatusCode VertexRefinementAlgorithm::ReadSettings(const TiXmlHandle xmlHandle)
     PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "CaloHitListName", m_caloHitListName));
     PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadValue(xmlHandle, "InputVertexListName", m_inputVertexListName));
     PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadValue(xmlHandle, "OutputVertexListName", m_outputVertexListName));
+    PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadValue(xmlHandle, "PrimaryVertexListName", m_primaryVertexListName));
     PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "HitRadii", m_hitRadii));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "VetoPrimaryRegion", m_vetoPrimaryRegion));
 
     return STATUS_CODE_SUCCESS;
 }

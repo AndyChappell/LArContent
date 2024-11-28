@@ -268,15 +268,13 @@ StatusCode DlSecondaryVertexingAlgorithm::Infer()
     }
     else
     {
-        std::cout << "Insufficient 2D vertices to reconstruct a 3D vertex" << std::endl;
-
         for (const HitType view : {TPC_VIEW_U, TPC_VIEW_V, TPC_VIEW_W})
         {
             if (canvases[view])
                 delete canvases[view];
         }
 
-        return STATUS_CODE_NOT_FOUND;
+        return STATUS_CODE_SUCCESS;
     }
 }
 
