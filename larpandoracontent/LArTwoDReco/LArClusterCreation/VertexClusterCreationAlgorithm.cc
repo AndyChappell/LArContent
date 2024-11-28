@@ -40,8 +40,9 @@ VertexClusterCreationAlgorithm::VertexClusterCreationAlgorithm() :
 
 StatusCode VertexClusterCreationAlgorithm::Run()
 {
+    // We can't guarantee that secondary vertices exist, so allow for unitialized lists
     const CaloHitList *pCaloHitList{nullptr};
-    PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetList(*this, m_caloHitListName, pCaloHitList));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_INITIALIZED, !=, PandoraContentApi::GetList(*this, m_caloHitListName, pCaloHitList));
     const VertexList *pVertexList{nullptr};
     StatusCode status{PandoraContentApi::GetList(*this, m_vertexListName, pVertexList)};
     PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_INITIALIZED, !=, status);
@@ -52,7 +53,8 @@ StatusCode VertexClusterCreationAlgorithm::Run()
         return STATUS_CODE_SUCCESS;
 
     for (const Vertex *const pVertex : *pVertexList)
-        this->IdentifyTrackStubs(*pCaloHitList, *pVertex);
+        this->IdentifyConnectingPaths(*pCaloHitList, *pVertex);
+        //this->IdentifyTrackStubs(*pCaloHitList, *pVertex);
 
     return STATUS_CODE_SUCCESS;
 }
@@ -63,7 +65,8 @@ void VertexClusterCreationAlgorithm::GetListOfCleanClusters(const ClusterList *c
 {
     for (const Cluster *const pCluster : *pClusterList)
     {
-        if (pCluster->GetOrderedCaloHitList().size() > 2)
+        // Pointing cluster creation requires more than 3 hits
+        if (pCluster->GetOrderedCaloHitList().size() > 3)
             clusterVector.emplace_back(pCluster);
     }
 }
@@ -73,21 +76,6 @@ void VertexClusterCreationAlgorithm::GetListOfCleanClusters(const ClusterList *c
 void VertexClusterCreationAlgorithm::IdentifyTrackStubs(const CaloHitList &caloHitList, const Vertex &vertex) const
 {
     const CartesianVector pos{LArGeometryHelper::ProjectPosition(this->GetPandora(), vertex.GetPosition(), caloHitList.front()->GetHitType())};
-
-    const ClusterList *pClusterList{nullptr};
-    PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetCurrentList(*this, pClusterList));
-    ClusterVector cleanClusters, innerClusters, outerClusters;
-    this->GetListOfCleanClusters(pClusterList, cleanClusters);
-    for (const Cluster *const pCluster : cleanClusters)
-    {
-        const LArPointingCluster pointingCluster(pCluster, 10, LArGeometryHelper::GetWirePitch(this->GetPandora(), LArClusterHelper::GetClusterHitType(pCluster)));
-        const CartesianVector &innerPos{pointingCluster.GetInnerVertex().GetPosition()};
-        if (innerPos.GetDistanceSquared(pos) <= (1.5f * m_hitRadii) * (1.5f * m_hitRadii))
-            innerClusters.emplace_back(pCluster);
-        const CartesianVector &outerPos{pointingCluster.GetOuterVertex().GetPosition()};
-        if (outerPos.GetDistanceSquared(pos) <= (1.5f * m_hitRadii) * (1.5f * m_hitRadii))
-            outerClusters.emplace_back(pCluster);
-    }
 
     // Vectorize the hits
     const CaloHitVector caloHitVector(caloHitList.begin(), caloHitList.end());
@@ -253,6 +241,113 @@ void VertexClusterCreationAlgorithm::IdentifyTrackStubs(const CaloHitList &caloH
         if (caloHits.size() > 2)
             this->ClusterHits(caloHits);
     }
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+void VertexClusterCreationAlgorithm::IdentifyConnectingPaths(const CaloHitList &caloHitList, const Vertex &vertex) const
+{
+    const CartesianVector refAxis(1.f, 0.f, 0.f);
+    const CartesianVector pos{LArGeometryHelper::ProjectPosition(this->GetPandora(), vertex.GetPosition(), caloHitList.front()->GetHitType())};
+    const float tolerance{(1.5f * m_hitRadii) * (1.5f * m_hitRadii)};
+
+    const ClusterList *pClusterList{nullptr};
+    PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetCurrentList(*this, pClusterList));
+    ClusterVector cleanClusters, innerClusters, outerClusters;
+    this->GetListOfCleanClusters(pClusterList, cleanClusters);
+    for (const Cluster *const pCluster : cleanClusters)
+    {
+        try
+        {
+            const LArPointingCluster pointingCluster(pCluster, 10, LArGeometryHelper::GetWirePitch(this->GetPandora(), LArClusterHelper::GetClusterHitType(pCluster)));
+            const CartesianVector &innerPos{pointingCluster.GetInnerVertex().GetPosition()};
+            const CartesianVector &outerPos{pointingCluster.GetOuterVertex().GetPosition()};
+            const float innerDistance{innerPos.GetDistanceSquared(pos)};
+            const float outerDistance{outerPos.GetDistanceSquared(pos)};
+            if ((innerDistance < outerDistance) && (innerPos.GetDistanceSquared(pos) <= tolerance))
+                innerClusters.emplace_back(pCluster);
+            else if ((outerDistance <= innerDistance) && (outerPos.GetDistanceSquared(pos) <= tolerance))
+                outerClusters.emplace_back(pCluster);
+        }
+        catch (StatusCodeException &)
+        {
+        }
+    }
+
+    PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1.f, 1.f, 1.f));
+    for (const Cluster *const pCluster : innerClusters)
+    {
+        const float wirePitch{LArGeometryHelper::GetWirePitch(this->GetPandora(), LArClusterHelper::GetClusterHitType(pCluster))};
+        const LArPointingCluster initPointingCluster(pCluster, 10, wirePitch);
+        // Pointing clusters always point towards their own hits
+        const CartesianVector &dir{initPointingCluster.GetInnerVertex().GetDirection() * -1.f};
+        const float dot{dir.GetDotProduct(refAxis)};
+        // If cluster appears relatively transverse, use larger fit window to accommodate wide hits
+        const LArPointingCluster pointingCluster{dot < 0.707f ? initPointingCluster : LArPointingCluster(pCluster, 20, wirePitch)};
+        const CartesianVector &clusterPos{pointingCluster.GetInnerVertex().GetPosition()};
+        // Pointing clusters always point towards their own hits
+        const CartesianVector &clusterDir{pointingCluster.GetInnerVertex().GetDirection() * -1.f};
+        const CartesianVector &unitClusterDir{clusterDir.GetUnitVector()};
+        const CartesianVector &tempVertexDir{pos - clusterPos};
+        // Extend the direction vector just beyond the vertex hit centre
+        const CartesianVector &vertexDir{tempVertexDir * ((tempVertexDir.GetMagnitude() +  0.5f * wirePitch) / (tempVertexDir.GetMagnitude())) };
+        const CartesianVector &unitVertexDir{vertexDir.GetUnitVector()};
+        const CartesianVector unitPerpendicular{-unitVertexDir.GetZ(), 0, unitVertexDir.GetX()};
+
+        // Check that the vertex dir and cluster dir are somewhat consistent
+        const float clusterVertexDot{unitClusterDir.GetDotProduct(unitVertexDir)};
+        if (clusterVertexDot < 0.966f)
+            continue;
+        CaloHitList intersectedHits;
+        for (const CaloHit *const pCaloHit : caloHitList)
+        {
+            const CartesianVector hitOffset{pCaloHit->GetPositionVector() - clusterPos};
+            const float hitDot{hitOffset.GetDotProduct(unitVertexDir)};
+            if ((hitDot >= 0.f) && (hitDot < vertexDir.GetMagnitude()))
+            {
+                const CartesianVector llOffset{(pCaloHit->GetPositionVector() + CartesianVector(-pCaloHit->GetCellSize1() * 0.5f, 0.f, -0.5f * wirePitch)) - clusterPos};
+                const CartesianVector hhOffset{(pCaloHit->GetPositionVector() + CartesianVector(+pCaloHit->GetCellSize1() * 0.5f, 0.f, +0.5f * wirePitch)) - clusterPos};
+                const float llDot{llOffset.GetDotProduct(unitPerpendicular)};
+                const float hhDot{hhOffset.GetDotProduct(unitPerpendicular)};
+                if (llDot * hhDot <= 0.f)
+                {
+                    intersectedHits.emplace_back(pCaloHit);
+                }
+                else
+                {
+                    const CartesianVector lhOffset{(pCaloHit->GetPositionVector() + CartesianVector(-pCaloHit->GetCellSize1() * 0.5f, 0.f, +0.5f * wirePitch)) - clusterPos};
+                    const CartesianVector hlOffset{(pCaloHit->GetPositionVector() + CartesianVector(+pCaloHit->GetCellSize1() * 0.5f, 0.f, -0.5f * wirePitch)) - clusterPos};
+                    const float lhDot{lhOffset.GetDotProduct(unitPerpendicular)};
+                    const float hlDot{hlOffset.GetDotProduct(unitPerpendicular)};
+                    if (lhDot * hlDot <= 0.f)
+                    {
+                        intersectedHits.emplace_back(pCaloHit);
+                    }
+                }
+            }
+        }
+        // Check for continuity of hits, both within the selected hits and with respect to the base cluster
+        // The hits should not start a large distance from the base cluster, and should not contain large gaps
+
+        PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &pos, "vtx", MAGENTA, 1));
+        PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &caloHitList, "hits", GRAY));
+        PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &intersectedHits, "path_hits", ORANGE));
+        ClusterList clusters({pCluster});
+        PANDORA_MONITORING_API(VisualizeClusters(this->GetPandora(), &clusters, "cluster", RED));
+        const CartesianVector a(clusterPos + vertexDir);
+        const CartesianVector b(clusterPos + clusterDir);
+        PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &clusterPos, &a, "vertex_dir", BLACK, 1, 1));
+        PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &clusterPos, &b, "cluster_dir", BLUE, 1, 1));
+        PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
+    }
+
+/*    PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &pos, "vtx", MAGENTA, 1));
+    PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &caloHitList, "hits", GRAY));
+    ClusterList nearbyInnerClusters(innerClusters.begin(), innerClusters.end());
+    ClusterList nearbyOuterClusters(outerClusters.begin(), outerClusters.end());
+    PANDORA_MONITORING_API(VisualizeClusters(this->GetPandora(), &nearbyInnerClusters, "inner", BLUE));
+    PANDORA_MONITORING_API(VisualizeClusters(this->GetPandora(), &nearbyOuterClusters, "outer", RED));
+    PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));*/
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
