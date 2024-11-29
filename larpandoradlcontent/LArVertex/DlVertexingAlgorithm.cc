@@ -260,16 +260,40 @@ StatusCode DlVertexingAlgorithm::Infer()
                 if (isU)
                 {
                     const CartesianVector trueVertex(x, 0.f, u);
+                    const CartesianVector a(driftMin, 0, wireMin[view]);
+                    const CartesianVector b(driftMax, 0, wireMin[view]);
+                    const CartesianVector c(driftMax, 0, wireMax[view]);
+                    const CartesianVector d(driftMin, 0, wireMax[view]);
+                    PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &a, &b, "a", BLACK, 1, 1));
+                    PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &b, &c, "a", BLACK, 1, 1));
+                    PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &c, &d, "a", BLACK, 1, 1));
+                    PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &d, &a, "a", BLACK, 1, 1));
                     PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &trueVertex, "U(true)", BLUE, 3));
                 }
                 else if (isV)
                 {
                     const CartesianVector trueVertex(x, 0.f, v);
+                    const CartesianVector a(driftMin, 0, wireMin[view]);
+                    const CartesianVector b(driftMax, 0, wireMin[view]);
+                    const CartesianVector c(driftMax, 0, wireMax[view]);
+                    const CartesianVector d(driftMin, 0, wireMax[view]);
+                    PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &a, &b, "a", BLACK, 1, 1));
+                    PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &b, &c, "a", BLACK, 1, 1));
+                    PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &c, &d, "a", BLACK, 1, 1));
+                    PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &d, &a, "a", BLACK, 1, 1));
                     PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &trueVertex, "V(true)", BLUE, 3));
                 }
                 else if (isW)
                 {
                     const CartesianVector trueVertex(x, 0.f, w);
+                    const CartesianVector a(driftMin, 0, wireMin[view]);
+                    const CartesianVector b(driftMax, 0, wireMin[view]);
+                    const CartesianVector c(driftMax, 0, wireMax[view]);
+                    const CartesianVector d(driftMin, 0, wireMax[view]);
+                    PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &a, &b, "a", BLACK, 1, 1));
+                    PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &b, &c, "a", BLACK, 1, 1));
+                    PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &c, &d, "a", BLACK, 1, 1));
+                    PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &d, &a, "a", BLACK, 1, 1));
                     PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &trueVertex, "W(true)", BLUE, 3));
                 }
             }
@@ -680,6 +704,29 @@ void DlVertexingAlgorithm::GetHitRegion(const CaloHitList &caloHitList, float &x
         const float zSpan{pitch * (m_height - 1)};
         zMin = zVtx - zAsymmetry * zSpan;
         zMax = zMin + zSpan;
+
+        // Avoid the estimated vertex being too close to edges (resolution might push the true vertex outside of the frame)
+        const float tol{5.f};
+        if ((xVtx - xMin) < tol)
+        {
+            xMax -= tol - (xVtx - xMin);
+            xMin -= tol - (xVtx - xMin);
+        }
+        if ((zVtx - zMin) < tol)
+        {
+            zMax -= tol - (zVtx - zMin);
+            zMin -= tol - (zVtx - zMin);
+        }
+        if ((xMax - xVtx) < 10.f)
+        {
+            xMin += tol - (xMax - xVtx);
+            xMax += tol - (xMax - xVtx);
+        }
+        if ((zMax - zVtx) < 10.f)
+        {
+            zMin += tol - (zMax - zVtx);
+            zMax += tol - (zMax - zVtx);
+        }
     }
 
     // Avoid unreasonable rescaling of very small hit regions, pixels are assumed to be 0.5cm in x and wire pitch in z
