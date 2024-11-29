@@ -70,6 +70,118 @@ public:
     };
 
     /**
+     *  @brief   FinalStateDescriptor class
+     */
+    class FinalStateDescriptor
+    {
+    public:
+        /**
+         *  @brief  Constructor
+         *
+         *  @param  caloHitList The list of hits to associate with final state particles
+         *  @param  mcParticleList The list of MC particles from which to extract neutrino interaction final state particles
+         */
+        FinalStateDescriptor(const pandora::CaloHitList &caloHitList, const pandora::MCParticleList &mcParticleList);
+
+        /**
+         *  @brief  Retrieve the number of final state electrons
+         *
+         *  @return The number of final state electrons
+         **/
+        inline unsigned int GetNumElectrons() const { return m_nElectrons; };
+
+        /**
+         *  @brief  Retrieve the number of final state muons
+         *
+         *  @return The number of final state muons
+         **/
+        inline unsigned int GetNumMuons() const { return m_nMuons; };
+
+        /**
+         *  @brief  Retrieve the number of final state taus
+         *
+         *  @return The number of final state taus
+         **/
+        inline unsigned int GetNumTaus() const { return m_nTaus; };
+
+        /**
+         *  @brief  Retrieve the number of final state photons
+         *
+         *  @return The number of final state photons
+         **/
+        inline unsigned int GetNumPhotons() const { return m_nPhotons; };
+
+        /**
+         *  @brief  Retrieve the number of final state protons
+         *
+         *  @return The number of final state protons
+         **/
+        inline unsigned int GetNumProtons() const { return m_nProtons; };
+
+        /**
+         *  @brief  Retrieve the number of visible final state protons
+         *
+         *  @return The number of visible final state protons
+         **/
+        inline unsigned int GetNumVisibleProtons() const { return m_nVisibleProtons; };
+
+        /**
+         *  @brief  Retrieve the number of final state neutrons
+         *
+         *  @return The number of final state neutrons
+         **/
+        inline unsigned int GetNumNeutrons() const { return m_nNeutrons; };
+
+        /**
+         *  @brief  Retrieve the number of final state charged pions
+         *
+         *  @return The number of final state charged pions
+         **/
+        inline unsigned int GetNumChargedPions() const { return m_nPiC; };
+
+        /**
+         *  @brief  Retrieve the number of final state pi zeros
+         *
+         *  @return The number of final state pi zeros
+         **/
+        inline unsigned int GetNumPiZeros() const { return m_nPiZero; };
+
+        /**
+         *  @brief  Retrieve the number of final state charged kaons
+         *
+         *  @return The number of final state charged kaons
+         **/
+        inline unsigned int GetNumChargedKs() const { return m_nKaonC; };
+
+        /**
+         *  @brief  Retrieve the number of final state K zeros
+         *
+         *  @return The number of final state K zeros
+         **/
+        inline unsigned int GetNumKZeros() const { return m_nKaonZero; };
+
+        /**
+         *  @brief  Retrieve the number of final state other particles
+         *
+         *  @return The number of final state other particles
+         **/
+        inline unsigned int GetNumOther() const { return m_nOther; };
+
+    private:
+        unsigned int m_nElectrons;
+        unsigned int m_nMuons;
+        unsigned int m_nTaus;
+        unsigned int m_nPhotons;
+        unsigned int m_nProtons;
+        unsigned int m_nVisibleProtons;
+        unsigned int m_nNeutrons;
+        unsigned int m_nPiC;
+        unsigned int m_nPiZero;
+        unsigned int m_nKaonC;
+        unsigned int m_nKaonZero;
+        unsigned int m_nOther;
+    };
+    /**
      *  @brief  Returns true if passed particle whose primary meets the passed criteria
      *
      *  @param  pMCParticle the input mc particle

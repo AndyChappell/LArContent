@@ -42,6 +42,135 @@ LArMCParticleHelper::PrimaryParameters::PrimaryParameters() :
 //------------------------------------------------------------------------------------------------------------------------------------------
 //------------------------------------------------------------------------------------------------------------------------------------------
 
+LArMCParticleHelper::FinalStateDescriptor::FinalStateDescriptor(const CaloHitList &caloHitList, const MCParticleList &mcParticleList) :
+    m_nElectrons{0},
+    m_nMuons{0},
+    m_nTaus{0},
+    m_nPhotons{0},
+    m_nProtons{0},
+    m_nVisibleProtons{0},
+    m_nNeutrons{0},
+    m_nPiC{0},
+    m_nPiZero{0},
+    m_nKaonC{0},
+    m_nKaonZero{0},
+    m_nOther{0}
+{
+    const MCParticle *pNeutrino{nullptr};
+    float energy{-std::numeric_limits<float>::max()};
+    for (const MCParticle *const pMC : mcParticleList)
+    {
+        if (LArMCParticleHelper::IsNeutrino(pMC))
+        {
+            if (pMC->GetParentList().empty() && pMC->GetEnergy() > energy)
+            {
+                pNeutrino = pMC;
+                energy = pMC->GetEnergy();
+            }
+        }
+    }
+    if (pNeutrino)
+    {
+        const MCParticleList &finalStateParticleList{pNeutrino->GetDaughterList()};
+        MCContributionMap mcToHitsMap;
+        for (const MCParticle *const pMC : finalStateParticleList)
+        {
+            switch (std::abs(pMC->GetParticleId()))
+            {
+                case E_MINUS:
+                    ++m_nElectrons;
+                    break;
+                case MU_MINUS:
+                    ++m_nMuons;
+                    break;
+                case TAU_MINUS:
+                    ++m_nTaus;
+                    break;
+                case PHOTON:
+                    ++m_nPhotons;
+                    break;
+                case PROTON:
+                    mcToHitsMap[pMC] = CaloHitList();
+                    ++m_nProtons;
+                    break;
+                case NEUTRON:
+                    ++m_nNeutrons;
+                    break;
+                case PI_PLUS:
+                    ++m_nPiC;
+                    break;
+                case PI_ZERO:
+                    ++m_nPiZero;
+                    break;
+                case K_PLUS:
+                    ++m_nKaonC;
+                    break;
+                case K_LONG:
+                case K_SHORT:
+                    ++m_nKaonZero;
+                    break;
+                default:
+                    ++m_nOther;
+                    break;
+            }
+        }
+
+        for (const CaloHit *const pCaloHit : caloHitList)
+        {
+            try
+            {
+                const MCParticle *pMC{MCParticleHelper::GetMainMCParticle(pCaloHit)};
+                if (mcToHitsMap.find(pMC) != mcToHitsMap.end())
+                    mcToHitsMap[pMC].emplace_back(pCaloHit);
+            }
+            catch (const StatusCodeException &)
+            {
+            }
+        }
+
+        for (const auto &[pMC, mcCaloHitList] : mcToHitsMap)
+        {
+            int nHitsU{0}, nHitsV{0}, nHitsW{0}, nViews{0};
+            for (const CaloHit *const pCaloHit : mcCaloHitList)
+            {
+                switch (pCaloHit->GetHitType())
+                {
+                    case TPC_VIEW_U:
+                        nViews += nHitsU ? 0 : 1;
+                        ++nHitsU;
+                        break;
+                    case TPC_VIEW_V:
+                        nViews += nHitsV ? 0 : 1;
+                        ++nHitsV;
+                        break;
+                    case TPC_VIEW_W:
+                        nViews += nHitsW ? 0 : 1;
+                        ++nHitsW;
+                        break;
+                    default:
+                        break;
+                }
+                if (nViews >= 2)
+                    break;
+            }
+            if (nViews >= 2)
+            {
+                switch (std::abs(pMC->GetParticleId()))
+                {
+                    case PROTON:
+                        ++m_nVisibleProtons;
+                        break;
+                    default:
+                        break;
+                }
+            }
+        }
+    }
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+//------------------------------------------------------------------------------------------------------------------------------------------
+
 bool LArMCParticleHelper::DoesPrimaryMeetCriteria(const MCParticle *const pMCParticle, std::function<bool(const MCParticle *const)> fCriteria)
 {
     try

@@ -22,8 +22,10 @@ namespace lar_content
 {
 
 VertexMonitoringAlgorithm::VertexMonitoringAlgorithm() :
+    m_event{-1},
     m_visualise{true},
     m_writeFile{false},
+    m_fromList{false},
     m_transparencyThresholdE{-1.f},
     m_energyScaleThresholdE{1.f},
     m_scalingFactor{1.f}
@@ -44,6 +46,7 @@ VertexMonitoringAlgorithm::~VertexMonitoringAlgorithm()
 
 StatusCode VertexMonitoringAlgorithm::Run()
 {
+    ++m_event;
     if (m_visualise)
     {
         PANDORA_MONITORING_API(SetEveDisplayParameters(
@@ -62,49 +65,121 @@ StatusCode VertexMonitoringAlgorithm::Run()
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
+void VertexMonitoringAlgorithm::Print(const MCParticle *const pMC, const std::string &indent) const
+{
+    if (pMC)
+    {
+        if (indent.length() > 3)
+            return;
+        std::cout << indent << pMC->GetParticleId() << ": " << pMC->GetEnergy() << std::endl;
+        for (const MCParticle *const pChild : pMC->GetDaughterList())
+        {
+            this->Print(pChild, indent + "  ");
+        }
+    }
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
 StatusCode VertexMonitoringAlgorithm::AssessVertices() const
 {
 #ifdef MONITORING
     const MCParticleList *pMCParticleList{nullptr};
     PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetCurrentList(*this, pMCParticleList));
-    const PfoList *pPfoList{nullptr};
-    PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetCurrentList(*this, pPfoList));
-
-    LArMCParticleHelper::MCContributionMap mcToHitsMap;
-    MCParticleVector primaries;
-    LArMCParticleHelper::GetPrimaryMCParticleList(pMCParticleList, primaries);
-    const MCParticle *pTrueNeutrino{nullptr};
-    const ParticleFlowObject *pRecoNeutrino{nullptr};
-    if (!primaries.empty())
+    const CaloHitList *pCaloHitList{nullptr};
+    PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetList(*this, m_caloHitListName, pCaloHitList));
+    int nHitsU{0}, nHitsV{0}, nHitsW{0};
+    for (const CaloHit *const pCaloHit : *pCaloHitList)
     {
-        for (const MCParticle *primary : primaries)
+        switch (pCaloHit->GetHitType())
         {
-            const MCParticleList &parents{primary->GetParentList()};
-            if (parents.size() == 1 && LArMCParticleHelper::IsNeutrino(parents.front()))
-            {
-                pTrueNeutrino = parents.front();
+            case TPC_VIEW_U:
+                ++nHitsU;
                 break;
+            case TPC_VIEW_V:
+                ++nHitsV;
+                break;
+            case TPC_VIEW_W:
+                ++nHitsW;
+                break;
+            default:
+                break;
+        }
+    }
+    const int nViewsWithHits{(nHitsU > 0 ? 1 : 0) + (nHitsV > 0 ? 1 : 0) + (nHitsW > 0 ? 1 : 0)};
+    if (nViewsWithHits < 2)
+        return STATUS_CODE_SUCCESS;
+ 
+    const PfoList *pPfoList{nullptr};
+    const VertexList *pVertexList{nullptr};
+    if (!m_fromList)
+    {
+        PandoraContentApi::GetCurrentList(*this, pPfoList);
+    }
+    else
+    {
+        PandoraContentApi::GetList(*this, m_vertexListName, pVertexList);
+    }
+
+    const ParticleFlowObject *pRecoNeutrino{nullptr};
+    const MCParticle *pTrueNeutrino{nullptr};
+    float energy{-std::numeric_limits<float>::max()};
+    for (const MCParticle *const pMC : *pMCParticleList)
+    {
+        if (LArMCParticleHelper::IsNeutrino(pMC))
+        {
+            if (pMC->GetParentList().empty() && pMC->GetEnergy() > energy)
+            {
+                pTrueNeutrino = pMC;
+                energy = pMC->GetEnergy();
             }
         }
     }
 
-    for (const ParticleFlowObject *pPfo : *pPfoList)
+    //this->Print(pTrueNeutrino, "");
+
+    if (!m_fromList)
     {
-        if (LArPfoHelper::IsNeutrino(pPfo))
+        if (pPfoList)
         {
-            pRecoNeutrino = pPfo;
-            break;
+            for (const ParticleFlowObject *pPfo : *pPfoList)
+            {
+                if (LArPfoHelper::IsNeutrino(pPfo))
+                {
+                    pRecoNeutrino = pPfo;
+                    break;
+                }
+            }
         }
     }
 
-    MCParticleList primariesList(primaries.begin(), primaries.end());
-    const InteractionDescriptor descriptor{LArInteractionTypeHelper::GetInteractionDescriptor(primariesList)};
+    const LArMCParticleHelper::FinalStateDescriptor descriptor(*pCaloHitList, *pMCParticleList);
 
-    if (pRecoNeutrino && pTrueNeutrino)
+    float trueInelasticity{1.f};
+    float trueLeptonicEnergy{0.f};
+    float trueHadronicEnergy{0.f};
+    float trueNeutrinoEnergy{0.f};
+    if (pTrueNeutrino)
+    {
+        trueNeutrinoEnergy = pTrueNeutrino->GetEnergy();
+        // Get the fraction of hadronic energy in the event
+        for (const MCParticle *const pChild : pTrueNeutrino->GetDaughterList())
+        {
+            const int pdg{std::abs(pChild->GetParticleId())};
+            if (pdg >= 11 && pdg <= 16)
+                trueLeptonicEnergy += pChild->GetEnergy();
+        }
+        if (trueLeptonicEnergy > 0.f && trueNeutrinoEnergy > 0.f)
+            trueInelasticity = 1.f - trueLeptonicEnergy / trueNeutrinoEnergy;
+        trueHadronicEnergy = trueNeutrinoEnergy - trueLeptonicEnergy;
+    }
+
+    const bool recoAvailable{pRecoNeutrino || (pVertexList && !pVertexList->empty())};
+    if (recoAvailable && pTrueNeutrino)
     {
         const LArTransformationPlugin *transform{this->GetPandora().GetPlugins()->GetLArTransformationPlugin()};
         const CartesianVector &trueVertex{pTrueNeutrino->GetVertex()};
-        const CartesianVector &recoVertex{LArPfoHelper::GetVertex(pRecoNeutrino)->GetPosition()};
+        const CartesianVector &recoVertex{m_fromList ? pVertexList->front()->GetPosition() : LArPfoHelper::GetVertex(pRecoNeutrino)->GetPosition()};
         if (m_visualise)
         {
             const CartesianVector tu(trueVertex.GetX(), 0.f, static_cast<float>(transform->YZtoU(trueVertex.GetY(), trueVertex.GetZ())));
@@ -129,40 +204,57 @@ StatusCode VertexMonitoringAlgorithm::AssessVertices() const
             PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &rw, "W reco vertex", RED, 2));
         }
 
-        if (m_writeFile && LArVertexHelper::IsInFiducialVolume(this->GetPandora(), trueVertex, "dune_fd_hd"))
+        if (m_writeFile)// && LArVertexHelper::IsInFiducialVolume(this->GetPandora(), trueVertex, "dune_fd_hd"))
         {
             const CartesianVector delta{recoVertex - trueVertex};
             const float dx{delta.GetX()}, dy{delta.GetY()}, dz{delta.GetZ()}, dr{delta.GetMagnitude()};
             const float trueNuEnergy{pTrueNeutrino->GetEnergy()};
+            const CartesianVector &trueNuMom{pTrueNeutrino->GetMomentum()};
             const int success{1};
-            const int isCC{descriptor.IsCC()};
-            const int isQE{descriptor.IsQE()};
-            const int isRes{descriptor.IsResonant()};
-            const int isDIS{descriptor.IsDIS()};
-            const int isCoh{descriptor.IsCoherent()};
-            const int isOther{!(isCC || isQE || isRes || isDIS)};
-            const int isMu{descriptor.IsMuonNeutrino()};
-            const int isElectron{descriptor.IsElectronNeutrino()};
-            const int nPiZero{static_cast<int>(descriptor.GetNumPiZero())};
-            const int nPiPlus{static_cast<int>(descriptor.GetNumPiPlus())};
-            const int nPiMinus{static_cast<int>(descriptor.GetNumPiMinus())};
-            const int nPhotons{static_cast<int>(descriptor.GetNumPhotons())};
-            const int nProtons{static_cast<int>(descriptor.GetNumProtons())};
+            const int nE{static_cast<int>(descriptor.GetNumElectrons())};
+            const int nMu{static_cast<int>(descriptor.GetNumMuons())};
+            const int nTau{static_cast<int>(descriptor.GetNumTaus())};
+            const int nGamma{static_cast<int>(descriptor.GetNumPhotons())};
+            const int nP{static_cast<int>(descriptor.GetNumProtons())};
+            const int nVisibleP{static_cast<int>(descriptor.GetNumVisibleProtons())};
+            const int nN{static_cast<int>(descriptor.GetNumNeutrons())};
+            const int nPiC{static_cast<int>(descriptor.GetNumChargedPions())};
+            const int nPi0{static_cast<int>(descriptor.GetNumPiZeros())};
+            const int nKC{static_cast<int>(descriptor.GetNumChargedKs())};
+            const int nK0{static_cast<int>(descriptor.GetNumKZeros())};
+            const int nOther{static_cast<int>(descriptor.GetNumOther())};
+            //const LArMCParticle *const pLArNu{dynamic_cast<const LArMCParticle *const>(pTrueNeutrino)};
+            //const int isCC{pLArNu ? pLArNu->IsCC() : 0};
+            const int isCC{nE + nMu + nTau};
+            //const int isHadronicTauDecay{(std::abs(pTrueNeutrino->GetParticleId()) == 16) && (isCC == 1) && ((nE + nMu) == 0)};
+            const int isHadronicTauDecay{0};
+
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "event", m_event));
             PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "success", success));
             PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "trueNuEnergy", trueNuEnergy));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "trueNuMomX", trueNuMom.GetX()));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "trueNuMomY", trueNuMom.GetY()));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "trueNuMomZ", trueNuMom.GetZ()));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "trueLeptonicEnergy", trueLeptonicEnergy));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "trueHadronicEnergy", trueHadronicEnergy));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "trueInelasticity", trueInelasticity));
             PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "isCC", isCC));
-            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "isQE", isQE));
-            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "isRes", isRes));
-            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "isDIS", isDIS));
-            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "isCoh", isCoh));
-            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "isOther", isOther));
-            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "isMu", isMu));
-            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "isElectron", isElectron));
-            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "nPiZero", nPiZero));
-            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "nPiPlus", nPiPlus));
-            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "nPiMinus", nPiMinus));
-            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "nPhotons", nPhotons));
-            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "nProtons", nProtons));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "isHadronicTauDecay", isHadronicTauDecay));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "nE", nE));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "nMu", nMu));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "nTau", nTau));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "nPhotons", nGamma));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "nP", nP));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "nVisibleP", nVisibleP));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "nN", nN));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "nPi0", nPi0));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "nPiC", nPiC));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "nK0", nK0));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "nKC", nKC));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "nOther", nOther));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "nHitsU", nHitsU));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "nHitsV", nHitsV));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "nHitsW", nHitsW));
             PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "dx", dx));
             PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "dy", dy));
             PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "dz", dz));
@@ -173,40 +265,56 @@ StatusCode VertexMonitoringAlgorithm::AssessVertices() const
     else if (pTrueNeutrino)
     {
         const CartesianVector &trueVertex{pTrueNeutrino->GetVertex()};
+        (void)trueVertex;
 
-        if (m_writeFile && LArVertexHelper::IsInFiducialVolume(this->GetPandora(), trueVertex, "dune_fd_hd"))
+        if (m_writeFile) // && LArVertexHelper::IsInFiducialVolume(this->GetPandora(), trueVertex, "dune_fd_hd"))
         {
             const int success{0};
             const float dx{-999.f}, dy{-999.f}, dz{-999.f}, dr{-999.f};
             const float trueNuEnergy{pTrueNeutrino->GetEnergy()};
-            const int isCC{descriptor.IsCC()};
-            const int isQE{descriptor.IsQE()};
-            const int isRes{descriptor.IsResonant()};
-            const int isDIS{descriptor.IsDIS()};
-            const int isCoh{descriptor.IsCoherent()};
-            const int isOther{!(isCC || isQE || isRes || isDIS)};
-            const int isMu{descriptor.IsMuonNeutrino()};
-            const int isElectron{descriptor.IsElectronNeutrino()};
-            const int nPiZero{static_cast<int>(descriptor.GetNumPiZero())};
-            const int nPiPlus{static_cast<int>(descriptor.GetNumPiPlus())};
-            const int nPiMinus{static_cast<int>(descriptor.GetNumPiMinus())};
-            const int nPhotons{static_cast<int>(descriptor.GetNumPhotons())};
-            const int nProtons{static_cast<int>(descriptor.GetNumProtons())};
+            const CartesianVector &trueNuMom{pTrueNeutrino->GetMomentum()};
+            const int nE{static_cast<int>(descriptor.GetNumElectrons())};
+            const int nMu{static_cast<int>(descriptor.GetNumMuons())};
+            const int nTau{static_cast<int>(descriptor.GetNumTaus())};
+            const int nGamma{static_cast<int>(descriptor.GetNumPhotons())};
+            const int nP{static_cast<int>(descriptor.GetNumProtons())};
+            const int nN{static_cast<int>(descriptor.GetNumNeutrons())};
+            const int nPiC{static_cast<int>(descriptor.GetNumChargedPions())};
+            const int nPi0{static_cast<int>(descriptor.GetNumPiZeros())};
+            const int nKC{static_cast<int>(descriptor.GetNumChargedKs())};
+            const int nK0{static_cast<int>(descriptor.GetNumKZeros())};
+            const int nOther{static_cast<int>(descriptor.GetNumOther())};
+            //const LArMCParticle *const pLArNu{dynamic_cast<const LArMCParticle *const>(pTrueNeutrino)};
+            //const int isCC{pLArNu ? pLArNu->IsCC() : 0};
+            const int isCC{nE + nMu + nTau};
+            //const int isHadronicTauDecay{(std::abs(pTrueNeutrino->GetParticleId()) == 16) && (isCC == 1) && ((nE + nMu) == 0)};
+            const int isHadronicTauDecay{0};
+
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "event", m_event));
             PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "success", success));
             PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "trueNuEnergy", trueNuEnergy));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "trueNuMomX", trueNuMom.GetX()));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "trueNuMomY", trueNuMom.GetY()));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "trueNuMomZ", trueNuMom.GetZ()));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "trueLeptonicEnergy", trueLeptonicEnergy));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "trueHadronicEnergy", trueHadronicEnergy));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "trueInelasticity", trueInelasticity));
             PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "isCC", isCC));
-            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "isQE", isQE));
-            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "isRes", isRes));
-            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "isDIS", isDIS));
-            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "isCoh", isCoh));
-            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "isOther", isOther));
-            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "isMu", isMu));
-            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "isElectron", isElectron));
-            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "nPiZero", nPiZero));
-            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "nPiPlus", nPiPlus));
-            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "nPiMinus", nPiMinus));
-            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "nPhotons", nPhotons));
-            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "nProtons", nProtons));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "isHadronicTauDecay", isHadronicTauDecay));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "nE", nE));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "nMu", nMu));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "nTau", nTau));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "nPhotons", nGamma));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "nP", nP));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "nN", nN));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "nPi0", nPi0));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "nPiC", nPiC));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "nK0", nK0));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "nKC", nKC));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "nOther", nOther));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "nHitsU", nHitsU));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "nHitsV", nHitsV));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "nHitsW", nHitsW));
             PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "dx", dx));
             PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "dy", dy));
             PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "dz", dz));
@@ -225,10 +333,16 @@ StatusCode VertexMonitoringAlgorithm::ReadSettings(const TiXmlHandle xmlHandle)
 {
     PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "Visualize", m_visualise));
     PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "WriteFile", m_writeFile));
+    PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadValue(xmlHandle, "CaloHitListName", m_caloHitListName));
     if (m_writeFile)
     {
         PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadValue(xmlHandle, "Filename", m_filename));
         PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadValue(xmlHandle, "Treename", m_treename));
+    }
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "FromList", m_fromList));
+    if (m_fromList)
+    {
+        PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadValue(xmlHandle, "VertexListName", m_vertexListName));
     }
 
     PANDORA_RETURN_RESULT_IF_AND_IF(
