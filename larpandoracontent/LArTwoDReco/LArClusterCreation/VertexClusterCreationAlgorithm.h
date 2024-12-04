@@ -46,6 +46,7 @@ private:
 
     float m_hitRadii; ///< The search radius to collect hits around the vertex
     float m_maxGap; ///< The maximum gap to allow in constructing paths back to vertices
+    bool m_visualize; ///< Whether or not to visualize the clustering decisions
 };
 
 } // namespace lar_content
