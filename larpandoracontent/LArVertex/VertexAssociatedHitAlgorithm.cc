@@ -26,7 +26,8 @@ namespace lar_content
 
 VertexAssociatedHitAlgorithm::VertexAssociatedHitAlgorithm() :
     m_caloHitListName{""},
-    m_vertexListName{""}
+    m_vertexListName{""},
+    m_hitRadii{10.f}
 {
 }
 
@@ -86,7 +87,7 @@ void VertexAssociatedHitAlgorithm::IdentifyAssociatedHits(const CaloHitList &cal
 
             const CartesianVector &hitPos{pCaloHit->GetPositionVector()};
             const float distanceSquared{hitPos.GetDistanceSquared(pos)};
-            if (distanceSquared <= 25.f)
+            if (distanceSquared <= (m_hitRadii * m_hitRadii))
                 vetoedHitSet.insert(pCaloHit);
         }
     }
@@ -126,6 +127,7 @@ StatusCode VertexAssociatedHitAlgorithm::ReadSettings(const TiXmlHandle xmlHandl
     PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadValue(xmlHandle, "VertexListName", m_vertexListName));
     PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadValue(xmlHandle, "VetoedHitListName", m_vetoedHitListName));
     PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadValue(xmlHandle, "RetainedHitListName", m_retainedHitListName));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "HitRadii", m_hitRadii));
 
     return STATUS_CODE_SUCCESS;
 }
