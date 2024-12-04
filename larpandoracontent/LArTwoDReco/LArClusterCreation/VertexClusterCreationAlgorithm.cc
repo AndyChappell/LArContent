@@ -34,7 +34,8 @@ VertexClusterCreationAlgorithm::VertexClusterCreationAlgorithm() :
     m_caloHitListName{""},
     m_vertexListName{""},
     m_hitRadii{10.f},
-    m_maxGap{1.f}
+    m_maxGap{1.f},
+    m_visualize{false}
 {
 }
 
@@ -53,6 +54,11 @@ StatusCode VertexClusterCreationAlgorithm::Run()
 
     if (!pCaloHitList || pCaloHitList->empty() || !pVertexList || pVertexList->empty())
         return STATUS_CODE_SUCCESS;
+
+    if (m_visualize)
+    {
+        PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1.f, 1.f, 1.f));
+    }
 
     CaloHitUseMap usedHits;
     for (const Vertex *const pVertex : *pVertexList)
@@ -113,7 +119,6 @@ void VertexClusterCreationAlgorithm::IdentifyTrackStubs(const CaloHitList &caloH
         }
     }
 
-    //PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1.f, 1.f, 1.f));
     //PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &pos, "vtx", MAGENTA, 1));
 
     // Compute principal components for the candidate clusters and consider fit quality
@@ -147,7 +152,6 @@ void VertexClusterCreationAlgorithm::IdentifyTrackStubs(const CaloHitList &caloH
                 min = longitudinal;
             const float transverse{dir.GetDotProduct(eigenVectors[1])};
             deviation += transverse * transverse;
-            //std::cout << "dt: " << transverse << " dw: " << (1.f / weight) << std::endl;
         }
         const int nHits{static_cast<int>(pointVector.size())};
         const float length{(max - min) > 0 ? max - min : 1.f};
@@ -155,7 +159,6 @@ void VertexClusterCreationAlgorithm::IdentifyTrackStubs(const CaloHitList &caloH
         const float deviationPerLength{deviation / length};
         const FOM fom{std::make_tuple(length, deviationPerHit, deviationPerLength)};
         metrics.emplace_back(std::make_pair(bin, fom));
-        //std::cout << "Length: " << length << " Avg Dev: " << deviationPerHit << " " << deviationPerLength << std::endl;
 
         CaloHitList hits;
         for (const int hitId : hitIds)
@@ -225,8 +228,7 @@ void VertexClusterCreationAlgorithm::IdentifyTrackStubs(const CaloHitList &caloH
         }
     }
 
-    /*PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1.f, 1.f, 1.f));
-    PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &pos, "vtx", MAGENTA, 1));
+    /*PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &pos, "vtx", MAGENTA, 1));
     for (const auto &[bin, hitIds] : selectedHitBinMap)
     {
         CaloHitList hits;
@@ -277,11 +279,6 @@ void VertexClusterCreationAlgorithm::IdentifyConnectingPaths(const CaloHitList &
         }
     }
 
-    const ClusterList *pOutputClusterList{nullptr};
-    std::string tempListName{"temp"};
-    PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::CreateTemporaryListAndSetCurrent(*this, pOutputClusterList, tempListName));
-
-    PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1.f, 1.f, 1.f));
     for (const Cluster *const pCluster : innerClusters)
     {
         const float wirePitch{LArGeometryHelper::GetWirePitch(this->GetPandora(), LArClusterHelper::GetClusterHitType(pCluster))};
@@ -297,14 +294,32 @@ void VertexClusterCreationAlgorithm::IdentifyConnectingPaths(const CaloHitList &
 
         this->CheckConnectingPath(caloHitList, pCluster, clusterPos, clusterDir, pos, usedHits);
     }
+    for (const Cluster *const pCluster : outerClusters)
+    {
+        const float wirePitch{LArGeometryHelper::GetWirePitch(this->GetPandora(), LArClusterHelper::GetClusterHitType(pCluster))};
+        const LArPointingCluster initPointingCluster(pCluster, 10, wirePitch);
+        // Pointing clusters always point towards their own hits
+        const CartesianVector &dir{initPointingCluster.GetOuterVertex().GetDirection() * -1.f};
+        const float dot{dir.GetDotProduct(refAxis)};
+        // If cluster appears relatively transverse, use larger fit window to accommodate wide hits
+        const LArPointingCluster pointingCluster{dot < 0.707f ? initPointingCluster : LArPointingCluster(pCluster, 20, wirePitch)};
+        const CartesianVector &clusterPos{pointingCluster.GetOuterVertex().GetPosition()};
+        // Pointing clusters always point towards their own hits
+        const CartesianVector &clusterDir{pointingCluster.GetOuterVertex().GetDirection() * -1.f};
 
-/*    PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &pos, "vtx", MAGENTA, 1));
-    PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &caloHitList, "hits", GRAY));
-    ClusterList nearbyInnerClusters(innerClusters.begin(), innerClusters.end());
-    ClusterList nearbyOuterClusters(outerClusters.begin(), outerClusters.end());
-    PANDORA_MONITORING_API(VisualizeClusters(this->GetPandora(), &nearbyInnerClusters, "inner", BLUE));
-    PANDORA_MONITORING_API(VisualizeClusters(this->GetPandora(), &nearbyOuterClusters, "outer", RED));
-    PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));*/
+        this->CheckConnectingPath(caloHitList, pCluster, clusterPos, clusterDir, pos, usedHits);
+    }
+
+    if (m_visualize)
+    {
+        PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &pos, "vtx", MAGENTA, 1));
+        PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &caloHitList, "hits", GRAY));
+        ClusterList nearbyInnerClusters(innerClusters.begin(), innerClusters.end());
+        ClusterList nearbyOuterClusters(outerClusters.begin(), outerClusters.end());
+        PANDORA_MONITORING_API(VisualizeClusters(this->GetPandora(), &nearbyInnerClusters, "inner", BLUE));
+        PANDORA_MONITORING_API(VisualizeClusters(this->GetPandora(), &nearbyOuterClusters, "outer", RED));
+        PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
+    }
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
@@ -383,18 +398,21 @@ void VertexClusterCreationAlgorithm::CheckConnectingPath(const CaloHitList &calo
         prevHi = projectedHitHis[index];
     }
 
-    PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &vertexPos, "vtx", MAGENTA, 1));
-    PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &caloHitList, "hits", GRAY));
-    CaloHitList intersectedHitList(intersectedHits.begin(), intersectedHits.end());
-    PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &intersectedHitList, "path_hits", ORANGE));
-    PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &confirmedHits, "conf_hits", GREEN));
-    ClusterList clusters({pCluster});
-    PANDORA_MONITORING_API(VisualizeClusters(this->GetPandora(), &clusters, "cluster", RED));
-    const CartesianVector a(clusterPos + vertexDir);
-    const CartesianVector b(clusterPos + clusterDir);
-    PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &clusterPos, &a, "vertex_dir", BLACK, 1, 1));
-    PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &clusterPos, &b, "cluster_dir", BLUE, 1, 1));
-    PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
+    if (m_visualize)
+    {
+        PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &vertexPos, "vtx", MAGENTA, 1));
+        PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &caloHitList, "hits", GRAY));
+        CaloHitList intersectedHitList(intersectedHits.begin(), intersectedHits.end());
+        PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &intersectedHitList, "path_hits", ORANGE));
+        PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &confirmedHits, "conf_hits", GREEN));
+        ClusterList clusters({pCluster});
+        PANDORA_MONITORING_API(VisualizeClusters(this->GetPandora(), &clusters, "cluster", RED));
+        const CartesianVector a(clusterPos + vertexDir);
+        const CartesianVector b(clusterPos + clusterDir);
+        PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &clusterPos, &a, "vertex_dir", BLACK, 1, 1));
+        PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &clusterPos, &b, "cluster_dir", BLUE, 1, 1));
+        PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
+    }
 
     if (confirmedHits.empty())
         return;
@@ -462,6 +480,7 @@ StatusCode VertexClusterCreationAlgorithm::ReadSettings(const TiXmlHandle xmlHan
     PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadValue(xmlHandle, "VertexListName", m_vertexListName));
     PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "HitRadii", m_hitRadii));
     PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "MaxGap", m_maxGap));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "Visualize", m_visualize));
 
     return STATUS_CODE_SUCCESS;
 }
