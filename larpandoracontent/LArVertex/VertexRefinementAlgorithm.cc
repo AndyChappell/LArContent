@@ -32,6 +32,10 @@ VertexRefinementAlgorithm::VertexRefinementAlgorithm() :
 
 StatusCode VertexRefinementAlgorithm::Run()
 {
+    const VertexList *pOutputVertexList{nullptr};
+    std::string originalListName, temporaryListName;
+    PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetCurrentListName<Vertex>(*this, originalListName));
+
     const VertexList *pInputVertexList{nullptr};
     PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_INITIALIZED, !=, PandoraContentApi::GetList(*this, m_inputVertexListName, pInputVertexList));
 
@@ -52,17 +56,16 @@ StatusCode VertexRefinementAlgorithm::Run()
         return STATUS_CODE_SUCCESS;
     }
 
-    const VertexList *pOutputVertexList{nullptr};
-    std::string temporaryListName;
     PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::CreateTemporaryListAndSetCurrent(*this, pOutputVertexList, temporaryListName));
 
     this->RefineVertices(*pInputVertexList, *pCaloHitList);
 
     if (!pOutputVertexList->empty())
     {
+
         PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::SaveList<Vertex>(*this, m_outputVertexListName));
-        PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::ReplaceCurrentList<Vertex>(*this, m_outputVertexListName));
     }
+    PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::ReplaceCurrentList<Vertex>(*this, originalListName));
 
     return STATUS_CODE_SUCCESS;
 }
