@@ -699,11 +699,27 @@ void DlVertexingAlgorithm::GetHitRegion(const CaloHitList &caloHitList, float &x
         const float zAsymmetry{nHitsUpstream / static_cast<float>(nHitsViewTotal)};
 
         const float xSpan{m_driftStep * (m_width - 1)};
-        xMin = xVtx - xAsymmetry * xSpan;
-        xMax = xMin + (m_driftStep * (m_width - 1));
+        if (xAsymmetry <= 0.5f)
+        {
+            xMin = xVtx - xAsymmetry * xSpan;
+            xMax = xMin + xSpan;
+        }
+        else
+        {
+            xMax = xVtx + (1 - xAsymmetry) * xSpan;
+            xMin = xMax - xSpan;
+        }
         const float zSpan{pitch * (m_height - 1)};
-        zMin = zVtx - zAsymmetry * zSpan;
-        zMax = zMin + zSpan;
+        if (zAsymmetry <= 0.5f)
+        {
+            zMin = zVtx - zAsymmetry * zSpan;
+            zMax = zMin + zSpan;
+        }
+        else
+        {
+            zMax = zVtx + (1 - zAsymmetry) * zSpan;
+            zMin = zMax - zSpan;
+        }
 
         // Avoid the estimated vertex being too close to edges (resolution might push the true vertex outside of the frame)
         const float tol{5.f};
