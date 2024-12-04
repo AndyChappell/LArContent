@@ -35,6 +35,7 @@ private:
     std::string m_vertexListName;       ///< The name of the vertex list
     std::string m_vetoedHitListName;    ///< The name of the output list of vetoed hits
     std::string m_retainedHitListName;  ///< The name of the output list of retained hits
+    float m_hitRadii; ///< The radius within which toconsider hits vertex associated
 };
 
 } // namespace lar_content
