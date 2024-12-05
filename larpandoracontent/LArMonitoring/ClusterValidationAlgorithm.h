@@ -24,7 +24,7 @@ private:
         ClusterMetrics();
 
         const pandora::MCParticle *m_pMC;
-        int m_nRecoHits;
+        float m_wRecoHits;
         float m_purity;
         float m_completeness;
     };
@@ -52,10 +52,19 @@ private:
      */
     void GetPurity(const ViewClustersMap &viewClusterMap, ClusterMetricsMap &metricsMap) const;
 
+    /**
+     *  @brief  Retrieve the completeness of every cluster
+     *
+     *  @param viewClusterMap The clusters (mapped by view) to compute the purity for
+     *  @param metricsMap The output map from clusters to their associated metrics
+     */
+    void GetCompleteness(const ViewClustersMap &viewClusterMap, ClusterMetricsMap &metricsMap) const;
+
     bool m_visualize;                ///< Whether to produce visual monitoring output
     bool m_writeFile;                ///< Whether to produce ROOT output file
     std::string m_fileName;          ///< The filename of the ROOT output file
     std::string m_treeName;          ///< The name of the ROOT tree
+    std::string m_caloHitListName;   ///< The name of the hit list containing all hits in all views
     StringVector m_clusterListNames; ///< The names of the lists of clusters to process
 };
 
