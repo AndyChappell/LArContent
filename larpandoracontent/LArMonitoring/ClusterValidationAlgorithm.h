@@ -24,9 +24,11 @@ private:
         ClusterMetrics();
 
         const pandora::MCParticle *m_pMC;
+        int m_nContributions;
         float m_wRecoHits;
         float m_purity;
         float m_completeness;
+        float m_fragmentationFraction;
     };
 
 public:
@@ -45,20 +47,12 @@ private:
     pandora::StatusCode ReadSettings(const pandora::TiXmlHandle xmlHandle);
 
     /**
-     *  @brief  Retrieve the purity of every cluster
+     *  @brief  Retrieve the metrics of every cluster
      *
      *  @param viewClusterMap The clusters (mapped by view) to compute the purity for
      *  @param metricsMap The output map from clusters to their associated metrics
      */
-    void GetPurity(const ViewClustersMap &viewClusterMap, ClusterMetricsMap &metricsMap) const;
-
-    /**
-     *  @brief  Retrieve the completeness of every cluster
-     *
-     *  @param viewClusterMap The clusters (mapped by view) to compute the purity for
-     *  @param metricsMap The output map from clusters to their associated metrics
-     */
-    void GetCompleteness(const ViewClustersMap &viewClusterMap, ClusterMetricsMap &metricsMap) const;
+    void GetMetrics(const ViewClustersMap &viewClusterMap, ClusterMetricsMap &metricsMap) const;
 
     bool m_visualize;                ///< Whether to produce visual monitoring output
     bool m_writeFile;                ///< Whether to produce ROOT output file
@@ -71,3 +65,4 @@ private:
 } // namespace lar_content
 
 #endif // LAR_CLUSTER_VALIDATION_ALGORITHM_H
+
