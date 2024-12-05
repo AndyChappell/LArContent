@@ -81,6 +81,7 @@ StatusCode ClusterValidationAlgorithm::Run()
             const CartesianVector &mom{metrics.m_pMC->GetMomentum()};
             PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treeName, "view", view));
             PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treeName, "pdg", metrics.m_pMC->GetParticleId()));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treeName, "tier", LArMCParticleHelper::GetHierarchyTier(metrics.m_pMC)));
             PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treeName, "mom_x", mom.GetX()));
             PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treeName, "mom_y", mom.GetY()));
             PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treeName, "mom_z", mom.GetZ()));
