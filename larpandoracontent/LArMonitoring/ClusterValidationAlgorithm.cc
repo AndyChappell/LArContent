@@ -21,7 +21,7 @@ namespace lar_content
 
 ClusterValidationAlgorithm::ClusterMetrics::ClusterMetrics() :
     m_pMC{nullptr},
-    m_nRecoHits{0},
+    m_wRecoHits{0},
     m_purity{0},
     m_completeness{0}
 {
@@ -32,7 +32,8 @@ ClusterValidationAlgorithm::ClusterMetrics::ClusterMetrics() :
 
 ClusterValidationAlgorithm::ClusterValidationAlgorithm() :
     m_visualize{false},
-    m_writeFile{false}
+    m_writeFile{false},
+    m_caloHitListName{"CaloHitList2D"}
 {
 }
 
@@ -69,10 +70,24 @@ StatusCode ClusterValidationAlgorithm::Run()
 
     ClusterMetricsMap metricsMap;
     this->GetPurity(viewClustersMap, metricsMap);
+    this->GetCompleteness(viewClustersMap, metricsMap);
 
-    for (const auto &[pCluster, metrics] : metricsMap)
+    if (m_writeFile)
     {
-        std::cout << "Cluster: " << pCluster << " nHits: " << metrics.m_nRecoHits << " purity: " << metrics.m_purity << std::endl;
+        for (const auto &[pCluster, metrics] : metricsMap)
+        {
+            int view{LArClusterHelper::GetClusterHitType(pCluster)};
+            const CartesianVector &mom{metrics.m_pMC->GetMomentum()};
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treeName, "view", view));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treeName, "pdg", metrics.m_pMC->GetParticleId()));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treeName, "mom_x", mom.GetX()));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treeName, "mom_y", mom.GetY()));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treeName, "mom_z", mom.GetZ()));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treeName, "reco_hits", metrics.m_wRecoHits));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treeName, "purity", metrics.m_purity));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treeName, "completeness", metrics.m_completeness));
+            PANDORA_MONITORING_API(FillTree(this->GetPandora(), m_treeName));
+        }
     }
 
     if (m_visualize)
@@ -87,10 +102,8 @@ StatusCode ClusterValidationAlgorithm::Run()
 
 void ClusterValidationAlgorithm::GetPurity(const ViewClustersMap &viewClustersMap, ClusterValidationAlgorithm::ClusterMetricsMap &metricsMap) const
 {
-    std::cout << "Map size: " << viewClustersMap.size() << std::endl;
     for (const auto &[view, clusterList] : viewClustersMap)
     {
-        std::cout << "Num clusters: " << clusterList.size() << std::endl;
         for (const Cluster *const pCluster : clusterList)
         {
             MCParticleWeightMap clusterMCWeightMap;
@@ -124,21 +137,90 @@ void ClusterValidationAlgorithm::GetPurity(const ViewClustersMap &viewClustersMa
             }
             if (pMainMC)
             {
-                int nMatchedHits{0}, nTotalHits{0};
+                float wMatchedHits{0}, wTotalHits{0};
                 for (const CaloHit *const pCaloHit : caloHits)
                 {
                     const MCParticleWeightMap &weightMap{pCaloHit->GetMCParticleWeightMap()};
                     if (weightMap.find(pMainMC) != weightMap.end())
-                        ++nMatchedHits;
-                    if (!weightMap.empty())
-                        ++nTotalHits;
+                    {
+                        wMatchedHits += weightMap.at(pMainMC);
+                        wTotalHits += weightMap.at(pMainMC);
+                    }
+                    else if (!weightMap.empty())
+                        wTotalHits += 1;
                 }
-                if (nTotalHits)
+                if (wTotalHits > 0)
                 {
-                    metricsMap[pCluster].m_purity = nMatchedHits / static_cast<float>(nTotalHits);
+                    metricsMap[pCluster].m_purity = wMatchedHits / wTotalHits;
                     metricsMap[pCluster].m_pMC = pMainMC;
-                    metricsMap[pCluster].m_nRecoHits = nTotalHits;
+                    metricsMap[pCluster].m_wRecoHits = wTotalHits;
                 }
+            }
+        }
+    }
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+void ClusterValidationAlgorithm::GetCompleteness(const ViewClustersMap &viewClustersMap, ClusterValidationAlgorithm::ClusterMetricsMap &metricsMap) const
+{
+    const CaloHitList *pFullCaloHitList{nullptr};
+    PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetList(*this, m_caloHitListName, pFullCaloHitList));
+    for (const auto &[view, clusterList] : viewClustersMap)
+    {
+        CaloHitList viewCaloHitList;
+        for (const CaloHit *const pCaloHit : *pFullCaloHitList)
+            if (pCaloHit->GetHitType() == view)
+                viewCaloHitList.emplace_back(pCaloHit);
+        for (const Cluster *const pCluster : clusterList)
+        {
+            MCParticleWeightMap clusterMCWeightMap;
+            const CaloHitList &isolatedHits{pCluster->GetIsolatedCaloHitList()};
+            CaloHitList caloHits;
+            pCluster->GetOrderedCaloHitList().FillCaloHitList(caloHits);
+            caloHits.insert(caloHits.end(), isolatedHits.begin(), isolatedHits.end());
+            for (const CaloHit *const pCaloHit : caloHits)
+            {
+                const MCParticleWeightMap &weightMap{pCaloHit->GetMCParticleWeightMap()};
+                for (const auto &[pMC, weight] : weightMap)
+                {
+                    if (clusterMCWeightMap.find(pMC) == clusterMCWeightMap.end())
+                        clusterMCWeightMap[pMC] = 0.f;
+                    clusterMCWeightMap[pMC] += weight;
+                }
+            }
+            // Determine which MC particle contributes the most weight across the cluster
+            const MCParticle *pMainMC{metricsMap.find(pCluster) != metricsMap.end() ? metricsMap[pCluster].m_pMC : nullptr};
+            if (!pMainMC)
+            {
+                float maxWeight{std::numeric_limits<float>::lowest()};
+                for (const auto &[pMC, weight] : clusterMCWeightMap)
+                {
+                    if (weight > maxWeight)
+                    {
+                        pMainMC = pMC;
+                        maxWeight = weight;
+                    }
+                }
+            }
+            if (pMainMC)
+            {
+                float wMatchedHits{0}, wTotalHits{0};
+                for (const CaloHit *const pCaloHit : caloHits)
+                {
+                    const MCParticleWeightMap &weightMap{pCaloHit->GetMCParticleWeightMap()};
+                    if (weightMap.find(pMainMC) != weightMap.end())
+                        wMatchedHits += weightMap.at(pMainMC);
+                }
+                for (const CaloHit *const pCaloHit : viewCaloHitList)
+                {
+                    const MCParticleWeightMap &weightMap{pCaloHit->GetMCParticleWeightMap()};
+                    if (weightMap.find(pMainMC) != weightMap.end())
+                        wTotalHits += weightMap.at(pMainMC);
+                }
+
+                if (wTotalHits > 0)
+                    metricsMap[pCluster].m_completeness = wMatchedHits / wTotalHits;
             }
         }
     }
@@ -155,6 +237,7 @@ StatusCode ClusterValidationAlgorithm::ReadSettings(const TiXmlHandle xmlHandle)
         PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadValue(xmlHandle, "FileName", m_fileName));
         PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadValue(xmlHandle, "TreeName", m_treeName));
     }
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "CaloHitListName", m_caloHitListName));
     PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadVectorOfValues(xmlHandle, "ClusterListNames", m_clusterListNames));
 
     return STATUS_CODE_SUCCESS;
