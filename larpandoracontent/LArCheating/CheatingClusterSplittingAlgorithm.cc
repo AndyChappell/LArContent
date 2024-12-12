@@ -140,8 +140,6 @@ StatusCode CheatingClusterSplittingAlgorithm::Run()
         PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
     }
 
-    PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetList(*this, m_clusterListName, pClusterList));
-
     return STATUS_CODE_SUCCESS;
 }
 
