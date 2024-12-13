@@ -70,8 +70,10 @@ StatusCode CheatingMatchedClusteringAlgorithm::Run()
     // Loop over the clusters from the seed view and find the corresponding clusters in the other view
     const ClusterList *pClusterList{nullptr};
     PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetList(*this, m_seedClusterListName, pClusterList));
+    std::set<const CaloHit *> usedHits;
     for (const Cluster *const pCluster : *pClusterList)
     {
+        const HitType seedView{LArClusterHelper::GetClusterHitType(pCluster)};
         // Collect the hits by MC and sort each MC's hits by X position (this simplifies the matching process)
         CaloHitList seedClusterHits;
         pCluster->GetOrderedCaloHitList().FillCaloHitList(seedClusterHits);
@@ -91,6 +93,7 @@ StatusCode CheatingMatchedClusteringAlgorithm::Run()
         }
         for (auto &[pMC, hits] : seedMCHitMap)
             std::sort(hits.begin(), hits.end(), LArClusterHelper::SortHitsByPositionInX);
+        std::map<HitType, CaloHitList> matches;
         // Identify the corresponding cluster in the other views
         for (auto &[pMC, hits] : seedMCHitMap)
         {
@@ -110,7 +113,7 @@ StatusCode CheatingMatchedClusteringAlgorithm::Run()
             // Get the hits in the other views that overlap with the seed span
             for (const HitType view : {TPC_VIEW_U, TPC_VIEW_V, TPC_VIEW_W})
             {
-                if (view == LArClusterHelper::GetClusterHitType(pCluster))
+                if (view == seedView)
                     continue;
                 for (const CaloHit *const pCaloHit : viewMCHitMap[view][pMC])
                 {
@@ -121,16 +124,105 @@ StatusCode CheatingMatchedClusteringAlgorithm::Run()
                         spanHits[view].emplace_back(pCaloHit);
                 }
             }
-            CaloHitList selectedHits(hits.begin(), hits.end());
-            PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &selectedHits, "seed", BLACK));
-            for (const auto &[view, overlapHits] : spanHits)
+            std::vector<HitType> views;
+            std::transform(viewMCHitMap.begin(), viewMCHitMap.end(), std::back_inserter(views), [](const auto &pair){ return pair.first; });
+            if (views.size() == 2)
             {
-                CaloHitList seedHits(overlapHits.begin(), overlapHits.end());
-                PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &seedHits, std::to_string(static_cast<int>(view)), RED));
+                // If we have three views populated, find the overlapping hits
+                for (const CaloHit *const pCaloHit : hits)
+                {
+                    const float x0{pCaloHit->GetPositionVector().GetX()};
+                    const float lo0{x0 - 0.5f * pCaloHit->GetCellSize1()};
+                    const float hi0{x0 + 0.5f * pCaloHit->GetCellSize1()};
+                    CaloHitVector view1Hits;
+                    for (const CaloHit *const pCaloHit1 : viewMCHitMap[views.at(0)][pMC])
+                    {
+                        const float x1{pCaloHit1->GetPositionVector().GetX()};
+                        const float lo1{x1 - 0.5f * pCaloHit1->GetCellSize1()};
+                        const float hi1{x1 + 0.5f * pCaloHit1->GetCellSize1()};
+                        if ((x0 >= lo1 && x0 <= hi1) || (x1 >= lo0 && x1 <= hi0))
+                            view1Hits.emplace_back(pCaloHit1);
+                    }
+                    CaloHitVector view2Hits;
+                    for (const CaloHit *const pCaloHit2 : viewMCHitMap[views.at(1)][pMC])
+                    {
+                        const float x2{pCaloHit2->GetPositionVector().GetX()};
+                        const float lo2{x2 - 0.5f * pCaloHit2->GetCellSize1()};
+                        const float hi2{x2 + 0.5f * pCaloHit2->GetCellSize1()};
+                        if ((x0 >= lo2 && x0 <= hi2) || (x2 >= lo0 && x2 <= hi0))
+                            view2Hits.emplace_back(pCaloHit2);
+                    }
+                    // Identify the best match, if it exists, within those candidates
+                    float bestChi2{std::numeric_limits<float>::max()};
+                    std::pair<const CaloHit *, const CaloHit *> match{nullptr, nullptr};
+                    for (const CaloHit *const pCaloHit1 : view1Hits)
+                    {
+                        if (usedHits.find(pCaloHit1) != usedHits.end())
+                            continue;
+                        for (const CaloHit *const pCaloHit2 : view2Hits)
+                        {
+                            if (usedHits.find(pCaloHit2) != usedHits.end())
+                                continue;
+                            float chi2{0.f};
+                            const CartesianVector &pos0(pCaloHit->GetPositionVector()), &pos1(pCaloHit1->GetPositionVector()),
+                                &pos2(pCaloHit2->GetPositionVector());
+                            CartesianVector pos3D(0, 0, 0);
+                            LArGeometryHelper::MergeThreePositions3D(this->GetPandora(), seedView, views[0], views[1], pos0, pos1, pos2, pos3D, chi2);
+                            float err{LArGeometryHelper::GetSigmaUVW(this->GetPandora())};
+                            chi2 *= err * err;
+                            // Adjust the chi2 to factor in drift error
+                            err += 0.5f * pCaloHit->GetCellSize1() + 0.5f * pCaloHit1->GetCellSize1() + 0.5f * pCaloHit2->GetCellSize1();
+                            chi2 /= err * err;
+                            if (chi2 < 1 && chi2 < bestChi2)
+                            {
+                                bestChi2 = chi2;
+                                match = std::make_pair(pCaloHit1, pCaloHit2);
+                            }
+                        }
+                    }
+                    // Record the best match
+                    if (bestChi2 < std::numeric_limits<float>::max())
+                    {
+                        matches[views[0]].emplace_back(match.first);
+                        matches[views[1]].emplace_back(match.second);
+                        usedHits.insert(pCaloHit);
+                        usedHits.insert(match.first);
+                        usedHits.insert(match.second);
+                    }
+                }
             }
+            else if (views.size() == 1)
+            {
+            }
+        }
+        if (m_visualize)
+        {
+            std::vector<HitType> views;
+            for (const HitType view : {TPC_VIEW_U, TPC_VIEW_V, TPC_VIEW_W})
+            {
+                if (view == seedView)
+                    continue;
+                views.emplace_back(view);
+            }
+            const ClusterList seedClusterList({pCluster});
+            PANDORA_MONITORING_API(VisualizeClusters(this->GetPandora(), &seedClusterList, "seed", BLACK));
+            PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &matches[views[0]], std::to_string(views[0]), RED));
+            PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &matches[views[1]], std::to_string(views[1]), BLUE));
             PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
         }
     }
+    // Check for unmatched hits
+    std::map<HitType, CaloHitList> unusedViewHitListMap;
+    for (const auto &[view, pCaloHitList] : viewHitListMap)
+    {
+        for (const CaloHit *const pCaloHit : *pCaloHitList)
+        {
+            if (usedHits.find(pCaloHit) == usedHits.end())
+                unusedViewHitListMap[view].emplace_back(pCaloHit);
+        }
+    }
+    std::cout << "Unused hits: " << unusedViewHitListMap[TPC_VIEW_U].size() << " " << unusedViewHitListMap[TPC_VIEW_V].size() <<
+        " " << unusedViewHitListMap[TPC_VIEW_W].size() << std::endl;
 
     if (m_visualize)
     {
