@@ -42,6 +42,40 @@ StatusCode TrackClusterCreationAlgorithm::Run()
     this->MakePrimaryAssociations(selectedCaloHitList, forwardHitAssociationMap, backwardHitAssociationMap);
     this->MakeSecondaryAssociations(selectedCaloHitList, forwardHitAssociationMap, backwardHitAssociationMap);
 
+/*    PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1, 1, 1));
+    for (const auto &[pBase, assoc] : forwardHitAssociationMap)
+    {
+        const CartesianVector &a(pBase->GetPositionVector());
+        const CartesianVector &b(assoc.GetPrimaryTarget() ? assoc.GetPrimaryTarget()->GetPositionVector() : a);
+        const CartesianVector &c(assoc.GetSecondaryTarget() ? assoc.GetSecondaryTarget()->GetPositionVector() : a);
+        if (assoc.GetPrimaryTarget())
+        {
+            PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &a, &b, "fp", BLACK, 1, 1));
+        }
+        if (assoc.GetSecondaryTarget())
+        {
+            PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &a, &c, "fs", MAGENTA, 1, 1));
+        }
+    }
+    PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
+
+    PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1, 1, 1));
+    for (const auto &[pBase, assoc] : backwardHitAssociationMap)
+    {
+        const CartesianVector &a(pBase->GetPositionVector());
+        const CartesianVector &b(assoc.GetPrimaryTarget() ? assoc.GetPrimaryTarget()->GetPositionVector() : a);
+        const CartesianVector &c(assoc.GetSecondaryTarget() ? assoc.GetSecondaryTarget()->GetPositionVector() : a);
+        if (assoc.GetPrimaryTarget())
+        {
+            PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &a, &b, "bp", BLUE, 1, 1));
+        }
+        if (assoc.GetSecondaryTarget())
+        {
+            PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &a, &c, "bs", RED, 1, 1));
+        }
+    }
+    PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));*/
+
     HitJoinMap hitJoinMap;
     HitToClusterMap hitToClusterMap;
     this->IdentifyJoins(selectedCaloHitList, forwardHitAssociationMap, backwardHitAssociationMap, hitJoinMap);
@@ -104,7 +138,16 @@ StatusCode TrackClusterCreationAlgorithm::FilterCaloHits(
         }
     }
 
-    PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, selectedCaloHitList.Remove(rejectedCaloHitList));
+/*    PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, selectedCaloHitList.Remove(rejectedCaloHitList));
+    PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1, 1, 1));
+    CaloHitList caloHits;
+    selectedCaloHitList.FillCaloHitList(caloHits);
+    PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &caloHits, "selected", BLUE));
+    CaloHitList rejectedCaloHits;
+    rejectedCaloHitList.FillCaloHitList(rejectedCaloHits);
+    PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &rejectedCaloHits, "rejected", RED));
+    PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));*/
+
     return STATUS_CODE_SUCCESS;
 }
 
