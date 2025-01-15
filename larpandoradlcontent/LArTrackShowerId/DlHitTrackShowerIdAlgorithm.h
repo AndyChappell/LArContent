@@ -28,6 +28,8 @@ public:
 
     virtual ~DlHitTrackShowerIdAlgorithm();
 
+    enum HitTag { BACKGROUND = 0, SHOWER, TRACK, DIFFUSE };
+
 private:
     typedef std::map<const pandora::CaloHit *, std::tuple<int, int, int, int>> CaloHitToPixelMap;
     typedef std::map<int, int> PixelToTileMap;
@@ -77,6 +79,8 @@ private:
     int m_imageHeight;                        ///< Height of images in pixels
     int m_imageWidth;                         ///< Width of images in pixels
     float m_tileSize;                         ///< Size of tile in cm
+    float m_electronRadiationThreshold;       ///< The scale at which radiation dominates ionisation for electron energy loss
+    float m_photonShowerThreshold;            ///< The scale at which pair production energy loss dominates over diffuse energy loss
     bool m_visualize;                         ///< Whether to visualize the track shower ID scores
     bool m_useTrainingMode;                   ///< Training mode
     std::string m_trainingOutputFile;         ///< Output file name for training examples

@@ -30,12 +30,14 @@ namespace lar_dl_content
 {
 
 DlHitTrackShowerIdAlgorithm::DlHitTrackShowerIdAlgorithm() :
-    m_imageHeight(256),
-    m_imageWidth(256),
-    m_tileSize(128.f),
-    m_visualize(false),
-    m_useTrainingMode(false),
-    m_trainingOutputFile("")
+    m_imageHeight{256},
+    m_imageWidth{256},
+    m_tileSize{128.f},
+    m_electronRadiationThreshold{0.06f},
+    m_photonShowerThreshold{0.03f},
+    m_visualize{false},
+    m_useTrainingMode{false},
+    m_trainingOutputFile{""}
 {
 }
 
@@ -59,13 +61,15 @@ StatusCode DlHitTrackShowerIdAlgorithm::Run()
 
 StatusCode DlHitTrackShowerIdAlgorithm::Train()
 {
-    const int SHOWER{1}, TRACK{2};
+    if (m_visualize)
+    {
+        PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1.f, 1.f, 1.f));
+    }
+
     for (const std::string &listName : m_caloHitListNames)
     {
         const CaloHitList *pCaloHitList(nullptr);
         PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetList(*this, listName, pCaloHitList));
-        const MCParticleList *pMCParticleList(nullptr);
-        PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetCurrentList(*this, pMCParticleList));
 
         const HitType view{pCaloHitList->front()->GetHitType()};
 
@@ -81,38 +85,57 @@ StatusCode DlHitTrackShowerIdAlgorithm::Train()
         else if (view == TPC_VIEW_W)
             trainingOutputFileName += "_CaloHitListW.csv";
 
-        LArMCParticleHelper::PrimaryParameters parameters;
-        // Only care about reconstructability with respect to the current view, so skip good view check
-        parameters.m_minHitsForGoodView = 0;
-        // Turn off max photo propagation for now, only care about killing off daughters of neutrons
-        parameters.m_maxPhotonPropagation = std::numeric_limits<float>::max();
-        LArMCParticleHelper::MCContributionMap targetMCParticleToHitsMap;
-        LArMCParticleHelper::SelectReconstructableMCParticles(
-            pMCParticleList, pCaloHitList, parameters, LArMCParticleHelper::IsBeamNeutrinoFinalState, targetMCParticleToHitsMap);
-
+        CaloHitList trackHits, showerHits, diffuseHits;
         LArMvaHelper::MvaFeatureVector featureVector;
         for (const CaloHit *pCaloHit : *pCaloHitList)
         {
             int tag{TRACK};
-            float inputEnergy{0.f};
+            float mipEnergy{0.f};
 
             try
             {
                 const MCParticle *const pMCParticle(MCParticleHelper::GetMainMCParticle(pCaloHit));
-                // Throw away non-reconstructable hits
-                if (targetMCParticleToHitsMap.find(pMCParticle) == targetMCParticleToHitsMap.end())
-                    continue;
-                if (LArMCParticleHelper::IsDescendentOf(pMCParticle, 2112))
-                    continue;
-                inputEnergy = pCaloHit->GetInputEnergy();
-                if (inputEnergy < 0.f)
+                mipEnergy = pCaloHit->GetMipEquivalentEnergy();
+                if (mipEnergy < 0.f)
                     continue;
 
                 const int pdg{std::abs(pMCParticle->GetParticleId())};
-                if (pdg == 11 || pdg == 22)
-                    tag = SHOWER;
-                else
-                    tag = TRACK;
+                switch (pdg)
+                {
+                    case E_MINUS:
+                        if (pMCParticle->GetEnergy() > m_electronRadiationThreshold)
+                        {
+                            tag = SHOWER;
+                            showerHits.emplace_back(pCaloHit);
+                        }
+                        else
+                        {
+                            tag = TRACK;
+                            trackHits.emplace_back(pCaloHit);
+                        }
+                        break;
+                    case PHOTON:
+                        if (pMCParticle->GetEnergy() > m_electronRadiationThreshold)
+                        {
+                            tag = SHOWER;
+                            showerHits.emplace_back(pCaloHit);
+                        }
+                        else if (pMCParticle->GetEnergy() > m_photonShowerThreshold)
+                        {
+                            tag = TRACK;
+                            trackHits.emplace_back(pCaloHit);
+                        }
+                        else
+                        {
+                            tag = DIFFUSE;
+                            diffuseHits.emplace_back(pCaloHit);
+                        }
+                        break;
+                    default:
+                        tag = TRACK;
+                        trackHits.emplace_back(pCaloHit);
+                        break;
+                }
             }
             catch (const StatusCodeException &)
             {
@@ -122,13 +145,28 @@ StatusCode DlHitTrackShowerIdAlgorithm::Train()
             featureVector.push_back(static_cast<double>(pCaloHit->GetPositionVector().GetX()));
             featureVector.push_back(static_cast<double>(pCaloHit->GetPositionVector().GetZ()));
             featureVector.push_back(static_cast<double>(tag));
-            featureVector.push_back(static_cast<double>(inputEnergy));
+            featureVector.push_back(static_cast<double>(mipEnergy));
         }
         // Add number of hits to end of vector than rotate (more efficient than direct insert at front)
         featureVector.push_back(static_cast<double>(featureVector.size() / 4));
         std::rotate(featureVector.rbegin(), featureVector.rbegin() + 1, featureVector.rend());
 
         PANDORA_RETURN_RESULT_IF(pandora::STATUS_CODE_SUCCESS, !=, LArMvaHelper::ProduceTrainingExample(trainingOutputFileName, true, featureVector));
+
+        if (m_visualize)
+        {
+            const std::string trackListName("TrackHits_" + listName);
+            const std::string showerListName("ShowerHits_" + listName);
+            const std::string diffuseListName("DiffuseHits_" + listName);
+            PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &trackHits, trackListName, BLUE));
+            PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &showerHits, showerListName, RED));
+            PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &diffuseHits, diffuseListName, BLACK));
+        }
+    }
+
+    if (m_visualize)
+    {
+        PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
     }
 
     return STATUS_CODE_SUCCESS;
@@ -266,22 +304,22 @@ StatusCode DlHitTrackShowerIdAlgorithm::Infer()
                     const int pixelX(std::get<3>(pixelMap));
 
                     // Apply softmax to loss to get actual probability
-                    float probShower = exp(outputAccessor[0][1][pixelZ][pixelX]);
-                    float probTrack = exp(outputAccessor[0][2][pixelZ][pixelX]);
-                    float probNull = exp(outputAccessor[0][0][pixelZ][pixelX]);
+                    double probShower{exp(outputAccessor[0][SHOWER][pixelZ][pixelX]) + exp(outputAccessor[0][DIFFUSE][pixelZ][pixelX])};
+                    double probTrack{exp(outputAccessor[0][TRACK][pixelZ][pixelX])};
+                    double probNull{exp(outputAccessor[0][BACKGROUND][pixelZ][pixelX])};
                     if (probShower > probTrack && probShower > probNull)
                         showerHits.push_back(pCaloHit);
                     else if (probTrack > probShower && probTrack > probNull)
                         trackHits.push_back(pCaloHit);
                     else
                         otherHits.push_back(pCaloHit);
-                    float recipSum = 1.f / (probShower + probTrack);
+                    const double recipSum{1. / ((probShower + probTrack) > 0. ? probShower + probTrack : 1.)};
                     // Adjust probabilities to ignore null hits and update LArCaloHit
                     probShower *= recipSum;
                     probTrack *= recipSum;
                     LArCaloHit *pLArCaloHit{const_cast<LArCaloHit *>(dynamic_cast<const LArCaloHit *>(pCaloHit))};
-                    pLArCaloHit->SetShowerProbability(probShower);
-                    pLArCaloHit->SetTrackProbability(probTrack);
+                    pLArCaloHit->SetShowerProbability(static_cast<float>(probShower));
+                    pLArCaloHit->SetTrackProbability(static_cast<float>(probTrack));
                 }
             }
         }
@@ -364,11 +402,13 @@ void DlHitTrackShowerIdAlgorithm::GetSparseTileMap(
 
 StatusCode DlHitTrackShowerIdAlgorithm::ReadSettings(const TiXmlHandle xmlHandle)
 {
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "UseTrainingMode", m_useTrainingMode));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "TrainingMode", m_useTrainingMode));
 
     if (m_useTrainingMode)
     {
         PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadValue(xmlHandle, "TrainingOutputFileName", m_trainingOutputFile));
+        PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "ElectronRadiationThreshold", m_electronRadiationThreshold));
+        PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "PhotonShowerThreshold", m_photonShowerThreshold));
     }
     else
     {
