@@ -121,11 +121,12 @@ StatusCode DlHitTrackShowerIdAlgorithm::Train()
 
             featureVector.push_back(static_cast<double>(pCaloHit->GetPositionVector().GetX()));
             featureVector.push_back(static_cast<double>(pCaloHit->GetPositionVector().GetZ()));
+            featureVector.push_back(static_cast<double>(0.5f * pCaloHit->GetCellSize1()));
             featureVector.push_back(static_cast<double>(tag));
             featureVector.push_back(static_cast<double>(inputEnergy));
         }
         // Add number of hits to end of vector than rotate (more efficient than direct insert at front)
-        featureVector.push_back(static_cast<double>(featureVector.size() / 4));
+        featureVector.push_back(static_cast<double>(featureVector.size() / 5));
         std::rotate(featureVector.rbegin(), featureVector.rbegin() + 1, featureVector.rend());
 
         PANDORA_RETURN_RESULT_IF(pandora::STATUS_CODE_SUCCESS, !=, LArMvaHelper::ProduceTrainingExample(trainingOutputFileName, true, featureVector));
@@ -364,7 +365,7 @@ void DlHitTrackShowerIdAlgorithm::GetSparseTileMap(
 
 StatusCode DlHitTrackShowerIdAlgorithm::ReadSettings(const TiXmlHandle xmlHandle)
 {
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "UseTrainingMode", m_useTrainingMode));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "TrainingMode", m_useTrainingMode));
 
     if (m_useTrainingMode)
     {
