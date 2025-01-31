@@ -33,6 +33,8 @@ DlHitTrackShowerIdAlgorithm::DlHitTrackShowerIdAlgorithm() :
     m_imageHeight(256),
     m_imageWidth(256),
     m_tileSize(128.f),
+    m_electronRadiationThreshold{0.06f},
+    m_photonShowerThreshold{0.03f},
     m_visualize(false),
     m_useTrainingMode(false),
     m_trainingOutputFile("")
@@ -59,7 +61,7 @@ StatusCode DlHitTrackShowerIdAlgorithm::Run()
 
 StatusCode DlHitTrackShowerIdAlgorithm::Train()
 {
-    const int SHOWER{1}, TRACK{2};
+    const int SHOWER{1}, TRACK{2}, DIFFUSE{3};
     for (const std::string &listName : m_caloHitListNames)
     {
         const CaloHitList *pCaloHitList(nullptr);
@@ -100,19 +102,34 @@ StatusCode DlHitTrackShowerIdAlgorithm::Train()
             {
                 const MCParticle *const pMCParticle(MCParticleHelper::GetMainMCParticle(pCaloHit));
                 // Throw away non-reconstructable hits
-                if (targetMCParticleToHitsMap.find(pMCParticle) == targetMCParticleToHitsMap.end())
-                    continue;
-                if (LArMCParticleHelper::IsDescendentOf(pMCParticle, 2112))
-                    continue;
+                //if (targetMCParticleToHitsMap.find(pMCParticle) == targetMCParticleToHitsMap.end())
+                //    continue;
+                //if (LArMCParticleHelper::IsDescendentOf(pMCParticle, 2112))
+                //    continue;
                 inputEnergy = pCaloHit->GetInputEnergy();
                 if (inputEnergy < 0.f)
                     continue;
 
+                // Create per view MC particle hit map, so calo hit size can be used for very small 'track-like' particles
                 const int pdg{std::abs(pMCParticle->GetParticleId())};
-                if (pdg == 11 || pdg == 22)
-                    tag = SHOWER;
-                else
-                    tag = TRACK;
+                switch (pdg)
+                {
+                    case E_MINUS:
+                        if (pMCParticle->GetEnergy() > m_electronRadiationThreshold)
+                            tag = SHOWER;
+                        else
+                            tag = TRACK;
+                        break;
+                    case PHOTON:
+                        if (pMCParticle->GetEnergy() > m_photonShowerThreshold)
+                            tag = SHOWER;
+                        else
+                            tag = DIFFUSE;
+                        break;
+                    default:
+                        tag = TRACK;
+                        break;
+                }
             }
             catch (const StatusCodeException &)
             {
