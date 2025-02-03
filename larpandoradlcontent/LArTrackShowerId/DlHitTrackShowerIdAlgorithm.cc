@@ -83,29 +83,29 @@ StatusCode DlHitTrackShowerIdAlgorithm::Train()
         else if (view == TPC_VIEW_W)
             trainingOutputFileName += "_CaloHitListW.csv";
 
-        LArMCParticleHelper::PrimaryParameters parameters;
-        // Only care about reconstructability with respect to the current view, so skip good view check
-        parameters.m_minHitsForGoodView = 0;
-        // Turn off max photo propagation for now, only care about killing off daughters of neutrons
-        parameters.m_maxPhotonPropagation = std::numeric_limits<float>::max();
         LArMCParticleHelper::MCContributionMap targetMCParticleToHitsMap;
-        LArMCParticleHelper::SelectReconstructableMCParticles(
-            pMCParticleList, pCaloHitList, parameters, LArMCParticleHelper::IsBeamNeutrinoFinalState, targetMCParticleToHitsMap);
-
-        LArMvaHelper::MvaFeatureVector featureVector;
         for (const CaloHit *pCaloHit : *pCaloHitList)
         {
-            int tag{TRACK};
-            float inputEnergy{0.f};
-
             try
             {
+                const MCParticle *const pMC(MCParticleHelper::GetMainMCParticle(pCaloHit));
+                if (targetMCParticleToHitsMap.find(pMC) == targetMCParticleToHitsMap.end())
+                    targetMCParticleToHitsMap[pMC] = CaloHitList();
+                targetMCParticleToHitsMap[pMC].emplace_back(pCaloHit);
+            }
+            catch (const StatusCodeException &e)
+            {
+            }
+        }
+
+        LArMvaHelper::MvaFeatureVector featureVector;
+        for (const auto &[pMC, caloHitList] : targetMCParticleToHitsMap)
+        {
+            for (const CaloHit *pCaloHit : caloHitList)
+            {
+                int tag{TRACK};
+                float inputEnergy{0.f};
                 const MCParticle *const pMCParticle(MCParticleHelper::GetMainMCParticle(pCaloHit));
-                // Throw away non-reconstructable hits
-                //if (targetMCParticleToHitsMap.find(pMCParticle) == targetMCParticleToHitsMap.end())
-                //    continue;
-                //if (LArMCParticleHelper::IsDescendentOf(pMCParticle, 2112))
-                //    continue;
                 inputEnergy = pCaloHit->GetInputEnergy();
                 if (inputEnergy < 0.f)
                     continue;
@@ -127,20 +127,18 @@ StatusCode DlHitTrackShowerIdAlgorithm::Train()
                             tag = DIFFUSE;
                         break;
                     default:
-                        tag = TRACK;
+                        if (caloHitList.size() > 2)
+                            tag = TRACK;
+                        else
+                            tag = DIFFUSE;
                         break;
                 }
+                featureVector.push_back(static_cast<double>(pCaloHit->GetPositionVector().GetX()));
+                featureVector.push_back(static_cast<double>(pCaloHit->GetPositionVector().GetZ()));
+                featureVector.push_back(static_cast<double>(0.5f * pCaloHit->GetCellSize1()));
+                featureVector.push_back(static_cast<double>(tag));
+                featureVector.push_back(static_cast<double>(inputEnergy));
             }
-            catch (const StatusCodeException &)
-            {
-                continue;
-            }
-
-            featureVector.push_back(static_cast<double>(pCaloHit->GetPositionVector().GetX()));
-            featureVector.push_back(static_cast<double>(pCaloHit->GetPositionVector().GetZ()));
-            featureVector.push_back(static_cast<double>(0.5f * pCaloHit->GetCellSize1()));
-            featureVector.push_back(static_cast<double>(tag));
-            featureVector.push_back(static_cast<double>(inputEnergy));
         }
         // Add number of hits to end of vector than rotate (more efficient than direct insert at front)
         featureVector.push_back(static_cast<double>(featureVector.size() / 5));
