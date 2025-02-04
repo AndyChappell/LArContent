@@ -61,7 +61,7 @@ StatusCode DlHitTrackShowerIdAlgorithm::Run()
 
 StatusCode DlHitTrackShowerIdAlgorithm::Train()
 {
-    const int SHOWER{1}, TRACK{2}, DIFFUSE{3};
+    const int MIP{1}, HIP{2}, SHOWER{3}, DIFFUSE{4};
     for (const std::string &listName : m_caloHitListNames)
     {
         const CaloHitList *pCaloHitList(nullptr);
@@ -103,7 +103,7 @@ StatusCode DlHitTrackShowerIdAlgorithm::Train()
         {
             for (const CaloHit *pCaloHit : caloHitList)
             {
-                int tag{TRACK};
+                int tag{MIP};
                 float inputEnergy{0.f};
                 const MCParticle *const pMCParticle(MCParticleHelper::GetMainMCParticle(pCaloHit));
                 inputEnergy = pCaloHit->GetInputEnergy();
@@ -118,7 +118,7 @@ StatusCode DlHitTrackShowerIdAlgorithm::Train()
                         if (pMCParticle->GetEnergy() > m_electronRadiationThreshold)
                             tag = SHOWER;
                         else
-                            tag = TRACK;
+                            tag = MIP;
                         break;
                     case PHOTON:
                         if (pMCParticle->GetEnergy() > m_photonShowerThreshold)
@@ -128,9 +128,16 @@ StatusCode DlHitTrackShowerIdAlgorithm::Train()
                         break;
                     default:
                         if (caloHitList.size() > 2)
-                            tag = TRACK;
+                        {
+                            if (pdg == MUON || pdg == PI_PLUS)
+                                tag = MIP;
+                            else
+                                tag = HIP;
+                        }
                         else
+                        {
                             tag = DIFFUSE;
+                        }
                         break;
                 }
                 featureVector.push_back(static_cast<double>(pCaloHit->GetPositionVector().GetX()));
