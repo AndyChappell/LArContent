@@ -61,7 +61,7 @@ StatusCode DlHitTrackShowerIdAlgorithm::Run()
 
 StatusCode DlHitTrackShowerIdAlgorithm::Train()
 {
-    const int MIP{1}, HIP{2}, SHOWER{3}, DIFFUSE{4};
+    const int MIP{1}, HIP{2}, SHOWER{3}, DIFFUSE{4}, MICHEL{5};
     for (const std::string &listName : m_caloHitListNames)
     {
         const CaloHitList *pCaloHitList(nullptr);
@@ -115,10 +115,31 @@ StatusCode DlHitTrackShowerIdAlgorithm::Train()
                 switch (pdg)
                 {
                     case E_MINUS:
-                        if (pMCParticle->GetEnergy() > m_electronRadiationThreshold)
+                        if (!pMCParticle->GetParentList().empty())
+                        {
+                            const MCParticle *const pParent{pMCParticle->GetParentList().front()};
+                            const int parentPdg{std::abs(pParent->GetParticleId())};
+                            if (parentPdg == MU_MINUS)
+                            {
+                                tag = MICHEL;
+                            }
+                            else if (pMCParticle->GetEnergy() > m_electronRadiationThreshold)
+                            {
+                                tag = SHOWER;
+                            }
+                            else
+                            {
+                                tag = MIP;
+                            }
+                        }
+                        else if (pMCParticle->GetEnergy() > m_electronRadiationThreshold)
+                        {
                             tag = SHOWER;
+                        }
                         else
+                        {
                             tag = MIP;
+                        }
                         break;
                     case PHOTON:
                         if (pMCParticle->GetEnergy() > m_photonShowerThreshold)
