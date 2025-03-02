@@ -227,6 +227,7 @@ void HierarchyValidationAlgorithm::EventValidation(const LArHierarchyHelper::Mat
             const int nNodes{static_cast<int>(matchInfo.GetNMCNodes(pRoot))};
             const int nTrackNodes{static_cast<int>(trackNodeSet.size())}, nShowerNodes{static_cast<int>(showerNodeSet.size())};
             const int nRecoSlices{static_cast<int>(matchedRecoSliceRoots.size())};
+            const float randIndex{matchInfo.GetRandIndex()};
             const CartesianVector &trueVertex{pRoot->GetVertex()};
             const float trueVtxX{trueVertex.GetX()};
             const float trueVtxY{trueVertex.GetY()};
@@ -273,6 +274,7 @@ void HierarchyValidationAlgorithm::EventValidation(const LArHierarchyHelper::Mat
             PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_eventTreeName.c_str(), "event", m_event));
             PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_eventTreeName.c_str(), "interaction", interaction));
             PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_eventTreeName.c_str(), "nRecoSlices", nRecoSlices));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_eventTreeName.c_str(), "randIndex", randIndex)); 
             PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_eventTreeName.c_str(), "isCC", isCC));
             PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_eventTreeName.c_str(), "isQE", isQE));
             PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_eventTreeName.c_str(), "isResonant", isResonant));

@@ -639,12 +639,12 @@ public:
         const RecoHierarchy::NodeVector &GetRecoMatches() const;
 
         /**
-	 *  @brief  Retrieve the selected hits for the given reco node
-	 *
-	 *  @param  pReco The reco node pointer
-	 *
-	 *  @return The list of selected calo reco hits
-	 */
+         *  @brief  Retrieve the selected hits for the given reco node
+         *
+         *  @param  pReco The reco node pointer
+         *
+         *  @return The list of selected calo reco hits
+        */
         const pandora::CaloHitList GetSelectedRecoHits(const RecoHierarchy::Node *pReco) const;
 
         /**
@@ -847,6 +847,11 @@ public:
         void GetRootMCParticles(pandora::MCParticleList &rootMCParticles) const;
 
         /**
+         *  @brief  Calculate the RandIndex for an event
+         */
+        float GetRandIndex() const;
+
+        /**
          *  @brief  Retrieve the quality cuts for matching
          *
          *  @return The quality cuts
@@ -854,13 +859,13 @@ public:
         const QualityCuts &GetQualityCuts() const;
 
         /**
-	 *  @brief  Get the selected reco node hits that are contained in the allMCHits list
-	 *
-	 *  @param  pRecoNode The reco node pointer
-	 *  @param  allMCHits The CaloHit list of all of the MC particles that will be used for the selection
-	 *
-	 *  @return The selected reco calo hits
-	 */
+         *  @brief  Get the selected reco node hits that are contained in the allMCHits list
+         *
+         *  @param  pRecoNode The reco node pointer
+         *  @param  allMCHits The CaloHit list of all of the MC particles that will be used for the selection
+         *
+         *  @return The selected reco calo hits
+         */
         const pandora::CaloHitList GetSelectedRecoHits(const RecoHierarchy::Node *pRecoNode, const pandora::CaloHitList &allMCHits) const;
 
         /**

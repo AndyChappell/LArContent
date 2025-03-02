@@ -1516,6 +1516,71 @@ const CaloHitList LArHierarchyHelper::MatchInfo::GetSelectedRecoHits(const RecoH
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
+float LArHierarchyHelper::MatchInfo::GetRandIndex() const
+{
+    std::set<const MCHierarchy::Node *> mcSet;
+    std::map<const RecoHierarchy::Node *, std::map<const MCHierarchy::Node *, int>> cTable;
+    // pRootMC is the MCParticle that defines the root of each interaction (e.g. neutrino hierarchy, cosmic hierarchy
+    for (const auto &[pMootMC, matchesVector] : m_matches)
+    {
+        for (const MCMatches &mcMatches : matchesVector)
+        {
+            const MCHierarchy::Node *pMCNode{mcMatches.GetMC()};
+            mcSet.insert(pMCNode);
+            const RecoHierarchy::NodeVector &recoVector{mcMatches.GetRecoMatches()};
+            for (const RecoHierarchy::Node *pRecoNode : recoVector)
+            {
+                const CaloHitList &recoHits{pRecoNode->GetCaloHits()};
+                if (cTable.find(pRecoNode) == cTable.end() || cTable.at(pRecoNode).find(pMCNode) == cTable[pRecoNode].end())
+                    cTable[pRecoNode][pMCNode] = 0;
+                cTable[pRecoNode][pMCNode] += recoHits.size();
+            }
+        }
+    }
+
+    float aTerm{0.f};
+    for (const auto &[pRecoNode, mcValMap] : cTable)
+    {
+        float a{0.f};
+        for (const auto &[pMCNode, nHits] : mcValMap)
+        {
+            a += nHits;
+        }
+        aTerm += 0.5f * a * (a - 1);
+    }
+    float bTerm{0.f};
+    for (const MCHierarchy::Node *const pMCNode : mcSet)
+    {
+        float b{0.f};
+        for (const auto &[pRecoNode, mcValMap] : cTable)
+        {
+            if (mcValMap.find(pMCNode) != mcValMap.end())
+                b += mcValMap.at(pMCNode);
+        }
+        bTerm += 0.5f * b * (b - 1);
+    }
+    float indexTerm{0.f};
+    for (const auto &[pRecoNode, mcValMap] : cTable)
+    {
+        for (const auto &[pMCNode, nHits] : mcValMap)
+        {
+            indexTerm += 0.5 * nHits * (nHits - 1);
+        }
+    }
+    int nReco{static_cast<int>(cTable.size())};
+    if (nReco == 0)
+        return -1.f;
+    float expIndexTerm {(aTerm * bTerm) / (0.5f * nReco * (nReco - 1))};
+    float maxIndexTerm {0.5f * (aTerm + bTerm)};
+    if (std::abs(maxIndexTerm - expIndexTerm) < std::numeric_limits<float>::epsilon())
+        return -1.f;
+    float adjustedRandIndex {(indexTerm - expIndexTerm) / (maxIndexTerm - expIndexTerm)};
+
+    return adjustedRandIndex > -1 ? adjustedRandIndex : -1.f;
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
 void LArHierarchyHelper::MatchInfo::Print(const MCHierarchy &mcHierarchy) const
 {
     MCParticleList rootMCParticles;
