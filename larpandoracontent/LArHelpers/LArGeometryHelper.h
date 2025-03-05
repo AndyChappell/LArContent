@@ -141,6 +141,17 @@ public:
         const pandora::CartesianVector &position1, const pandora::CartesianVector &position2, pandora::CartesianVector &position3D, float &chiSquared);
 
     /**
+     *  @brief  Merge 2D positions from two views to give unified 3D position
+     *
+     *  @param  pandora the associated pandora instance
+     *  @param  hit1 the hit in the first view
+     *  @param  hit2 the hit in the second view
+     *  @param  position3D output position in 3D
+     *  @param  chi-squared
+     */
+    static void MergeTwoWideHits3D(const pandora::Pandora &pandora, const pandora::CaloHit &hit1, const pandora::CaloHit &hit2, pandora::CartesianVector &position3D, float &chiSquared);
+
+    /**
      *  @brief  Merge 2D positions from three views to give unified 3D position
      *
      *  @param  pandora the associated pandora instance
@@ -156,6 +167,19 @@ public:
     static void MergeThreePositions3D(const pandora::Pandora &pandora, const pandora::HitType view1, const pandora::HitType view2,
         const pandora::HitType view3, const pandora::CartesianVector &position1, const pandora::CartesianVector &position2,
         const pandora::CartesianVector &position3, pandora::CartesianVector &position3D, float &chiSquared);
+
+    /**
+     *  @brief  Merge 2D positions from three views to give unified 3D position
+     *
+     *  @param  pandora the associated pandora instance
+     *  @param  hit1 the position in the first view
+     *  @param  hit2 the position in the second view
+     *  @param  hit3 the position in the third view
+     *  @param  position3D output position in 3D
+     *  @param  chi-squared
+     */
+    static void MergeThreeWideHits3D(const pandora::Pandora &pandora, const pandora::CaloHit &hit1, const pandora::CaloHit &hit2,
+        const pandora::CaloHit &hit3, pandora::CartesianVector &position3D, float &chiSquared);
 
     /**
      *  @brief  Project 3D position into a given 2D view
