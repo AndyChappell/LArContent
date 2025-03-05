@@ -45,6 +45,7 @@ private:
     {
     public:
         typedef std::tuple<const pandora::CaloHit *, const pandora::CaloHit *, const pandora::CaloHit *> HitTriplet;
+        typedef std::vector<HitTriplet> HitTripletVector;
 
         CandidateCluster() = default;
 
@@ -96,6 +97,25 @@ private:
     void IdentifyCandidateClusters(const ViewVector &order);
 
     /**
+     *  @brief  Make candidate 3D hits from hits in two or more views
+     *
+     *  @param  caloHits0 the first vector of input 2D calo hits
+     *  @param  caloHits1 the second vector of input 2D calo hits
+     *  @param  caloHits2 the third vector of input 2D calo hits
+     *  @param  triplets the output triplets (or doublets with element 3 null)
+     */
+    void Make3DHitPermutations(const pandora::CaloHitVector &caloHits0, const pandora::CaloHitVector &caloHits1, const pandora::CaloHitVector &caloHits2, CandidateCluster::HitTripletVector &triplets) const;
+
+    /**
+     *  @brief  Filters a collection of 3D hit triplets (or doublets) based on the quality of the match, as determined by the chi-squared value
+     *
+     *  @param  triplets the input/output triplets (or doublets with element 3 null)
+     *  @param  hits3D the output 3D hit positions associated with the 2D hits
+     *  @param  chi2s the output chi-squared values for the 3D hita
+     */
+    void Filter3DHitPermutations(CandidateCluster::HitTripletVector &triplets, pandora::CartesianPointVector &hits3D, pandora::FloatVector &chi2s) const;
+
+    /**
      *  @brief  Filter out hits below any MIP threshold and organise into an ordered calo hit list
      *
      *  @param  pCaloHitList input hit list
@@ -132,12 +152,9 @@ private:
      *
      *  @param  sliceHitMap The slice-to-hit map from which slices should be retrieved
      *  @param  bin The central bin around which slices should be retrieved
-     *  @param  caloHits_0 The output hit list into which hits from the target bin (if populated) will be placed
-     *  @param  caloHits_m1 The output hit list into which hits from the lesser adjacent bin (if populated) will be placed
-     *  @param  caloHits_p1 The output hit list into which hits from the greater adjacent bin (if populated) will be placed
+     *  @param  caloHits The output hit list into which hits from the target bin and adjacent bins (if populated) will be placed
      */
-    void GetSlices(const LArSlicedCaloHitList::SliceHitMap &sliceHitMap, const size_t bin, pandora::CaloHitVector &caloHits_0,
-        pandora::CaloHitVector &caloHits_m1, pandora::CaloHitVector &caloHits_p1) const;
+    void GetSlices(const LArSlicedCaloHitList::SliceHitMap &sliceHitMap, const size_t bin, pandora::CaloHitVector &caloHits) const;
 
     typedef std::map<pandora::HitType, LArSlicedCaloHitList *> ViewSlicedHitsMap;
 
