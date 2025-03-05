@@ -133,10 +133,9 @@ StatusCode KalmanClusterCreationAlgorithm::Run()
 void KalmanClusterCreationAlgorithm::IdentifyCandidateClusters(const ViewVector &order)
 {
     // Begin processing the "primary" view with reference to the secondary and tertiary views
-    // HERE
     /*
        Basically want to loop over every hit in the primary view and consider it a starting hit for a cluster.
-       Look for nearby hits to iteratively/recirusively add to this newly created cluster.
+       Look for nearby hits to iteratively/recursively add to this newly created cluster.
        Stop when additional adds look unwise/ambiguous. Be sure to track which clusters (by ID) a hit belongs
        to, so we can figure out inter-cluster comparisons to see what the best option is - essentially we want to
        see if the chi2 or Kalman score gets notably better/worse by including it, and then basically keep it in
@@ -145,16 +144,103 @@ void KalmanClusterCreationAlgorithm::IdentifyCandidateClusters(const ViewVector 
     const LArSlicedCaloHitList::SliceHitMap &sliceHitMap0{m_slicedCaloHits[order.at(0)]->GetSliceHitMap()};
     const LArSlicedCaloHitList::SliceHitMap &sliceHitMap1{m_slicedCaloHits[order.at(1)]->GetSliceHitMap()};
     const LArSlicedCaloHitList::SliceHitMap &sliceHitMap2{m_slicedCaloHits[order.at(2)]->GetSliceHitMap()};
-    for (const auto &[bin, caloHits0_0] : sliceHitMap0)
+    for (const auto &[bin, caloHits0] : sliceHitMap0)
     {
-        CaloHitVector caloHits1_0, caloHits2_0, caloHits0_m1, caloHits0_p1, caloHits1_m1, caloHits1_p1, caloHits2_m1, caloHits2_p1;
-        this->GetSlices(sliceHitMap0, bin, caloHits0_m1, caloHits0_p1);
-        this->GetSlices(sliceHitMap1, bin, caloHits1_0, caloHits1_m1, caloHits1_p1);
-        this->GetSlices(sliceHitMap2, bin, caloHits2_0, caloHits2_m1, caloHits2_p1);
+        CaloHitVector caloHits1, caloHits2;
+        this->GetSlices(sliceHitMap1, bin, caloHits1);
+        this->GetSlices(sliceHitMap2, bin, caloHits2);
 
-        std::cout << "0: " << bin << " - [" << caloHits0_0.size() << "," << caloHits0_m1.size() << "," << caloHits0_p1.size() << "]" << std::endl;
-        std::cout << "0: " << bin << " - [" << caloHits1_0.size() << "," << caloHits1_m1.size() << "," << caloHits1_p1.size() << "]" << std::endl;
-        std::cout << "0: " << bin << " - [" << caloHits2_0.size() << "," << caloHits2_m1.size() << "," << caloHits2_p1.size() << "]" << std::endl;
+        // Create a vector of all hit permutations involing a hit from caloHits0
+        const size_t n3HitTuples{caloHits0.size() * caloHits1.size() * caloHits2.size()};
+        const size_t n2HitTuples{caloHits0.size() * caloHits1.size() + caloHits0.size() * caloHits2.size()};
+        CandidateCluster::HitTripletVector triplets(n3HitTuples + n2HitTuples, std::make_tuple(nullptr, nullptr, nullptr));
+        CartesianPointVector hits3D;
+        FloatVector chi2s;
+        this->Make3DHitPermutations(caloHits0, caloHits1, caloHits2, triplets);
+        this->Filter3DHitPermutations(triplets, hits3D, chi2s);
+    }
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+void KalmanClusterCreationAlgorithm::Make3DHitPermutations(const CaloHitVector &caloHits0, const CaloHitVector &caloHits1, const CaloHitVector &caloHits2, CandidateCluster::HitTripletVector &triplets) const
+{
+    int i{0};
+    // Construct 3 hit tuples
+    for (const CaloHit *pCaloHit0 : caloHits0)
+    {
+        for (const CaloHit *pCaloHit1 : caloHits1)
+        {
+            for (const CaloHit *pCaloHit2 : caloHits2)
+            {
+                std::get<0>(triplets[i]) = pCaloHit0;
+                std::get<1>(triplets[i]) = pCaloHit1;
+                std::get<2>(triplets[i]) = pCaloHit2;
+                ++i;
+            }
+        }
+    }
+    // Construct 2 hit tuples
+    for (const CaloHit *pCaloHit0 : caloHits0)
+    {
+        for (const CaloHit *pCaloHit1 : caloHits1)
+        {
+            std::get<0>(triplets[i]) = pCaloHit0;
+            std::get<1>(triplets[i]) = pCaloHit1;
+            ++i;
+        }
+    }
+    for (const CaloHit *pCaloHit0 : caloHits0)
+    {
+        for (const CaloHit *pCaloHit2 : caloHits2)
+        {
+            std::get<0>(triplets[i]) = pCaloHit0;
+            std::get<1>(triplets[i]) = pCaloHit2;
+            ++i;
+        }
+    }
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+void KalmanClusterCreationAlgorithm::Filter3DHitPermutations(CandidateCluster::HitTripletVector &triplets, CartesianPointVector &hits3D, FloatVector &chi2s) const
+{
+    for (auto iter = triplets.begin(); iter != triplets.end();)
+    {
+        const CandidateCluster::HitTriplet &triplet{*iter};
+        const CaloHit *const pHit0{std::get<0>(triplet)};
+        const CaloHit *const pHit1{std::get<1>(triplet)};
+        const CaloHit *const pHit2{std::get<2>(triplet)};
+        CartesianVector pos3D(0, 0, 0);
+        float chi2{0.f};
+        if (pHit2)
+        {
+            LArGeometryHelper::MergeThreeWideHits3D(this->GetPandora(), *pHit0, *pHit1, *pHit2, pos3D, chi2);
+            if (chi2 <= 6.f)
+            {
+                ++iter;
+                hits3D.emplace_back(pos3D);
+                chi2s.emplace_back(chi2);
+            }
+            else
+            {
+                iter = triplets.erase(iter);
+            }
+        }
+        else
+        {
+            LArGeometryHelper::MergeTwoWideHits3D(this->GetPandora(), *pHit0, *pHit1, pos3D, chi2);
+            if (chi2 <= 2.f)
+            {
+                ++iter;
+                hits3D.emplace_back(pos3D);
+                chi2s.emplace_back(chi2);
+            }
+            else
+            {
+                iter = triplets.erase(iter);
+            }
+        }
     }
 }
 
@@ -237,15 +323,16 @@ void KalmanClusterCreationAlgorithm::GetSlices(const LArSlicedCaloHitList::Slice
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-void KalmanClusterCreationAlgorithm::GetSlices(const LArSlicedCaloHitList::SliceHitMap &sliceHitMap, const size_t bin, CaloHitVector &caloHits_0,
-    CaloHitVector &caloHits_m1, CaloHitVector &caloHits_p1) const
+void KalmanClusterCreationAlgorithm::GetSlices(const LArSlicedCaloHitList::SliceHitMap &sliceHitMap, const size_t bin, CaloHitVector &caloHits) const
 {
-    if (sliceHitMap.find(bin) != sliceHitMap.end())
+    for (int i = -1; i <= 1; ++i)
     {
-        const CaloHitVector &caloHits{sliceHitMap.at(bin)};
-        caloHits_0.insert(caloHits_0.end(), caloHits.begin(), caloHits.end());
+        if (sliceHitMap.find(bin + i) != sliceHitMap.end())
+        {
+            const CaloHitVector &sliceCaloHits{sliceHitMap.at(bin + i)};
+            caloHits.insert(caloHits.end(), sliceCaloHits.begin(), sliceCaloHits.end());
+        }
     }
-    this->GetSlices(sliceHitMap, bin, caloHits_m1, caloHits_p1);
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
