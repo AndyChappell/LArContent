@@ -308,6 +308,60 @@ void LArGeometryHelper::MergeTwoPositions3D(const Pandora &pandora, const HitTyp
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
+void LArGeometryHelper::MergeTwoWideHits3D(const Pandora &pandora, const CaloHit &hit1, const CaloHit &hit2, CartesianVector &position3D, float &chiSquared)
+{
+    const HitType view1{hit1.GetHitType()}, view2{hit2.GetHitType()};
+    if (view1 == view2)
+        throw StatusCodeException(STATUS_CODE_INVALID_PARAMETER);
+
+    const CaloHit *const pCaloHitU{view1 == TPC_VIEW_U ? &hit1 : view2 == TPC_VIEW_U ? &hit2 : nullptr};
+    const CaloHit *const pCaloHitV{view1 == TPC_VIEW_V ? &hit1 : view2 == TPC_VIEW_V ? &hit2 : nullptr};
+    const CaloHit *const pCaloHitW{view1 == TPC_VIEW_W ? &hit1 : view2 == TPC_VIEW_W ? &hit2 : nullptr};
+
+    CartesianVector position1(0, 0, 0), position2(0, 0, 0);
+    float sigmaX1{0.f}, sigmaX2{0.f}, X{0.f}, Y{0.f}, Z{0.f};
+    if (!pCaloHitU)
+    {
+        position1 = pCaloHitV->GetPositionVector();
+        position2 = pCaloHitW->GetPositionVector();
+        sigmaX1 = 0.5f * pCaloHitV->GetCellSize1();
+        sigmaX2 = 0.5f * pCaloHitW->GetCellSize1();
+        // Consider an x position that is a weighted average based on cell size
+        X = (position1.GetX() + position2.GetX()) / 2.f;
+        Y = pandora.GetPlugins()->GetLArTransformationPlugin()->VWtoY(position1.GetZ(), position2.GetZ());
+        Z = pandora.GetPlugins()->GetLArTransformationPlugin()->VWtoZ(position1.GetZ(), position2.GetZ());
+    }
+    else if (!pCaloHitV)
+    {
+        position1 = pCaloHitU->GetPositionVector();
+        position2 = pCaloHitW->GetPositionVector();
+        sigmaX1 = 0.5f * pCaloHitU->GetCellSize1();
+        sigmaX2 = 0.5f * pCaloHitW->GetCellSize1();
+        // Consider an x position that is a weighted average based on cell size
+        X = (position1.GetX() + position2.GetX()) / 2.f;
+        Y = pandora.GetPlugins()->GetLArTransformationPlugin()->UWtoY(position1.GetZ(), position2.GetZ());
+        Z = pandora.GetPlugins()->GetLArTransformationPlugin()->UWtoZ(position1.GetZ(), position2.GetZ());
+    }
+    else
+    {
+        position1 = pCaloHitU->GetPositionVector();
+        position2 = pCaloHitV->GetPositionVector();
+        sigmaX1 = 0.5f * pCaloHitU->GetCellSize1();
+        sigmaX2 = 0.5f * pCaloHitV->GetCellSize1();
+        // Consider an x position that is a weighted average based on cell size
+        X = (position1.GetX() + position2.GetX()) / 2.f;
+        Y = pandora.GetPlugins()->GetLArTransformationPlugin()->UVtoY(position1.GetZ(), position2.GetZ());
+        Z = pandora.GetPlugins()->GetLArTransformationPlugin()->UVtoZ(position1.GetZ(), position2.GetZ());
+    }
+
+    position3D.SetValues(X, Y, Z);
+
+    chiSquared = ((X - position1.GetX()) * (X - position1.GetX())) / (sigmaX1 * sigmaX1) +
+        ((X - position2.GetX()) * (X - position2.GetX())) / (sigmaX2 * sigmaX2);
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
 void LArGeometryHelper::MergeThreePositions3D(const Pandora &pandora, const HitType view1, const HitType view2, const HitType view3,
     const CartesianVector &position1, const CartesianVector &position2, const CartesianVector &position3, CartesianVector &position3D, float &chiSquared)
 {
@@ -316,6 +370,52 @@ void LArGeometryHelper::MergeThreePositions3D(const Pandora &pandora, const HitT
 
     position3D.SetValues(positionW.GetX(), pandora.GetPlugins()->GetLArTransformationPlugin()->UVtoY(positionU.GetZ(), positionV.GetZ()),
         pandora.GetPlugins()->GetLArTransformationPlugin()->UVtoZ(positionU.GetZ(), positionV.GetZ()));
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+void LArGeometryHelper::MergeThreeWideHits3D(const Pandora &pandora, const CaloHit &hit1, const CaloHit &hit2, const CaloHit &hit3, CartesianVector &position3D, float &chiSquared)
+{
+    const HitType view1{hit1.GetHitType()}, view2{hit2.GetHitType()}, view3{hit3.GetHitType()};
+    if ((view1 == view2) || (view2 == view3) || (view3 == view1))
+        throw StatusCodeException(STATUS_CODE_INVALID_PARAMETER);
+
+    const CaloHit *const pCaloHitU{view1 == TPC_VIEW_U ? &hit1 : view2 == TPC_VIEW_U ? &hit2 : &hit3};
+    const CaloHit *const pCaloHitV{view1 == TPC_VIEW_V ? &hit1 : view2 == TPC_VIEW_V ? &hit2 : &hit3};
+    const CaloHit *const pCaloHitW{view1 == TPC_VIEW_W ? &hit1 : view2 == TPC_VIEW_W ? &hit2 : &hit3};
+
+    const CartesianVector &positionU{pCaloHitU->GetPositionVector()}, &positionV{pCaloHitV->GetPositionVector()}, &positionW{pCaloHitW->GetPositionVector()};
+    const float sigmaXU{0.5f * pCaloHitU->GetCellSize1()}, sigmaXV{0.5f * pCaloHitV->GetCellSize1()}, sigmaXW{0.5f * pCaloHitW->GetCellSize1()};
+
+    const float YfromUV(pandora.GetPlugins()->GetLArTransformationPlugin()->UVtoY(positionU.GetZ(), positionV.GetZ()));
+    const float YfromUW(pandora.GetPlugins()->GetLArTransformationPlugin()->UWtoY(positionU.GetZ(), positionW.GetZ()));
+    const float YfromVW(pandora.GetPlugins()->GetLArTransformationPlugin()->VWtoY(positionV.GetZ(), positionW.GetZ()));
+
+    const float ZfromUV(pandora.GetPlugins()->GetLArTransformationPlugin()->UVtoZ(positionU.GetZ(), positionV.GetZ()));
+    const float ZfromUW(pandora.GetPlugins()->GetLArTransformationPlugin()->UWtoZ(positionU.GetZ(), positionW.GetZ()));
+    const float ZfromVW(pandora.GetPlugins()->GetLArTransformationPlugin()->VWtoZ(positionV.GetZ(), positionW.GetZ()));
+
+    const float aveX((positionU.GetX() + positionV.GetX() + positionW.GetX()) / 3.f);
+    const float aveY((YfromUV + YfromUW + YfromVW) / 3.f);
+    const float aveZ((ZfromUV + ZfromUW + ZfromVW) / 3.f);
+    position3D.SetValues(aveX, aveY, aveZ);
+
+    const float aveU(pandora.GetPlugins()->GetLArTransformationPlugin()->YZtoU(aveY, aveZ));
+    const float aveV(pandora.GetPlugins()->GetLArTransformationPlugin()->YZtoV(aveY, aveZ));
+    const float aveW(pandora.GetPlugins()->GetLArTransformationPlugin()->YZtoW(aveY, aveZ));
+
+    const CartesianVector outputU(aveX, 0.f, aveU);
+    const CartesianVector outputV(aveX, 0.f, aveV);
+    const CartesianVector outputW(aveX, 0.f, aveW);
+
+    const float sigmaUVW(LArGeometryHelper::GetSigmaUVW(pandora));
+    const float chiSquaredX{(outputU.GetX() - positionU.GetX()) * (outputU.GetX() - positionU.GetX()) / (sigmaXU * sigmaXU) +
+        (outputV.GetX() - positionV.GetX()) * (outputV.GetX() - positionV.GetX()) / (sigmaXV * sigmaXV) +
+        (outputW.GetX() - positionW.GetX()) * (outputW.GetX() - positionW.GetX()) / (sigmaXW * sigmaXW)};
+    const float chiSquaredUVW{((outputU.GetZ() - positionU.GetZ()) * (outputU.GetZ() - positionU.GetZ()) +
+        (outputV.GetZ() - positionV.GetZ()) * (outputV.GetZ() - positionV.GetZ()) +
+        (outputW.GetZ() - positionW.GetZ()) * (outputW.GetZ() - positionW.GetZ())) / (sigmaUVW * sigmaUVW)};
+    chiSquared = chiSquaredX + chiSquaredUVW;
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
