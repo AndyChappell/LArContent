@@ -168,25 +168,51 @@ void KalmanClusterCreationAlgorithm::IdentifyCandidateClusters(const ViewVector 
         }
         for (auto &kalmanFit : kalmanFits)
         {
-            for (const CaloHit *const pCaloHit : caloHits0)
+            bool added{true};
+            while (added)
             {
-                if (kalmanFit.m_caloHits.find(pCaloHit) != kalmanFit.m_caloHits.end())
-                    continue;
-                const CartesianVector &other{pCaloHit->GetPositionVector()};
-                if (this->Proximate(kalmanFit.m_pLastHit, pCaloHit))
+                added = false;
+                const CaloHit *pBestHit{nullptr};
+                Eigen::VectorXd bestMeasurement(2);
+                double bestDistanceSquared{std::numeric_limits<double>::max()};
+                for (const CaloHit *const pCaloHit : caloHits0)
                 {
-                    const CartesianVector &seed1{kalmanFit.m_pSeedHit1->GetPositionVector()};
-                    const CartesianVector &seed2{kalmanFit.m_pSeedHit2->GetPositionVector()};
-                    Eigen::VectorXd measurement(2);
-                    measurement << other.GetX(), other.GetZ();
-                    kalmanFit.m_kalmanFilter.Predict();
-                    const Eigen::VectorXd &state{kalmanFit.m_kalmanFilter.GetTemporaryState()};
-                    std::cout << "Kalman filter initialized with positions: (" << seed1.GetX() << " " << seed1.GetZ() << ") (" << seed2.GetX() << " " << seed2.GetZ() << ")" << std::endl;
-                    std::cout << "Kalman filter last added position: (" << kalmanFit.m_pLastHit->GetPositionVector().GetX() << " " << kalmanFit.m_pLastHit->GetPositionVector().GetZ() << ")" << std::endl;
-                    std::cout << "Kalman filter predicted state: (" << state(0) << " " << state(1) << ")" << std::endl;
-                    std::cout << "Observed hit : (" << pCaloHit->GetPositionVector().GetX() << " " << pCaloHit->GetPositionVector().GetZ() << ")" << std::endl;
-                    kalmanFit.m_kalmanFilter.Update(measurement);
-                    kalmanFit.InsertHit(pCaloHit);
+                    if (kalmanFit.m_caloHits.find(pCaloHit) != kalmanFit.m_caloHits.end())
+                        continue;
+                    const CartesianVector &other{pCaloHit->GetPositionVector()};
+                    if (this->Proximate(kalmanFit.m_pLastHit, pCaloHit))
+                    {
+                        const CartesianVector &seed1{kalmanFit.m_pSeedHit1->GetPositionVector()};
+                        const CartesianVector &seed2{kalmanFit.m_pSeedHit2->GetPositionVector()};
+                        Eigen::VectorXd measurement(2);
+                        measurement << other.GetX(), other.GetZ();
+                        kalmanFit.m_kalmanFilter.Predict();
+                        const Eigen::VectorXd &state{kalmanFit.m_kalmanFilter.GetTemporaryState()};
+                        std::cout << "Kalman filter initialized with positions: (" << seed1.GetX() << " " << seed1.GetZ() << ") (" << seed2.GetX() << " " << seed2.GetZ() << ")" << std::endl;
+                        std::cout << "Kalman filter last added position: (" << kalmanFit.m_pLastHit->GetPositionVector().GetX() << " " << kalmanFit.m_pLastHit->GetPositionVector().GetZ() << ")" << std::endl;
+                        std::cout << "Kalman filter predicted state: (" << state(0) << " " << state(1) << ")" << std::endl;
+                        std::cout << "Observed hit : (" << pCaloHit->GetPositionVector().GetX() << " " << pCaloHit->GetPositionVector().GetZ() << ")" << std::endl;
+                        // Here we want to actually consider the quality of the prediction and only retain the best ones
+                        // This will need to become more sophisticated to consider not just the local hits, but also the alternative fits in the vicinity
+                        // It should probably guarantee splitting when forks develop - this might be detectable when comparing the final result - i.e. two
+                        // clusters with a common stem that then move in different directions at a vertex
+                        //
+                        // Would really like the prediction to sit inside the actual hit, but that's probably too strong a constraint, especially early on -
+                        // might be able to apply this once the cluster has a few hits already
+                        const double distanceSquared{(state - measurement).squaredNorm()};
+                        if (distanceSquared < bestDistanceSquared)
+                        {
+                            bestDistanceSquared = distanceSquared;
+                            bestMeasurement = measurement;
+                            pBestHit = pCaloHit;
+                        }
+                    }
+                }
+                if (pBestHit && this->Proximate(kalmanFit.m_pLastHit, pBestHit, 0.5f))
+                {
+                    added = true;
+                    kalmanFit.m_kalmanFilter.Update(bestMeasurement);
+                    kalmanFit.InsertHit(pBestHit);
                 }
             }
         }
@@ -199,6 +225,14 @@ void KalmanClusterCreationAlgorithm::IdentifyCandidateClusters(const ViewVector 
         const CaloHit *const pHit2{std::get<2>(triplet)};
         */
     }
+
+    PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1.f, -1.f, 1.f));
+    for (auto &kalmanFit : kalmanFits)
+    {
+        const CaloHitList caloHits(kalmanFit.m_caloHits.begin(), kalmanFit.m_caloHits.end());
+        PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &caloHits, "Kalman", AUTOITER));
+    }
+    PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
@@ -404,6 +438,18 @@ bool KalmanClusterCreationAlgorithm::Proximate(const CaloHit *const pCaloHit1, c
     const float xlo1{position1.GetX() - width1 - proximity}, xhi1{position1.GetX() + width1 + proximity};
     const float xlo2{position2.GetX() - width2 - proximity}, xhi2{position2.GetX() + width2 + proximity};
     return ((position1.GetX() >= xlo2 && position1.GetX() <= xhi2) || (position2.GetX() >= xlo1 && position2.GetX() <= xhi1));
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+bool KalmanClusterCreationAlgorithm::Contains(const CaloHit *const pCaloHit, const Eigen::VectorXd &position) const
+{
+    const CartesianVector &hitPosition{pCaloHit->GetPositionVector()};
+    const float width{0.5f * pCaloHit->GetCellSize1()};
+    const float xlo{hitPosition.GetX() - width}, xhi{hitPosition.GetX() + width};
+    const float height{0.5f * pCaloHit->GetCellSize0()};
+    const float zlo{hitPosition.GetZ() - height}, zhi{hitPosition.GetZ() + height};
+    return (position(0) >= xlo && position(0) <= xhi && position(1) >= zlo && position(1) <= zhi);
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------

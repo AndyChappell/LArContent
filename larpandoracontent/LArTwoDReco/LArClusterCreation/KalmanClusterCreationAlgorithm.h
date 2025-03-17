@@ -179,6 +179,16 @@ private:
      */
     bool Proximate(const pandora::CaloHit *const pCaloHit1, const pandora::CaloHit *const pCaloHit2, const float proximity = 2.f) const;
 
+    /**
+     *  @brief  Determines if a position is contained within a hit
+     *
+     *  @param  pCaloHit the calo hit
+     *  @param  position the position to check
+     *
+     *  @return true if the position is contained within the hit, false otherwise
+     */
+    bool Contains(const pandora::CaloHit *const pCaloHit, const Eigen::VectorXd &position) const;
+
     typedef std::map<pandora::HitType, LArSlicedCaloHitList *> ViewSlicedHitsMap;
 
     float m_minMipFraction; ///< Minimum fraction of a MIP to consider a hit
