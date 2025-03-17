@@ -327,7 +327,7 @@ void LArGeometryHelper::MergeTwoWideHits3D(const Pandora &pandora, const CaloHit
         sigmaX1 = 0.5f * pCaloHitV->GetCellSize1();
         sigmaX2 = 0.5f * pCaloHitW->GetCellSize1();
         // Consider an x position that is a weighted average based on cell size
-        X = (position1.GetX() + position2.GetX()) / 2.f;
+        X = (position1.GetX() * sigmaX2 + position2.GetX() * sigmaX1) / (sigmaX1 + sigmaX2);
         Y = pandora.GetPlugins()->GetLArTransformationPlugin()->VWtoY(position1.GetZ(), position2.GetZ());
         Z = pandora.GetPlugins()->GetLArTransformationPlugin()->VWtoZ(position1.GetZ(), position2.GetZ());
     }
@@ -338,7 +338,7 @@ void LArGeometryHelper::MergeTwoWideHits3D(const Pandora &pandora, const CaloHit
         sigmaX1 = 0.5f * pCaloHitU->GetCellSize1();
         sigmaX2 = 0.5f * pCaloHitW->GetCellSize1();
         // Consider an x position that is a weighted average based on cell size
-        X = (position1.GetX() + position2.GetX()) / 2.f;
+        X = (position1.GetX() * sigmaX2 + position2.GetX() * sigmaX1) / (sigmaX1 + sigmaX2);
         Y = pandora.GetPlugins()->GetLArTransformationPlugin()->UWtoY(position1.GetZ(), position2.GetZ());
         Z = pandora.GetPlugins()->GetLArTransformationPlugin()->UWtoZ(position1.GetZ(), position2.GetZ());
     }
@@ -349,7 +349,7 @@ void LArGeometryHelper::MergeTwoWideHits3D(const Pandora &pandora, const CaloHit
         sigmaX1 = 0.5f * pCaloHitU->GetCellSize1();
         sigmaX2 = 0.5f * pCaloHitV->GetCellSize1();
         // Consider an x position that is a weighted average based on cell size
-        X = (position1.GetX() + position2.GetX()) / 2.f;
+        X = (position1.GetX() * sigmaX2 + position2.GetX() * sigmaX1) / (sigmaX1 + sigmaX2);
         Y = pandora.GetPlugins()->GetLArTransformationPlugin()->UVtoY(position1.GetZ(), position2.GetZ());
         Z = pandora.GetPlugins()->GetLArTransformationPlugin()->UVtoZ(position1.GetZ(), position2.GetZ());
     }
@@ -386,6 +386,11 @@ void LArGeometryHelper::MergeThreeWideHits3D(const Pandora &pandora, const CaloH
 
     const CartesianVector &positionU{pCaloHitU->GetPositionVector()}, &positionV{pCaloHitV->GetPositionVector()}, &positionW{pCaloHitW->GetPositionVector()};
     const float sigmaXU{0.5f * pCaloHitU->GetCellSize1()}, sigmaXV{0.5f * pCaloHitV->GetCellSize1()}, sigmaXW{0.5f * pCaloHitW->GetCellSize1()};
+    float weightXU{1.f / sigmaXU}, weightXV{1.f / sigmaXV}, weightXW{1.f / sigmaXW};
+    const float weightSum(weightXU + weightXV + weightXW);
+    weightXU /= weightSum;
+    weightXV /= weightSum;
+    weightXW /= weightSum;
 
     const float YfromUV(pandora.GetPlugins()->GetLArTransformationPlugin()->UVtoY(positionU.GetZ(), positionV.GetZ()));
     const float YfromUW(pandora.GetPlugins()->GetLArTransformationPlugin()->UWtoY(positionU.GetZ(), positionW.GetZ()));
@@ -395,7 +400,7 @@ void LArGeometryHelper::MergeThreeWideHits3D(const Pandora &pandora, const CaloH
     const float ZfromUW(pandora.GetPlugins()->GetLArTransformationPlugin()->UWtoZ(positionU.GetZ(), positionW.GetZ()));
     const float ZfromVW(pandora.GetPlugins()->GetLArTransformationPlugin()->VWtoZ(positionV.GetZ(), positionW.GetZ()));
 
-    const float aveX((positionU.GetX() + positionV.GetX() + positionW.GetX()) / 3.f);
+    const float aveX(positionU.GetX() * weightXU + positionV.GetX() * weightXV + positionW.GetX() * weightXW);
     const float aveY((YfromUV + YfromUW + YfromVW) / 3.f);
     const float aveZ((ZfromUV + ZfromUW + ZfromVW) / 3.f);
     position3D.SetValues(aveX, aveY, aveZ);
