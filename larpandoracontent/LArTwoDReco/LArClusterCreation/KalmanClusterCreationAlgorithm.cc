@@ -13,7 +13,6 @@
 #include "larpandoracontent/LArHelpers/LArClusterHelper.h"
 #include "larpandoracontent/LArHelpers/LArGeometryHelper.h"
 #include "larpandoracontent/LArObjects/LArCaloHit.h"
-#include "larpandoracontent/LArUtility/KalmanFilter.h"
 
 #include "larpandoracontent/LArTwoDReco/LArClusterCreation/KalmanClusterCreationAlgorithm.h"
 
@@ -139,80 +138,66 @@ void KalmanClusterCreationAlgorithm::IdentifyCandidateClusters(const ViewVector 
     const LArSlicedCaloHitList::SliceHitMap &sliceHitMap0{m_slicedCaloHits[order.at(0)]->GetSliceHitMap()};
     const LArSlicedCaloHitList::SliceHitMap &sliceHitMap1{m_slicedCaloHits[order.at(1)]->GetSliceHitMap()};
     const LArSlicedCaloHitList::SliceHitMap &sliceHitMap2{m_slicedCaloHits[order.at(2)]->GetSliceHitMap()};
+    (void)sliceHitMap1;
+    (void)sliceHitMap2;
+    std::vector<KalmanFit> kalmanFits;
     for (const auto &[bin, caloHits0] : sliceHitMap0)
     {
-        CaloHitVector caloHits1, caloHits2;
-        this->GetSlices(sliceHitMap1, bin, caloHits1);
-        this->GetSlices(sliceHitMap2, bin, caloHits2);
-
-        // Create a vector of all hit permutations involing a hit from caloHits0
-        const size_t n3HitTuples{caloHits0.size() * caloHits1.size() * caloHits2.size()};
-        const size_t n2HitTuples{caloHits0.size() * caloHits1.size() + caloHits0.size() * caloHits2.size()};
-        CandidateCluster::HitTripletVector triplets(n3HitTuples + n2HitTuples, std::make_tuple(nullptr, nullptr, nullptr));
-        CartesianPointVector hits3D;
-        FloatVector chi2s;
-        this->Make3DHitPermutations(caloHits0, caloHits1, caloHits2, triplets);
-        this->Filter3DHitPermutations(triplets, hits3D, chi2s);
-        std::cout << "Number of 3D hit permutations: " << hits3D.size() << std::endl;
-
-        // Now define the full set of possible two hit starting clusters and try to build on those and see which is best
-        typedef std::tuple<size_t, size_t, CartesianVector, CartesianVector> SeedPair;
-        std::vector<SeedPair> seedPairs;
-        for (size_t i = 0; i < hits3D.size(); ++i)
+        for (const CaloHit *const pSeedHit : caloHits0)
         {
-            // Only make seeds from triplets that are fully populated
-            const CaloHit *const pCaloHit0{std::get<2>(triplets.at(i))};
-            if (!pCaloHit0)
-                continue;
-            for (size_t j = i + 1; j < hits3D.size(); ++j)
+            const CartesianVector &seed{pSeedHit->GetPositionVector()};
+            Eigen::VectorXd init(2);
+            init << seed.GetX(), seed.GetZ();
+            // Establish a starting seed
+            for (const CaloHit *const pCaloHit : caloHits0)
             {
-                const CaloHit *const pCaloHit1{std::get<2>(triplets.at(j))};
-                if (!pCaloHit1)
+                if (pCaloHit == pSeedHit)
                     continue;
-                seedPairs.emplace_back(std::make_tuple(i, j, hits3D.at(i), hits3D.at(j)));
+                const CartesianVector &other{pCaloHit->GetPositionVector()};
+                if (this->Proximate(pSeedHit, pCaloHit))
+                {
+                    kalmanFits.emplace_back(KalmanFit{pSeedHit, pCaloHit, KalmanFilter2D(0.5, 0.1, 1.0, init), CaloHitSet(), pCaloHit});
+                    kalmanFits.back().m_kalmanFilter.Predict();
+                    Eigen::VectorXd measurement(2);
+                    measurement << other.GetX(), other.GetZ();
+                    kalmanFits.back().m_kalmanFilter.Update(measurement);
+                    kalmanFits.back().InsertHit(pSeedHit);
+                    kalmanFits.back().InsertHit(pCaloHit);
+                }
+            }
+        }
+        for (auto &kalmanFit : kalmanFits)
+        {
+            for (const CaloHit *const pCaloHit : caloHits0)
+            {
+                if (kalmanFit.m_caloHits.find(pCaloHit) != kalmanFit.m_caloHits.end())
+                    continue;
+                const CartesianVector &other{pCaloHit->GetPositionVector()};
+                if (this->Proximate(kalmanFit.m_pLastHit, pCaloHit))
+                {
+                    const CartesianVector &seed1{kalmanFit.m_pSeedHit1->GetPositionVector()};
+                    const CartesianVector &seed2{kalmanFit.m_pSeedHit2->GetPositionVector()};
+                    Eigen::VectorXd measurement(2);
+                    measurement << other.GetX(), other.GetZ();
+                    kalmanFit.m_kalmanFilter.Predict();
+                    const Eigen::VectorXd &state{kalmanFit.m_kalmanFilter.GetTemporaryState()};
+                    std::cout << "Kalman filter initialized with positions: (" << seed1.GetX() << " " << seed1.GetZ() << ") (" << seed2.GetX() << " " << seed2.GetZ() << ")" << std::endl;
+                    std::cout << "Kalman filter last added position: (" << kalmanFit.m_pLastHit->GetPositionVector().GetX() << " " << kalmanFit.m_pLastHit->GetPositionVector().GetZ() << ")" << std::endl;
+                    std::cout << "Kalman filter predicted state: (" << state(0) << " " << state(1) << ")" << std::endl;
+                    std::cout << "Observed hit : (" << pCaloHit->GetPositionVector().GetX() << " " << pCaloHit->GetPositionVector().GetZ() << ")" << std::endl;
+                    kalmanFit.m_kalmanFilter.Update(measurement);
+                    kalmanFit.InsertHit(pCaloHit);
+                }
             }
         }
 
-        std::cout << "Number of seed pairs: " << seedPairs.size() << std::endl;
-
-        // Now we have a list of 3D hit positions and chi2 values, so we can start clustering
-        for (auto seed : seedPairs)
-        {
-            const size_t s1{std::get<0>(seed)};
-            const size_t s2{std::get<1>(seed)};
-            const CartesianVector &seed1{std::get<2>(seed)};
-            Eigen::VectorXd init(3);
-            init << seed1.GetX(), seed1.GetY(), seed1.GetZ();
-            KalmanFilter3D kalmanFilter(0.5, 0.1, 1.0, init);
-            kalmanFilter.Predict();
-            const CartesianVector &seed2{std::get<3>(seed)};
-            Eigen::VectorXd init2(3);
-            init2 << seed2.GetX(), seed2.GetY(), seed2.GetZ();
-            kalmanFilter.Update(init2);
-            std::cout << "Kalman filter initialized with positions: (" << init.coeff(0) << " " << init.coeff(1) << " " << init.coeff(2) << ") (" <<
-                init2.coeff(0) << " " << init2.coeff(1) << " " << init2.coeff(2) << ")" << std::endl;
-
-            for (size_t i = 0; i < hits3D.size(); ++i)
-            {
-                if (i == s1 || i == s2)
-                    continue;
-                const CartesianVector &other{hits3D.at(i)};
-                Eigen::VectorXd measurement(3);
-                measurement << other.GetX(), other.GetY(), other.GetZ();
-                std::cout << "   Kalman filter measurement: (" << measurement.coeff(0) << " " << measurement.coeff(1) << " " << measurement.coeff(2) << ")" << std::endl;
-                kalmanFilter.Predict();
-                const Eigen::VectorXd &state{kalmanFilter.GetTemporaryState()};
-                std::cout << "   Kalman filter prediction: (" << state.coeff(0) << " " << state.coeff(1) << " " << state.coeff(2) << ")" << std::endl;
-                //kalmanFilter.Update(measurement);
-                /*
-                const float chi2{chi2s.at(i)};
-                const CandidateCluster::HitTriplet &triplet{triplets.at(i)};
-                const CaloHit *const pHit0{std::get<0>(triplet)};
-                const CaloHit *const pHit1{std::get<1>(triplet)};
-                const CaloHit *const pHit2{std::get<2>(triplet)};
-                */
-            }
-        }
+        /*
+        const float chi2{chi2s.at(i)};
+        const CandidateCluster::HitTriplet &triplet{triplets.at(i)};
+        const CaloHit *const pHit0{std::get<0>(triplet)};
+        const CaloHit *const pHit1{std::get<1>(triplet)};
+        const CaloHit *const pHit2{std::get<2>(triplet)};
+        */
     }
 }
 
@@ -398,6 +383,36 @@ StatusCode KalmanClusterCreationAlgorithm::ReadSettings(const TiXmlHandle xmlHan
     PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadVectorOfValues(xmlHandle, "CaloHitListNames", m_caloHitListNames));
 
     return STATUS_CODE_SUCCESS;
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+bool KalmanClusterCreationAlgorithm::Proximate(const CaloHit *const pCaloHit1, const CaloHit *const pCaloHit2, const float proximity) const
+{
+    const CartesianVector &position1{pCaloHit1->GetPositionVector()};
+    const CartesianVector &position2{pCaloHit2->GetPositionVector()};
+
+    const float distanceSquared{(position1 - position2).GetMagnitudeSquared()};
+    if (distanceSquared < proximity * proximity)
+        return true;
+
+    if (std::fabs(position1.GetZ() - position2.GetZ()) >= proximity)
+        return false;
+
+    const float width1{0.5f * pCaloHit1->GetCellSize1()};
+    const float width2{0.5f * pCaloHit2->GetCellSize1()};
+    const float xlo1{position1.GetX() - width1 - proximity}, xhi1{position1.GetX() + width1 + proximity};
+    const float xlo2{position2.GetX() - width2 - proximity}, xhi2{position2.GetX() + width2 + proximity};
+    return ((position1.GetX() >= xlo2 && position1.GetX() <= xhi2) || (position2.GetX() >= xlo1 && position2.GetX() <= xhi1));
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+void KalmanClusterCreationAlgorithm::KalmanFit::InsertHit(const CaloHit *const pCaloHit)
+{
+    m_caloHits.insert(pCaloHit);
+    m_pLastHit = pCaloHit;
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------

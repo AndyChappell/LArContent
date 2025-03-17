@@ -11,6 +11,7 @@
 #include "Pandora/Algorithm.h"
 
 #include "larpandoracontent/LArObjects/LArSlicedCaloHitList.h"
+#include "larpandoracontent/LArUtility/KalmanFilter.h"
 
 #include <unordered_map>
 
@@ -37,6 +38,17 @@ private:
     typedef std::vector<pandora::HitType> ViewVector;
     typedef std::map<pandora::HitType, pandora::OrderedCaloHitList> ViewOrderedHitsMap;
     typedef std::map<const pandora::CaloHit *, pandora::IntVector> HitCandidateCLusterMap;
+
+    struct KalmanFit
+    {
+        void InsertHit(const pandora::CaloHit *const pCaloHit);
+
+        const pandora::CaloHit *m_pSeedHit1;
+        const pandora::CaloHit *m_pSeedHit2;
+        KalmanFilter2D m_kalmanFilter;
+        pandora::CaloHitSet m_caloHits;
+        const pandora::CaloHit *m_pLastHit;
+    };
 
     /**
      *  @brief  CandidateCluster class
@@ -155,6 +167,17 @@ private:
      *  @param  caloHits The output hit list into which hits from the target bin and adjacent bins (if populated) will be placed
      */
     void GetSlices(const LArSlicedCaloHitList::SliceHitMap &sliceHitMap, const size_t bin, pandora::CaloHitVector &caloHits) const;
+
+    /**
+     *  @brief  Determines if two hits are within a given proximity of each other
+     *
+     *  @param  pCaloHit1 the first calo hit
+     *  @param  pCaloHit2 the second calo hit
+     *  @param  proximity the radius of the neighbourgood considered proximate
+     *
+     *  @return true if the hits are within a given proximity of each other, false otherwise
+     */
+    bool Proximate(const pandora::CaloHit *const pCaloHit1, const pandora::CaloHit *const pCaloHit2, const float proximity = 2.f) const;
 
     typedef std::map<pandora::HitType, LArSlicedCaloHitList *> ViewSlicedHitsMap;
 
