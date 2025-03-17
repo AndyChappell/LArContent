@@ -6,11 +6,14 @@
  *  $Log: $
  */
 
+#include <Eigen/Dense>
+
 #include "Pandora/AlgorithmHeaders.h"
 
 #include "larpandoracontent/LArHelpers/LArClusterHelper.h"
 #include "larpandoracontent/LArHelpers/LArGeometryHelper.h"
 #include "larpandoracontent/LArObjects/LArCaloHit.h"
+#include "larpandoracontent/LArUtility/KalmanFilter.h"
 
 #include "larpandoracontent/LArTwoDReco/LArClusterCreation/KalmanClusterCreationAlgorithm.h"
 
@@ -133,14 +136,6 @@ StatusCode KalmanClusterCreationAlgorithm::Run()
 void KalmanClusterCreationAlgorithm::IdentifyCandidateClusters(const ViewVector &order)
 {
     // Begin processing the "primary" view with reference to the secondary and tertiary views
-    /*
-       Basically want to loop over every hit in the primary view and consider it a starting hit for a cluster.
-       Look for nearby hits to iteratively/recursively add to this newly created cluster.
-       Stop when additional adds look unwise/ambiguous. Be sure to track which clusters (by ID) a hit belongs
-       to, so we can figure out inter-cluster comparisons to see what the best option is - essentially we want to
-       see if the chi2 or Kalman score gets notably better/worse by including it, and then basically keep it in
-       the longest cluster that looks consistent, removing it from the others.
-     */
     const LArSlicedCaloHitList::SliceHitMap &sliceHitMap0{m_slicedCaloHits[order.at(0)]->GetSliceHitMap()};
     const LArSlicedCaloHitList::SliceHitMap &sliceHitMap1{m_slicedCaloHits[order.at(1)]->GetSliceHitMap()};
     const LArSlicedCaloHitList::SliceHitMap &sliceHitMap2{m_slicedCaloHits[order.at(2)]->GetSliceHitMap()};
@@ -158,6 +153,66 @@ void KalmanClusterCreationAlgorithm::IdentifyCandidateClusters(const ViewVector 
         FloatVector chi2s;
         this->Make3DHitPermutations(caloHits0, caloHits1, caloHits2, triplets);
         this->Filter3DHitPermutations(triplets, hits3D, chi2s);
+        std::cout << "Number of 3D hit permutations: " << hits3D.size() << std::endl;
+
+        // Now define the full set of possible two hit starting clusters and try to build on those and see which is best
+        typedef std::tuple<size_t, size_t, CartesianVector, CartesianVector> SeedPair;
+        std::vector<SeedPair> seedPairs;
+        for (size_t i = 0; i < hits3D.size(); ++i)
+        {
+            // Only make seeds from triplets that are fully populated
+            const CaloHit *const pCaloHit0{std::get<2>(triplets.at(i))};
+            if (!pCaloHit0)
+                continue;
+            for (size_t j = i + 1; j < hits3D.size(); ++j)
+            {
+                const CaloHit *const pCaloHit1{std::get<2>(triplets.at(j))};
+                if (!pCaloHit1)
+                    continue;
+                seedPairs.emplace_back(std::make_tuple(i, j, hits3D.at(i), hits3D.at(j)));
+            }
+        }
+
+        std::cout << "Number of seed pairs: " << seedPairs.size() << std::endl;
+
+        // Now we have a list of 3D hit positions and chi2 values, so we can start clustering
+        for (auto seed : seedPairs)
+        {
+            const size_t s1{std::get<0>(seed)};
+            const size_t s2{std::get<1>(seed)};
+            const CartesianVector &seed1{std::get<2>(seed)};
+            Eigen::VectorXd init(3);
+            init << seed1.GetX(), seed1.GetY(), seed1.GetZ();
+            KalmanFilter3D kalmanFilter(0.5, 0.1, 1.0, init);
+            kalmanFilter.Predict();
+            const CartesianVector &seed2{std::get<3>(seed)};
+            Eigen::VectorXd init2(3);
+            init2 << seed2.GetX(), seed2.GetY(), seed2.GetZ();
+            kalmanFilter.Update(init2);
+            std::cout << "Kalman filter initialized with positions: (" << init.coeff(0) << " " << init.coeff(1) << " " << init.coeff(2) << ") (" <<
+                init2.coeff(0) << " " << init2.coeff(1) << " " << init2.coeff(2) << ")" << std::endl;
+
+            for (size_t i = 0; i < hits3D.size(); ++i)
+            {
+                if (i == s1 || i == s2)
+                    continue;
+                const CartesianVector &other{hits3D.at(i)};
+                Eigen::VectorXd measurement(3);
+                measurement << other.GetX(), other.GetY(), other.GetZ();
+                std::cout << "   Kalman filter measurement: (" << measurement.coeff(0) << " " << measurement.coeff(1) << " " << measurement.coeff(2) << ")" << std::endl;
+                kalmanFilter.Predict();
+                const Eigen::VectorXd &state{kalmanFilter.GetTemporaryState()};
+                std::cout << "   Kalman filter prediction: (" << state.coeff(0) << " " << state.coeff(1) << " " << state.coeff(2) << ")" << std::endl;
+                //kalmanFilter.Update(measurement);
+                /*
+                const float chi2{chi2s.at(i)};
+                const CandidateCluster::HitTriplet &triplet{triplets.at(i)};
+                const CaloHit *const pHit0{std::get<0>(triplet)};
+                const CaloHit *const pHit1{std::get<1>(triplet)};
+                const CaloHit *const pHit2{std::get<2>(triplet)};
+                */
+            }
+        }
     }
 }
 
