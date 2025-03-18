@@ -50,6 +50,10 @@ private:
         const pandora::CaloHit *m_pLastHit;
     };
 
+    typedef KalmanFit* KalmanFitPtr;
+    typedef std::set<KalmanFitPtr> KalmanFitSet;
+    typedef std::map<const pandora::CaloHit *, KalmanFitSet> HitKalmanFitMap;
+
     /**
      *  @brief  CandidateCluster class
      */
