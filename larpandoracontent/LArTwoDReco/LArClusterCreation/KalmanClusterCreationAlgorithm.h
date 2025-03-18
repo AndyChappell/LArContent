@@ -192,11 +192,11 @@ private:
      *
      *  @param  pCaloHit1 the first calo hit
      *  @param  pCaloHit2 the second calo hit
-     *  @param  proximity the radius of the neighbourgood considered proximate
+     *  @param  proximity the radius of the neighbourhood considered proximate
      *
      *  @return true if the hits are within a given proximity of each other, false otherwise
      */
-    bool Proximate(const pandora::CaloHit *const pCaloHit1, const pandora::CaloHit *const pCaloHit2, const float proximity = 2.f) const;
+    bool Proximate(const pandora::CaloHit *const pCaloHit1, const pandora::CaloHit *const pCaloHit2, const float proximity = 1.f) const;
 
     /**
      *  @brief  Determines if a position is contained within a hit
