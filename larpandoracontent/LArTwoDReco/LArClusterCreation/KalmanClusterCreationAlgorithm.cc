@@ -137,42 +137,18 @@ StatusCode KalmanClusterCreationAlgorithm::Run()
 void KalmanClusterCreationAlgorithm::IdentifyCandidateClusters(const ViewVector &order)
 {
     // Begin processing the "primary" view with reference to the secondary and tertiary views
-    std::map<HitType, std::vector<KalmanFit>> viewKalmanFitsMap;
+    std::map<HitType, KalmanFitVector> viewKalmanFitsMap;
     std::map<HitType, HitKalmanFitMap> viewHitKalmanFitMap;
     for (const HitType &view : order)
     {
         viewKalmanFitsMap[view] = std::vector<KalmanFit>();
         viewHitKalmanFitMap[view] = HitKalmanFitMap();
-        std::vector<KalmanFit> &kalmanFits{viewKalmanFitsMap[view]};
+        KalmanFitVector &kalmanFits{viewKalmanFitsMap[view]};
         HitKalmanFitMap &hitKalmanFitMap{viewHitKalmanFitMap[view]};
 
         for (const auto &[bin, caloHits0] : m_slicedCaloHits[view]->GetSliceHitMap())
         {
-            for (const CaloHit *const pSeedHit : caloHits0)
-            {
-                const CartesianVector &seed{pSeedHit->GetPositionVector()};
-                Eigen::VectorXd init(2);
-                init << seed.GetX(), seed.GetZ();
-                // Establish a starting seed
-                for (const CaloHit *const pCaloHit : caloHits0)
-                {
-                    if (pCaloHit == pSeedHit)
-                        continue;
-                    const CartesianVector &other{pCaloHit->GetPositionVector()};
-                    if (this->Proximate(pSeedHit, pCaloHit))
-                    {
-                        kalmanFits.emplace_back(KalmanFit{pSeedHit, pCaloHit, KalmanFilter2D(0.5, 0.1, 1.0, init), CaloHitSet(), pCaloHit});
-                        kalmanFits.back().m_kalmanFilter.Predict();
-                        Eigen::VectorXd measurement(2);
-                        measurement << other.GetX(), other.GetZ();
-                        kalmanFits.back().m_kalmanFilter.Update(measurement);
-                        kalmanFits.back().InsertHit(pSeedHit);
-                        hitKalmanFitMap[pSeedHit].insert(kalmanFits.back().m_id);
-                        kalmanFits.back().InsertHit(pCaloHit);
-                        hitKalmanFitMap[pCaloHit].insert(kalmanFits.back().m_id);
-                    }
-                }
-            }
+            this->MakeClusterSeeds(caloHits0, kalmanFits, hitKalmanFitMap);
             for (auto &kalmanFit : kalmanFits)
             {
                 bool added{true};
@@ -258,6 +234,37 @@ void KalmanClusterCreationAlgorithm::IdentifyCandidateClusters(const ViewVector 
             PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &caloHits, "Kalman", AUTOITER));
         }
         PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
+    }
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+void KalmanClusterCreationAlgorithm::MakeClusterSeeds(const CaloHitVector &sliceCaloHits, KalmanFitVector &kalmanFits, HitKalmanFitMap &hitKalmanFitMap)
+{
+    for (const CaloHit *const pSeedHit : sliceCaloHits)
+    {
+        const CartesianVector &seed{pSeedHit->GetPositionVector()};
+        Eigen::VectorXd init(2);
+        init << seed.GetX(), seed.GetZ();
+        for (const CaloHit *const pCaloHit : sliceCaloHits)
+        {
+            if (pCaloHit == pSeedHit)
+                continue;
+            const CartesianVector &other{pCaloHit->GetPositionVector()};
+            if (this->Proximate(pSeedHit, pCaloHit))
+            {
+                KalmanFit kalmanFit{pSeedHit, pCaloHit, KalmanFilter2D(0.5, 0.1, 1.0, init), CaloHitSet(), pCaloHit};
+                kalmanFit.m_kalmanFilter.Predict();
+                Eigen::VectorXd measurement(2);
+                measurement << other.GetX(), other.GetZ();
+                kalmanFit.m_kalmanFilter.Update(measurement);
+                kalmanFit.InsertHit(pSeedHit);
+                hitKalmanFitMap[pSeedHit].insert(kalmanFit.m_id);
+                kalmanFit.InsertHit(pCaloHit);
+                hitKalmanFitMap[pCaloHit].insert(kalmanFit.m_id);
+                kalmanFits.emplace_back(kalmanFit);
+            }
+        }
     }
 }
 

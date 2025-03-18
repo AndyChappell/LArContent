@@ -67,6 +67,7 @@ private:
     };
 
     typedef std::set<int> KalmanFitIDSet;
+    typedef std::vector<KalmanFit> KalmanFitVector;
     typedef std::map<const pandora::CaloHit *, KalmanFitIDSet> HitKalmanFitMap;
 
     /**
@@ -124,8 +125,19 @@ private:
 
     /**
      *  @brief  Identifies potential clusters. At this stage hits can appear in more than one cluster.
+     *
+     *  @param  order the orderied vector of views
      */
     void IdentifyCandidateClusters(const ViewVector &order);
+
+    /**
+     *  @brief  Make cluster seeds from hits in a single view
+     *
+     *  @param[in]  sliceCaloHits the input slice calo hits
+     *  @param[out]  kalmanFits the vector of kalman fits to update
+     *  @param[out]  hitKalmanFitMap the map from hits to kalman fits to update
+     */
+    void MakeClusterSeeds(const pandora::CaloHitVector &sliceCaloHits, KalmanFitVector &kalmanFits, HitKalmanFitMap &hitKalmanFitMap);
 
     /**
      *  @brief  Make candidate 3D hits from hits in two or more views
