@@ -137,133 +137,128 @@ StatusCode KalmanClusterCreationAlgorithm::Run()
 void KalmanClusterCreationAlgorithm::IdentifyCandidateClusters(const ViewVector &order)
 {
     // Begin processing the "primary" view with reference to the secondary and tertiary views
-    const LArSlicedCaloHitList::SliceHitMap &sliceHitMap0{m_slicedCaloHits[order.at(0)]->GetSliceHitMap()};
-    const LArSlicedCaloHitList::SliceHitMap &sliceHitMap1{m_slicedCaloHits[order.at(1)]->GetSliceHitMap()};
-    const LArSlicedCaloHitList::SliceHitMap &sliceHitMap2{m_slicedCaloHits[order.at(2)]->GetSliceHitMap()};
-    (void)sliceHitMap1;
-    (void)sliceHitMap2;
-    std::vector<KalmanFit> kalmanFits;
-    HitKalmanFitMap hitKalmanFitMap;
-    for (const auto &[bin, caloHits0] : sliceHitMap0)
+    std::map<HitType, std::vector<KalmanFit>> viewKalmanFitsMap;
+    std::map<HitType, HitKalmanFitMap> viewHitKalmanFitMap;
+    for (const HitType &view : order)
     {
-        for (const CaloHit *const pSeedHit : caloHits0)
-        {
-            const CartesianVector &seed{pSeedHit->GetPositionVector()};
-            Eigen::VectorXd init(2);
-            init << seed.GetX(), seed.GetZ();
-            // Establish a starting seed
-            for (const CaloHit *const pCaloHit : caloHits0)
-            {
-                if (pCaloHit == pSeedHit)
-                    continue;
-                const CartesianVector &other{pCaloHit->GetPositionVector()};
-                if (this->Proximate(pSeedHit, pCaloHit))
-                {
-                    kalmanFits.emplace_back(KalmanFit{pSeedHit, pCaloHit, KalmanFilter2D(0.5, 0.1, 1.0, init), CaloHitSet(), pCaloHit});
-                    kalmanFits.back().m_kalmanFilter.Predict();
-                    Eigen::VectorXd measurement(2);
-                    measurement << other.GetX(), other.GetZ();
-                    kalmanFits.back().m_kalmanFilter.Update(measurement);
-                    kalmanFits.back().InsertHit(pSeedHit);
-                    hitKalmanFitMap[pSeedHit].insert(kalmanFits.back().m_id);
-                    kalmanFits.back().InsertHit(pCaloHit);
-                    hitKalmanFitMap[pCaloHit].insert(kalmanFits.back().m_id);
-                }
-            }
-        }
-        for (auto &kalmanFit : kalmanFits)
-        {
-            bool added{true};
-            while (added)
-            {
-                added = false;
-                kalmanFit.m_kalmanFilter.Predict();
-                const Eigen::VectorXd &state{kalmanFit.m_kalmanFilter.GetTemporaryState()};
-                Eigen::VectorXd previousMeasurement(2);
-                previousMeasurement << kalmanFit.m_pLastHit->GetPositionVector().GetX(), kalmanFit.m_pLastHit->GetPositionVector().GetZ();
+        viewKalmanFitsMap[view] = std::vector<KalmanFit>();
+        viewHitKalmanFitMap[view] = HitKalmanFitMap();
+        std::vector<KalmanFit> &kalmanFits{viewKalmanFitsMap[view]};
+        HitKalmanFitMap &hitKalmanFitMap{viewHitKalmanFitMap[view]};
 
-                const CaloHit *pBestHit{nullptr};
-                Eigen::VectorXd bestMeasurement(2);
-                double bestDistanceSquared{std::numeric_limits<double>::max()};
+        for (const auto &[bin, caloHits0] : m_slicedCaloHits[view]->GetSliceHitMap())
+        {
+            for (const CaloHit *const pSeedHit : caloHits0)
+            {
+                const CartesianVector &seed{pSeedHit->GetPositionVector()};
+                Eigen::VectorXd init(2);
+                init << seed.GetX(), seed.GetZ();
+                // Establish a starting seed
                 for (const CaloHit *const pCaloHit : caloHits0)
                 {
-                    if (kalmanFit.m_caloHits.find(pCaloHit) != kalmanFit.m_caloHits.end())
+                    if (pCaloHit == pSeedHit)
                         continue;
                     const CartesianVector &other{pCaloHit->GetPositionVector()};
-                    if (this->Proximate(kalmanFit.m_pLastHit, pCaloHit))
+                    if (this->Proximate(pSeedHit, pCaloHit))
                     {
+                        kalmanFits.emplace_back(KalmanFit{pSeedHit, pCaloHit, KalmanFilter2D(0.5, 0.1, 1.0, init), CaloHitSet(), pCaloHit});
+                        kalmanFits.back().m_kalmanFilter.Predict();
                         Eigen::VectorXd measurement(2);
                         measurement << other.GetX(), other.GetZ();
-                        // Check that the hit is (very approximately) in the direction of the Kalman filter
-                        const Eigen::VectorXd &thisDirection{(measurement - previousMeasurement).normalized()};
-                        const double cosTheta{thisDirection.dot(kalmanFit.m_kalmanFilter.GetDirection())};
-                        if (cosTheta < 0.94) //0.866)
+                        kalmanFits.back().m_kalmanFilter.Update(measurement);
+                        kalmanFits.back().InsertHit(pSeedHit);
+                        hitKalmanFitMap[pSeedHit].insert(kalmanFits.back().m_id);
+                        kalmanFits.back().InsertHit(pCaloHit);
+                        hitKalmanFitMap[pCaloHit].insert(kalmanFits.back().m_id);
+                    }
+                }
+            }
+            for (auto &kalmanFit : kalmanFits)
+            {
+                bool added{true};
+                while (added)
+                {
+                    added = false;
+                    kalmanFit.m_kalmanFilter.Predict();
+                    const Eigen::VectorXd &state{kalmanFit.m_kalmanFilter.GetTemporaryState()};
+                    Eigen::VectorXd previousMeasurement(2);
+                    previousMeasurement << kalmanFit.m_pLastHit->GetPositionVector().GetX(), kalmanFit.m_pLastHit->GetPositionVector().GetZ();
+
+                    const CaloHit *pBestHit{nullptr};
+                    Eigen::VectorXd bestMeasurement(2);
+                    double bestDistanceSquared{std::numeric_limits<double>::max()};
+                    for (const CaloHit *const pCaloHit : caloHits0)
+                    {
+                        if (kalmanFit.m_caloHits.find(pCaloHit) != kalmanFit.m_caloHits.end())
                             continue;
-                        // Here we want to actually consider the quality of the prediction and only retain the best ones
-                        // This will need to become more sophisticated to consider not just the local hits, but also the alternative fits in the vicinity
-                        // It should probably guarantee splitting when forks develop - this might be detectable when comparing the final result - i.e. two
-                        // clusters with a common stem that then move in different directions at a vertex
-                        //
-                        // Would really like the prediction to sit inside the actual hit, but that's probably too strong a constraint, especially early on -
-                        // might be able to apply this once the cluster has a few hits already
-                        const double distanceSquared{(state - measurement).squaredNorm()};
-                        if (distanceSquared < bestDistanceSquared)
+                        const CartesianVector &other{pCaloHit->GetPositionVector()};
+                        if (this->Proximate(kalmanFit.m_pLastHit, pCaloHit))
                         {
-                            bestDistanceSquared = distanceSquared;
-                            bestMeasurement = measurement;
-                            pBestHit = pCaloHit;
+                            Eigen::VectorXd measurement(2);
+                            measurement << other.GetX(), other.GetZ();
+                            // Check that the hit is (very approximately) in the direction of the Kalman filter
+                            const Eigen::VectorXd &thisDirection{(measurement - previousMeasurement).normalized()};
+                            const double cosTheta{thisDirection.dot(kalmanFit.m_kalmanFilter.GetDirection())};
+                            if (cosTheta < 0.94) //0.866)
+                                continue;
+                            // Here we want to actually consider the quality of the prediction and only retain the best ones
+                            // This will need to become more sophisticated to consider not just the local hits, but also the alternative fits in the vicinity
+                            // It should probably guarantee splitting when forks develop - this might be detectable when comparing the final result - i.e. two
+                            // clusters with a common stem that then move in different directions at a vertex
+                            //
+                            // Would really like the prediction to sit inside the actual hit, but that's probably too strong a constraint, especially early on -
+                            // might be able to apply this once the cluster has a few hits already
+                            const double distanceSquared{(state - measurement).squaredNorm()};
+                            if (distanceSquared < bestDistanceSquared)
+                            {
+                                bestDistanceSquared = distanceSquared;
+                                bestMeasurement = measurement;
+                                pBestHit = pCaloHit;
+                            }
                         }
                     }
-                }
-                if (pBestHit && this->Proximate(kalmanFit.m_pLastHit, pBestHit, 0.5f))
-                {
-                    added = true;
-                    kalmanFit.m_kalmanFilter.Update(bestMeasurement);
-                    kalmanFit.InsertHit(pBestHit);
-                    hitKalmanFitMap[pBestHit].insert(kalmanFit.m_id);
-                }
-            }
-        }
-
-        // Look for duplicate Kalman fits
-        for (auto iter1 = kalmanFits.begin(); iter1 != kalmanFits.end(); ++iter1)
-        {
-            KalmanFit &kalmanFit1{*iter1};
-            for (auto iter2 = std::next(iter1); iter2 != kalmanFits.end();)
-            {
-                KalmanFit &kalmanFit2{*iter2};
-                bool subset{true};
-                for (const CaloHit *const pCaloHit : kalmanFit2.m_caloHits)
-                {
-                    if (hitKalmanFitMap[pCaloHit].find(kalmanFit1.m_id) == hitKalmanFitMap[pCaloHit].end())
+                    if (pBestHit && this->Proximate(kalmanFit.m_pLastHit, pBestHit, 0.5f))
                     {
-                        subset = false;
-                        break;
+                        added = true;
+                        kalmanFit.m_kalmanFilter.Update(bestMeasurement);
+                        kalmanFit.InsertHit(pBestHit);
+                        hitKalmanFitMap[pBestHit].insert(kalmanFit.m_id);
                     }
                 }
-                if (subset)
-                    iter2 = kalmanFits.erase(iter2);
-                else
-                    ++iter2;
+            }
+
+            // Look for duplicate Kalman fits
+            for (auto iter1 = kalmanFits.begin(); iter1 != kalmanFits.end(); ++iter1)
+            {
+                KalmanFit &kalmanFit1{*iter1};
+                for (auto iter2 = std::next(iter1); iter2 != kalmanFits.end();)
+                {
+                    KalmanFit &kalmanFit2{*iter2};
+                    bool subset{true};
+                    for (const CaloHit *const pCaloHit : kalmanFit2.m_caloHits)
+                    {
+                        if (hitKalmanFitMap[pCaloHit].find(kalmanFit1.m_id) == hitKalmanFitMap[pCaloHit].end())
+                        {
+                            subset = false;
+                            break;
+                        }
+                    }
+                    if (subset)
+                        iter2 = kalmanFits.erase(iter2);
+                    else
+                        ++iter2;
+                }
             }
         }
 
-        /*
-        const float chi2{chi2s.at(i)};
-        const CandidateCluster::HitTriplet &triplet{triplets.at(i)};
-        const CaloHit *const pHit0{std::get<0>(triplet)};
-        const CaloHit *const pHit1{std::get<1>(triplet)};
-        const CaloHit *const pHit2{std::get<2>(triplet)};
-        */
+        PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1.f, -1.f, 1.f));
+        for (auto &kalmanFit : kalmanFits)
+        {
+            const CaloHitList caloHits(kalmanFit.m_caloHits.begin(), kalmanFit.m_caloHits.end());
+            PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &caloHits, "Kalman", AUTOITER));
+        }
+        PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
     }
-
-    PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1.f, -1.f, 1.f));
-    for (auto &kalmanFit : kalmanFits)
-    {
-        const CaloHitList caloHits(kalmanFit.m_caloHits.begin(), kalmanFit.m_caloHits.end());
-        PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &caloHits, "Kalman", AUTOITER));
-    }
-    PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
