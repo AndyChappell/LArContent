@@ -13,6 +13,7 @@
 #include "larpandoracontent/LArObjects/LArSlicedCaloHitList.h"
 #include "larpandoracontent/LArUtility/KalmanFilter.h"
 
+#include <atomic>
 #include <unordered_map>
 
 namespace lar_content
@@ -48,11 +49,25 @@ private:
         KalmanFilter2D m_kalmanFilter;
         pandora::CaloHitSet m_caloHits;
         const pandora::CaloHit *m_pLastHit;
+        int m_id;
+
+        KalmanFit(const pandora::CaloHit *const pSeedHit1, const pandora::CaloHit *const pSeedHit2, const KalmanFilter2D &kalmanFilter, const pandora::CaloHitSet &caloHits,
+            const pandora::CaloHit *const pLastHit) :
+            m_pSeedHit1(pSeedHit1),
+            m_pSeedHit2(pSeedHit2),
+            m_kalmanFilter(kalmanFilter),
+            m_caloHits(caloHits),
+            m_pLastHit(pLastHit),
+            m_id(m_counter.fetch_add(1))
+        {
+        };
+
+    private:
+        static std::atomic<int> m_counter;
     };
 
-    typedef KalmanFit* KalmanFitPtr;
-    typedef std::set<KalmanFitPtr> KalmanFitSet;
-    typedef std::map<const pandora::CaloHit *, KalmanFitSet> HitKalmanFitMap;
+    typedef std::set<int> KalmanFitIDSet;
+    typedef std::map<const pandora::CaloHit *, KalmanFitIDSet> HitKalmanFitMap;
 
     /**
      *  @brief  CandidateCluster class

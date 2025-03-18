@@ -21,6 +21,8 @@ using namespace pandora;
 namespace lar_content
 {
 
+std::atomic<int> KalmanClusterCreationAlgorithm::KalmanFit::m_counter(0);
+
 KalmanClusterCreationAlgorithm::KalmanClusterCreationAlgorithm() :
     m_minMipFraction{0.f}
 {
@@ -163,9 +165,9 @@ void KalmanClusterCreationAlgorithm::IdentifyCandidateClusters(const ViewVector 
                     measurement << other.GetX(), other.GetZ();
                     kalmanFits.back().m_kalmanFilter.Update(measurement);
                     kalmanFits.back().InsertHit(pSeedHit);
-                    hitKalmanFitMap[pSeedHit].insert(&kalmanFits.back());
+                    hitKalmanFitMap[pSeedHit].insert(kalmanFits.back().m_id);
                     kalmanFits.back().InsertHit(pCaloHit);
-                    hitKalmanFitMap[pCaloHit].insert(&kalmanFits.back());
+                    hitKalmanFitMap[pCaloHit].insert(kalmanFits.back().m_id);
                 }
             }
         }
@@ -218,7 +220,7 @@ void KalmanClusterCreationAlgorithm::IdentifyCandidateClusters(const ViewVector 
                     added = true;
                     kalmanFit.m_kalmanFilter.Update(bestMeasurement);
                     kalmanFit.InsertHit(pBestHit);
-                    hitKalmanFitMap[pBestHit].insert(&kalmanFit);
+                    hitKalmanFitMap[pBestHit].insert(kalmanFit.m_id);
                 }
             }
         }
@@ -233,7 +235,7 @@ void KalmanClusterCreationAlgorithm::IdentifyCandidateClusters(const ViewVector 
                 bool subset{true};
                 for (const CaloHit *const pCaloHit : kalmanFit2.m_caloHits)
                 {
-                    if (hitKalmanFitMap[pCaloHit].find(&kalmanFit1) == hitKalmanFitMap[pCaloHit].end())
+                    if (hitKalmanFitMap[pCaloHit].find(kalmanFit1.m_id) == hitKalmanFitMap[pCaloHit].end())
                     {
                         subset = false;
                         break;
