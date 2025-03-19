@@ -149,6 +149,14 @@ private:
     void BuildClusters(const pandora::CaloHitVector &sliceCaloHits, KalmanFitVector &kalmanFits, HitKalmanFitMap &hitKalmanFitMap);
 
     /**
+     *  @brief  Remove duplicate kalman fits
+     *
+     *  @param[in,out]  kalmanFits the vector of kalman fits to update
+     *  @param[in,out]  hitKalmanFitMap the map from hits to kalman fits to update
+     */
+    void RemoveDuplicateKalmanFits(KalmanFitVector &kalmanFits, HitKalmanFitMap &hitKalmanFitMap);
+
+    /**
      *  @brief  Make candidate 3D hits from hits in two or more views
      *
      *  @param  caloHits0 the first vector of input 2D calo hits

@@ -150,29 +150,7 @@ void KalmanClusterCreationAlgorithm::IdentifyCandidateClusters(const ViewVector 
         {
             this->MakeClusterSeeds(caloHits0, kalmanFits, hitKalmanFitMap);
             this->BuildClusters(caloHits0, kalmanFits, hitKalmanFitMap);
-
-            // Look for duplicate Kalman fits
-            for (auto iter1 = kalmanFits.begin(); iter1 != kalmanFits.end(); ++iter1)
-            {
-                KalmanFit &kalmanFit1{*iter1};
-                for (auto iter2 = std::next(iter1); iter2 != kalmanFits.end();)
-                {
-                    KalmanFit &kalmanFit2{*iter2};
-                    bool subset{true};
-                    for (const CaloHit *const pCaloHit : kalmanFit2.m_caloHits)
-                    {
-                        if (hitKalmanFitMap[pCaloHit].find(kalmanFit1.m_id) == hitKalmanFitMap[pCaloHit].end())
-                        {
-                            subset = false;
-                            break;
-                        }
-                    }
-                    if (subset)
-                        iter2 = kalmanFits.erase(iter2);
-                    else
-                        ++iter2;
-                }
-            }
+            this->RemoveDuplicateKalmanFits(kalmanFits, hitKalmanFitMap);
         }
 
         PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1.f, -1.f, 1.f));
@@ -271,6 +249,33 @@ void KalmanClusterCreationAlgorithm::BuildClusters(const CaloHitVector &sliceCal
                 kalmanFit.InsertHit(pBestHit);
                 hitKalmanFitMap[pBestHit].insert(kalmanFit.m_id);
             }
+        }
+    }
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+void KalmanClusterCreationAlgorithm::RemoveDuplicateKalmanFits(KalmanFitVector &kalmanFits, HitKalmanFitMap &hitKalmanFitMap)
+{
+    for (auto iter1 = kalmanFits.begin(); iter1 != kalmanFits.end(); ++iter1)
+    {
+        KalmanFit &kalmanFit1{*iter1};
+        for (auto iter2 = std::next(iter1); iter2 != kalmanFits.end();)
+        {
+            KalmanFit &kalmanFit2{*iter2};
+            bool subset{true};
+            for (const CaloHit *const pCaloHit : kalmanFit2.m_caloHits)
+            {
+                if (hitKalmanFitMap[pCaloHit].find(kalmanFit1.m_id) == hitKalmanFitMap[pCaloHit].end())
+                {
+                    subset = false;
+                    break;
+                }
+            }
+            if (subset)
+                iter2 = kalmanFits.erase(iter2);
+            else
+                ++iter2;
         }
     }
 }
