@@ -179,7 +179,7 @@ void KalmanClusterCreationAlgorithm::MakeClusterSeeds(const CaloHitVector &slice
             const CartesianVector &other{pCaloHit->GetPositionVector()};
             if (this->Proximate(pSeedHit, pCaloHit))
             {
-                KalmanFit kalmanFit{pSeedHit, pCaloHit, KalmanFilter2D(0.5, 0.1, 1.0, init), CaloHitSet(), pCaloHit};
+                KalmanFit kalmanFit{pSeedHit, pCaloHit, KalmanFilter2D(1, 0.0625, 0.0625, init), CaloHitSet(), pSeedHit};
                 kalmanFit.m_kalmanFilter.Predict();
                 Eigen::VectorXd measurement(2);
                 measurement << other.GetX(), other.GetZ();
@@ -198,6 +198,7 @@ void KalmanClusterCreationAlgorithm::MakeClusterSeeds(const CaloHitVector &slice
 
 void KalmanClusterCreationAlgorithm::BuildClusters(const CaloHitVector &sliceCaloHits, KalmanFitVector &kalmanFits, HitKalmanFitMap &hitKalmanFitMap)
 {
+    PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1.f, -1.f, 1.f));
     for (auto &kalmanFit : kalmanFits)
     {
         bool added{true};
@@ -224,6 +225,17 @@ void KalmanClusterCreationAlgorithm::BuildClusters(const CaloHitVector &sliceCal
                     // Check that the hit is (very approximately) in the direction of the Kalman filter
                     const Eigen::VectorXd &thisDirection{(measurement - previousMeasurement).normalized()};
                     const double cosTheta{thisDirection.dot(kalmanFit.m_kalmanFilter.GetDirection())};
+
+                    const CaloHitList caloHits(kalmanFit.m_caloHits.begin(), kalmanFit.m_caloHits.end());
+                    PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &caloHits, "Input", GRAY));
+                    PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &other, "Measurement", BLUE, 2));
+                    const CartesianVector predicted{CartesianVector(state[0], 0.f, state[1])};
+                    const CartesianVector lastHit{kalmanFit.m_pLastHit->GetPositionVector()};
+                    const CartesianVector direction{lastHit + CartesianVector(kalmanFit.m_kalmanFilter.GetDirection()[0], 0.f, kalmanFit.m_kalmanFilter.GetDirection()[1]) * 5};
+                    PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &predicted, "Prediction " + std::to_string((state - measurement).norm()), RED, 2));
+                    PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &lastHit, &direction, "Direction " + std::to_string(cosTheta), BLACK, 1, 1));
+                    PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
+
                     if (cosTheta < 0.94) //0.866)
                         continue;
                     // Here we want to actually consider the quality of the prediction and only retain the best ones
