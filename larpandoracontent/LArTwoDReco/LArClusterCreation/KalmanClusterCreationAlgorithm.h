@@ -140,6 +140,15 @@ private:
     void MakeClusterSeeds(const pandora::CaloHitVector &sliceCaloHits, KalmanFitVector &kalmanFits, HitKalmanFitMap &hitKalmanFitMap);
 
     /**
+     *  @brief  Build clusters from hits in a single view
+     *
+     *  @param[in]  sliceCaloHits the input slice calo hits
+     *  @param[in,out]  kalmanFits the vector of kalman fits to update
+     *  @param[in,out]  hitKalmanFitMap the map from hits to kalman fits to update
+     */
+    void BuildClusters(const pandora::CaloHitVector &sliceCaloHits, KalmanFitVector &kalmanFits, HitKalmanFitMap &hitKalmanFitMap);
+
+    /**
      *  @brief  Make candidate 3D hits from hits in two or more views
      *
      *  @param  caloHits0 the first vector of input 2D calo hits

@@ -149,59 +149,7 @@ void KalmanClusterCreationAlgorithm::IdentifyCandidateClusters(const ViewVector 
         for (const auto &[bin, caloHits0] : m_slicedCaloHits[view]->GetSliceHitMap())
         {
             this->MakeClusterSeeds(caloHits0, kalmanFits, hitKalmanFitMap);
-            for (auto &kalmanFit : kalmanFits)
-            {
-                bool added{true};
-                while (added)
-                {
-                    added = false;
-                    kalmanFit.m_kalmanFilter.Predict();
-                    const Eigen::VectorXd &state{kalmanFit.m_kalmanFilter.GetTemporaryState()};
-                    Eigen::VectorXd previousMeasurement(2);
-                    previousMeasurement << kalmanFit.m_pLastHit->GetPositionVector().GetX(), kalmanFit.m_pLastHit->GetPositionVector().GetZ();
-
-                    const CaloHit *pBestHit{nullptr};
-                    Eigen::VectorXd bestMeasurement(2);
-                    double bestDistanceSquared{std::numeric_limits<double>::max()};
-                    for (const CaloHit *const pCaloHit : caloHits0)
-                    {
-                        if (kalmanFit.m_caloHits.find(pCaloHit) != kalmanFit.m_caloHits.end())
-                            continue;
-                        const CartesianVector &other{pCaloHit->GetPositionVector()};
-                        if (this->Proximate(kalmanFit.m_pLastHit, pCaloHit))
-                        {
-                            Eigen::VectorXd measurement(2);
-                            measurement << other.GetX(), other.GetZ();
-                            // Check that the hit is (very approximately) in the direction of the Kalman filter
-                            const Eigen::VectorXd &thisDirection{(measurement - previousMeasurement).normalized()};
-                            const double cosTheta{thisDirection.dot(kalmanFit.m_kalmanFilter.GetDirection())};
-                            if (cosTheta < 0.94) //0.866)
-                                continue;
-                            // Here we want to actually consider the quality of the prediction and only retain the best ones
-                            // This will need to become more sophisticated to consider not just the local hits, but also the alternative fits in the vicinity
-                            // It should probably guarantee splitting when forks develop - this might be detectable when comparing the final result - i.e. two
-                            // clusters with a common stem that then move in different directions at a vertex
-                            //
-                            // Would really like the prediction to sit inside the actual hit, but that's probably too strong a constraint, especially early on -
-                            // might be able to apply this once the cluster has a few hits already
-                            const double distanceSquared{(state - measurement).squaredNorm()};
-                            if (distanceSquared < bestDistanceSquared)
-                            {
-                                bestDistanceSquared = distanceSquared;
-                                bestMeasurement = measurement;
-                                pBestHit = pCaloHit;
-                            }
-                        }
-                    }
-                    if (pBestHit && this->Proximate(kalmanFit.m_pLastHit, pBestHit, 0.5f))
-                    {
-                        added = true;
-                        kalmanFit.m_kalmanFilter.Update(bestMeasurement);
-                        kalmanFit.InsertHit(pBestHit);
-                        hitKalmanFitMap[pBestHit].insert(kalmanFit.m_id);
-                    }
-                }
-            }
+            this->BuildClusters(caloHits0, kalmanFits, hitKalmanFitMap);
 
             // Look for duplicate Kalman fits
             for (auto iter1 = kalmanFits.begin(); iter1 != kalmanFits.end(); ++iter1)
@@ -263,6 +211,65 @@ void KalmanClusterCreationAlgorithm::MakeClusterSeeds(const CaloHitVector &slice
                 kalmanFit.InsertHit(pCaloHit);
                 hitKalmanFitMap[pCaloHit].insert(kalmanFit.m_id);
                 kalmanFits.emplace_back(kalmanFit);
+            }
+        }
+    }
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+void KalmanClusterCreationAlgorithm::BuildClusters(const CaloHitVector &sliceCaloHits, KalmanFitVector &kalmanFits, HitKalmanFitMap &hitKalmanFitMap)
+{
+    for (auto &kalmanFit : kalmanFits)
+    {
+        bool added{true};
+        while (added)
+        {
+            added = false;
+            kalmanFit.m_kalmanFilter.Predict();
+            const Eigen::VectorXd &state{kalmanFit.m_kalmanFilter.GetTemporaryState()};
+            Eigen::VectorXd previousMeasurement(2);
+            previousMeasurement << kalmanFit.m_pLastHit->GetPositionVector().GetX(), kalmanFit.m_pLastHit->GetPositionVector().GetZ();
+
+            const CaloHit *pBestHit{nullptr};
+            Eigen::VectorXd bestMeasurement(2);
+            double bestDistanceSquared{std::numeric_limits<double>::max()};
+            for (const CaloHit *const pCaloHit : sliceCaloHits)
+            {
+                if (kalmanFit.m_caloHits.find(pCaloHit) != kalmanFit.m_caloHits.end())
+                    continue;
+                const CartesianVector &other{pCaloHit->GetPositionVector()};
+                if (this->Proximate(kalmanFit.m_pLastHit, pCaloHit))
+                {
+                    Eigen::VectorXd measurement(2);
+                    measurement << other.GetX(), other.GetZ();
+                    // Check that the hit is (very approximately) in the direction of the Kalman filter
+                    const Eigen::VectorXd &thisDirection{(measurement - previousMeasurement).normalized()};
+                    const double cosTheta{thisDirection.dot(kalmanFit.m_kalmanFilter.GetDirection())};
+                    if (cosTheta < 0.94) //0.866)
+                        continue;
+                    // Here we want to actually consider the quality of the prediction and only retain the best ones
+                    // This will need to become more sophisticated to consider not just the local hits, but also the alternative fits in the vicinity
+                    // It should probably guarantee splitting when forks develop - this might be detectable when comparing the final result - i.e. two
+                    // clusters with a common stem that then move in different directions at a vertex
+                    //
+                    // Would really like the prediction to sit inside the actual hit, but that's probably too strong a constraint, especially early on -
+                    // might be able to apply this once the cluster has a few hits already
+                    const double distanceSquared{(state - measurement).squaredNorm()};
+                    if (distanceSquared < bestDistanceSquared)
+                    {
+                        bestDistanceSquared = distanceSquared;
+                        bestMeasurement = measurement;
+                        pBestHit = pCaloHit;
+                    }
+                }
+            }
+            if (pBestHit && this->Proximate(kalmanFit.m_pLastHit, pBestHit, 0.5f))
+            {
+                added = true;
+                kalmanFit.m_kalmanFilter.Update(bestMeasurement);
+                kalmanFit.InsertHit(pBestHit);
+                hitKalmanFitMap[pBestHit].insert(kalmanFit.m_id);
             }
         }
     }
