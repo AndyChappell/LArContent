@@ -167,15 +167,15 @@ void KalmanClusterCreationAlgorithm::IdentifyCandidateClusters(const ViewVector 
 
 void KalmanClusterCreationAlgorithm::MakeClusterSeeds(const CaloHitVector &sliceCaloHits, KalmanFitVector &kalmanFits, HitKalmanFitMap &hitKalmanFitMap)
 {
-    for (const CaloHit *const pSeedHit : sliceCaloHits)
+    for (auto iter1 = sliceCaloHits.begin(); iter1 != sliceCaloHits.end(); ++iter1)
     {
+        const CaloHit *const pSeedHit{*iter1};
         const CartesianVector &seed{pSeedHit->GetPositionVector()};
         Eigen::VectorXd init(2);
         init << seed.GetX(), seed.GetZ();
-        for (const CaloHit *const pCaloHit : sliceCaloHits)
+        for (auto iter2 = std::next(iter1); iter2 != sliceCaloHits.end(); ++iter2)
         {
-            if (pCaloHit == pSeedHit)
-                continue;
+            const CaloHit *const pCaloHit{*iter2};
 
             const CaloHitList caloHits(sliceCaloHits.begin(), sliceCaloHits.end());
             const CartesianVector &other{pCaloHit->GetPositionVector()};
