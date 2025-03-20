@@ -232,12 +232,24 @@ private:
      *
      *  @param  pCaloHit the calo hit
      *  @param  position the position to check
-     *  @param  xTol the cotnainment tolerance in the x direction
-     *  @param  zTol the cotnainment tolerance in the z direction
+     *  @param  xTol the containment tolerance in the x direction
+     *  @param  zTol the containment tolerance in the z direction
      *
      *  @return true if the position is contained within the hit, false otherwise
      */
     bool Contains(const pandora::CaloHit *const pCaloHit, const Eigen::VectorXd &position, const float xTol = 0.f, const float zTol = 0.f) const;
+
+    /**
+     *  @brief  Determines if there is a hit between two hits. If the intervening hit significantly overlaps with either of the extremal hits
+     *          then the two hits are not considered to skip over the intervening hit.
+     *
+     *  @param  caloHits the collection of hits within the slice
+     *  @param  pCaloHit1 the first calo hit
+     *  @param  pCaloHit2 the second calo hit
+     *
+     *  @return true if there is a hit between the two hits, false otherwise
+     */
+    bool SkipsOverHit(const pandora::CaloHitVector &caloHits, const pandora::CaloHit *const pCaloHit1, const pandora::CaloHit *const pCaloHit2) const;
 
     typedef std::map<pandora::HitType, LArSlicedCaloHitList *> ViewSlicedHitsMap;
 

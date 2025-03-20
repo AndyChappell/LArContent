@@ -176,6 +176,8 @@ void KalmanClusterCreationAlgorithm::MakeClusterSeeds(const CaloHitVector &slice
         {
             if (pCaloHit == pSeedHit)
                 continue;
+            if (this->SkipsOverHit(sliceCaloHits, pSeedHit, pCaloHit))
+                continue;
             const CartesianVector &other{pCaloHit->GetPositionVector()};
             if (this->Proximate(pSeedHit, pCaloHit))
             {
@@ -510,6 +512,73 @@ bool KalmanClusterCreationAlgorithm::Contains(const CaloHit *const pCaloHit, con
     const float height{0.5f * pCaloHit->GetCellSize0() + zTol};
     const float zlo{hitPosition.GetZ() - height}, zhi{hitPosition.GetZ() + height};
     return (position(0) >= xlo && position(0) <= xhi && position(1) >= zlo && position(1) <= zhi);
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+bool KalmanClusterCreationAlgorithm::SkipsOverHit(const CaloHitVector &caloHits, const CaloHit *const pCaloHit1, const CaloHit *const pCaloHit2) const
+{
+    // For each hit in the calo hit list, check if the line between the two hits passes through the hit
+    const CartesianVector &pos1{pCaloHit1->GetPositionVector()};
+    const CartesianVector &pos2{pCaloHit2->GetPositionVector()};
+    for (const CaloHit *const pCaloHit : caloHits)
+    {
+        if (pCaloHit == pCaloHit1 || pCaloHit == pCaloHit2)
+            continue;
+
+        const CartesianVector &hitPosition{pCaloHit->GetPositionVector()};
+        const double xmin{hitPosition.GetX() - 0.5 * pCaloHit->GetCellSize1()}, xmax{hitPosition.GetX() + 0.5 * pCaloHit->GetCellSize1()};
+        const double zmin{hitPosition.GetZ() - 0.5 * pCaloHit->GetCellSize0()}, zmax{hitPosition.GetZ() + 0.5 * pCaloHit->GetCellSize0()};
+        const double hitSize{(xmax - xmin) * (zmax - zmin)};
+
+        double entry{0.}, exit{1.};
+
+        auto check_axis = [&](double p1, double p2, double minB, double maxB)
+        {
+            double t1{(minB - p1) / (p2 - p1)};
+            double t2{(maxB - p1) / (p2 - p1)};
+
+            if (t1 > t2)
+                std::swap(t1, t2);
+
+            entry = std::max(entry, t1);
+            exit = std::min(exit, t2);
+
+            return entry <= exit;
+        };
+
+        if (check_axis(pos1.GetX(), pos2.GetX(), xmin, xmax) && check_axis(pos1.GetZ(), pos2.GetZ(), zmin, zmax))
+        {
+            // Check if the intervening hit and the first extremal hit have a large overlap
+            const double xmin1{pos1.GetX() - 0.5 * pCaloHit1->GetCellSize1()}, xmax1{pos1.GetX() + 0.5 * pCaloHit1->GetCellSize1()};
+            const double zmin1{pos1.GetZ() - 0.5 * pCaloHit1->GetCellSize0()}, zmax1{pos1.GetZ() + 0.5 * pCaloHit1->GetCellSize0()};
+            const double hitSize1{(xmax1 - xmin1) * (zmax1 - zmin1)};
+            const double x_left1{std::max(xmin, xmin1)}, x_right1{std::min(xmax, xmax1)};
+            const double z_bottom1{std::max(zmin, zmin1)}, z_top1{std::min(zmax, zmax1)};
+            double overlap1{0};
+            if (x_left1 < x_right1 && z_bottom1 < z_top1)
+                overlap1 = (x_right1 - x_left1) * (z_top1 - z_bottom1);
+            if (overlap1 > 0.5 * hitSize1 || overlap1 > 0.5 * hitSize)
+                return false;
+
+            // Check if the intervening hit and the second extremal hit have a large overlap
+            const double xmin2{pos2.GetX() - 0.5 * pCaloHit2->GetCellSize1()}, xmax2{pos2.GetX() + 0.5 * pCaloHit2->GetCellSize1()};
+            const double zmin2{pos2.GetZ() - 0.5 * pCaloHit2->GetCellSize0()}, zmax2{pos2.GetZ() + 0.5 * pCaloHit2->GetCellSize0()};
+            const double hitSize2{(xmax1 - xmin1) * (zmax1 - zmin1)};
+            const double x_left2{std::max(xmin, xmin2)}, x_right2{std::min(xmax, xmax2)};
+            const double z_bottom2{std::max(zmin, zmin2)}, z_top2{std::min(zmax, zmax2)};
+            double overlap2{0};
+            if (x_left2 < x_right2 && z_bottom2 < z_top2)
+                overlap2 = (x_right2 - x_left2) * (z_top2 - z_bottom2);
+            if (overlap2 > 0.5 * hitSize2 || overlap2 > 0.5 * hitSize)
+                return false;
+
+            // We have an intervening hit without significant overlap with either extremal hit
+            return true;
+        }
+    }
+
+    return false;
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
