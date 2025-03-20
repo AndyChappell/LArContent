@@ -176,11 +176,13 @@ void KalmanClusterCreationAlgorithm::MakeClusterSeeds(const CaloHitVector &slice
         {
             if (pCaloHit == pSeedHit)
                 continue;
-            if (this->SkipsOverHit(sliceCaloHits, pSeedHit, pCaloHit))
-                continue;
+
+            const CaloHitList caloHits(sliceCaloHits.begin(), sliceCaloHits.end());
             const CartesianVector &other{pCaloHit->GetPositionVector()};
             if (this->Proximate(pSeedHit, pCaloHit))
             {
+                if (this->SkipsOverHit(sliceCaloHits, pSeedHit, pCaloHit))
+                    continue;
                 KalmanFit kalmanFit{pSeedHit, pCaloHit, KalmanFilter2D(1, 0.0625, 0.0625, init), CaloHitSet(), pSeedHit};
                 kalmanFit.m_kalmanFilter.Predict();
                 Eigen::VectorXd measurement(2);
