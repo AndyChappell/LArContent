@@ -218,7 +218,7 @@ void KalmanClusterCreationAlgorithm::BuildClusters(const CaloHitVector &sliceCal
                 if (kalmanFit.m_caloHits.find(pCaloHit) != kalmanFit.m_caloHits.end())
                     continue;
                 const CartesianVector &other{pCaloHit->GetPositionVector()};
-                if (this->Proximate(kalmanFit.m_pLastHit, pCaloHit))
+                if ((kalmanFit.m_caloHits.size() < 4 && this->Proximate(kalmanFit.m_pLastHit, pCaloHit)) || this->Contains(pCaloHit, state, 0.25f, 0.125f))
                 {
                     Eigen::VectorXd measurement(2);
                     measurement << other.GetX(), other.GetZ();
@@ -226,15 +226,18 @@ void KalmanClusterCreationAlgorithm::BuildClusters(const CaloHitVector &sliceCal
                     const Eigen::VectorXd &thisDirection{(measurement - previousMeasurement).normalized()};
                     const double cosTheta{thisDirection.dot(kalmanFit.m_kalmanFilter.GetDirection())};
 
-                    const CaloHitList caloHits(kalmanFit.m_caloHits.begin(), kalmanFit.m_caloHits.end());
-                    PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &caloHits, "Input", GRAY));
-                    PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &other, "Measurement", BLUE, 2));
-                    const CartesianVector predicted{CartesianVector(state[0], 0.f, state[1])};
-                    const CartesianVector lastHit{kalmanFit.m_pLastHit->GetPositionVector()};
-                    const CartesianVector direction{lastHit + CartesianVector(kalmanFit.m_kalmanFilter.GetDirection()[0], 0.f, kalmanFit.m_kalmanFilter.GetDirection()[1]) * 5};
-                    PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &predicted, "Prediction " + std::to_string((state - measurement).norm()), RED, 2));
-                    PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &lastHit, &direction, "Direction " + std::to_string(cosTheta), BLACK, 1, 1));
-                    PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
+                    if (false && pCaloHit->GetHitType() == TPC_VIEW_V)
+                    {
+                        const CaloHitList caloHits(kalmanFit.m_caloHits.begin(), kalmanFit.m_caloHits.end());
+                        PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &caloHits, "Input", GRAY));
+                        PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &other, "Measurement", BLUE, 2));
+                        const CartesianVector predicted{CartesianVector(state[0], 0.f, state[1])};
+                        const CartesianVector lastHit{kalmanFit.m_pLastHit->GetPositionVector()};
+                        const CartesianVector direction{lastHit + CartesianVector(kalmanFit.m_kalmanFilter.GetDirection()[0], 0.f, kalmanFit.m_kalmanFilter.GetDirection()[1]) * 5};
+                        PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &predicted, "Prediction " + std::to_string((state - measurement).norm()), RED, 2));
+                        PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &lastHit, &direction, "Direction " + std::to_string(cosTheta), BLACK, 1, 1));
+                        PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
+                    }
 
                     if (cosTheta < 0.94) //0.866)
                         continue;
@@ -254,7 +257,7 @@ void KalmanClusterCreationAlgorithm::BuildClusters(const CaloHitVector &sliceCal
                     }
                 }
             }
-            if (pBestHit && this->Proximate(kalmanFit.m_pLastHit, pBestHit, 0.5f))
+            if (pBestHit)
             {
                 added = true;
                 kalmanFit.m_kalmanFilter.Update(bestMeasurement);
@@ -499,12 +502,12 @@ bool KalmanClusterCreationAlgorithm::Proximate(const CaloHit *const pCaloHit1, c
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-bool KalmanClusterCreationAlgorithm::Contains(const CaloHit *const pCaloHit, const Eigen::VectorXd &position) const
+bool KalmanClusterCreationAlgorithm::Contains(const CaloHit *const pCaloHit, const Eigen::VectorXd &position, const float xTol, const float zTol) const
 {
     const CartesianVector &hitPosition{pCaloHit->GetPositionVector()};
-    const float width{0.5f * pCaloHit->GetCellSize1()};
+    const float width{0.5f * pCaloHit->GetCellSize1() + xTol};
     const float xlo{hitPosition.GetX() - width}, xhi{hitPosition.GetX() + width};
-    const float height{0.5f * pCaloHit->GetCellSize0()};
+    const float height{0.5f * pCaloHit->GetCellSize0() + zTol};
     const float zlo{hitPosition.GetZ() - height}, zhi{hitPosition.GetZ() + height};
     return (position(0) >= xlo && position(0) <= xhi && position(1) >= zlo && position(1) <= zhi);
 }

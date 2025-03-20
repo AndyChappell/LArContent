@@ -232,10 +232,12 @@ private:
      *
      *  @param  pCaloHit the calo hit
      *  @param  position the position to check
+     *  @param  xTol the cotnainment tolerance in the x direction
+     *  @param  zTol the cotnainment tolerance in the z direction
      *
      *  @return true if the position is contained within the hit, false otherwise
      */
-    bool Contains(const pandora::CaloHit *const pCaloHit, const Eigen::VectorXd &position) const;
+    bool Contains(const pandora::CaloHit *const pCaloHit, const Eigen::VectorXd &position, const float xTol = 0.f, const float zTol = 0.f) const;
 
     typedef std::map<pandora::HitType, LArSlicedCaloHitList *> ViewSlicedHitsMap;
 
