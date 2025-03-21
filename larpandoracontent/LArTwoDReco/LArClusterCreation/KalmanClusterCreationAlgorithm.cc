@@ -137,13 +137,13 @@ StatusCode KalmanClusterCreationAlgorithm::Run()
 void KalmanClusterCreationAlgorithm::IdentifyCandidateClusters(const ViewVector &order)
 {
     // Begin processing the "primary" view with reference to the secondary and tertiary views
-    std::map<HitType, KalmanFitVector> viewKalmanFitsMap;
+    std::map<HitType, IDKalmanFitMap> viewKalmanFitsMap;
     std::map<HitType, HitKalmanFitMap> viewHitKalmanFitMap;
     for (const HitType &view : order)
     {
-        viewKalmanFitsMap[view] = std::vector<KalmanFit>();
+        viewKalmanFitsMap[view] = IDKalmanFitMap();
         viewHitKalmanFitMap[view] = HitKalmanFitMap();
-        KalmanFitVector &kalmanFits{viewKalmanFitsMap[view]};
+        IDKalmanFitMap &kalmanFits{viewKalmanFitsMap[view]};
         HitKalmanFitMap &hitKalmanFitMap{viewHitKalmanFitMap[view]};
 
         for (const auto &[bin, caloHits0] : m_slicedCaloHits[view]->GetSliceHitMap())
@@ -151,10 +151,12 @@ void KalmanClusterCreationAlgorithm::IdentifyCandidateClusters(const ViewVector 
             this->MakeClusterSeeds(caloHits0, kalmanFits, hitKalmanFitMap);
             this->BuildClusters(caloHits0, kalmanFits, hitKalmanFitMap);
             this->RemoveDuplicateKalmanFits(kalmanFits, hitKalmanFitMap);
+            // Here we also want to identify hits that are in multiple clusters and begin removing hits where they fit better with another cluster
+            this->AllocateAmbiguousHits(kalmanFits, hitKalmanFitMap);
         }
 
         PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1.f, -1.f, 1.f));
-        for (auto &kalmanFit : kalmanFits)
+        for (auto &[id, kalmanFit] : kalmanFits)
         {
             const CaloHitList caloHits(kalmanFit.m_caloHits.begin(), kalmanFit.m_caloHits.end());
             PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &caloHits, "Kalman", AUTOITER));
@@ -165,7 +167,7 @@ void KalmanClusterCreationAlgorithm::IdentifyCandidateClusters(const ViewVector 
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-void KalmanClusterCreationAlgorithm::MakeClusterSeeds(const CaloHitVector &sliceCaloHits, KalmanFitVector &kalmanFits, HitKalmanFitMap &hitKalmanFitMap)
+void KalmanClusterCreationAlgorithm::MakeClusterSeeds(const CaloHitVector &sliceCaloHits, IDKalmanFitMap &kalmanFits, HitKalmanFitMap &hitKalmanFitMap)
 {
     for (auto iter1 = sliceCaloHits.begin(); iter1 != sliceCaloHits.end(); ++iter1)
     {
@@ -183,7 +185,7 @@ void KalmanClusterCreationAlgorithm::MakeClusterSeeds(const CaloHitVector &slice
             {
                 if (this->SkipsOverHit(sliceCaloHits, pSeedHit, pCaloHit))
                     continue;
-                KalmanFit kalmanFit{pSeedHit, pCaloHit, KalmanFilter2D(1, 0.0625, 0.0625, init), CaloHitSet(), pSeedHit};
+                KalmanFit kalmanFit{pSeedHit, pCaloHit, KalmanFilter2D(1, 0.0625, 0.0625, init), CaloHitVector(), pSeedHit};
                 kalmanFit.m_kalmanFilter.Predict();
                 Eigen::VectorXd measurement(2);
                 measurement << other.GetX(), other.GetZ();
@@ -192,7 +194,7 @@ void KalmanClusterCreationAlgorithm::MakeClusterSeeds(const CaloHitVector &slice
                 hitKalmanFitMap[pSeedHit].insert(kalmanFit.m_id);
                 kalmanFit.InsertHit(pCaloHit);
                 hitKalmanFitMap[pCaloHit].insert(kalmanFit.m_id);
-                kalmanFits.emplace_back(kalmanFit);
+                kalmanFits.emplace(kalmanFit.m_id, kalmanFit);
             }
         }
     }
@@ -200,10 +202,10 @@ void KalmanClusterCreationAlgorithm::MakeClusterSeeds(const CaloHitVector &slice
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-void KalmanClusterCreationAlgorithm::BuildClusters(const CaloHitVector &sliceCaloHits, KalmanFitVector &kalmanFits, HitKalmanFitMap &hitKalmanFitMap)
+void KalmanClusterCreationAlgorithm::BuildClusters(const CaloHitVector &sliceCaloHits, IDKalmanFitMap &kalmanFits, HitKalmanFitMap &hitKalmanFitMap)
 {
     PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1.f, -1.f, 1.f));
-    for (auto &kalmanFit : kalmanFits)
+    for (auto &[id, kalmanFit] : kalmanFits)
     {
         bool added{true};
         while (added)
@@ -219,7 +221,7 @@ void KalmanClusterCreationAlgorithm::BuildClusters(const CaloHitVector &sliceCal
             double bestDistanceSquared{std::numeric_limits<double>::max()};
             for (const CaloHit *const pCaloHit : sliceCaloHits)
             {
-                if (kalmanFit.m_caloHits.find(pCaloHit) != kalmanFit.m_caloHits.end())
+                if (std::find(kalmanFit.m_caloHits.begin(), kalmanFit.m_caloHits.end(), pCaloHit) != kalmanFit.m_caloHits.end())
                     continue;
                 const CartesianVector &other{pCaloHit->GetPositionVector()};
                 if ((kalmanFit.m_caloHits.size() < 4 && this->Proximate(kalmanFit.m_pLastHit, pCaloHit)) || this->Contains(pCaloHit, state, 0.25f, 0.125f))
@@ -274,14 +276,14 @@ void KalmanClusterCreationAlgorithm::BuildClusters(const CaloHitVector &sliceCal
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-void KalmanClusterCreationAlgorithm::RemoveDuplicateKalmanFits(KalmanFitVector &kalmanFits, HitKalmanFitMap &hitKalmanFitMap)
+void KalmanClusterCreationAlgorithm::RemoveDuplicateKalmanFits(IDKalmanFitMap &kalmanFits, HitKalmanFitMap &hitKalmanFitMap)
 {
     for (auto iter1 = kalmanFits.begin(); iter1 != kalmanFits.end(); ++iter1)
     {
-        KalmanFit &kalmanFit1{*iter1};
+        KalmanFit &kalmanFit1{iter1->second};
         for (auto iter2 = std::next(iter1); iter2 != kalmanFits.end();)
         {
-            KalmanFit &kalmanFit2{*iter2};
+            KalmanFit &kalmanFit2{iter2->second};
             bool subset{true};
             for (const CaloHit *const pCaloHit : kalmanFit2.m_caloHits)
             {
@@ -295,6 +297,51 @@ void KalmanClusterCreationAlgorithm::RemoveDuplicateKalmanFits(KalmanFitVector &
                 iter2 = kalmanFits.erase(iter2);
             else
                 ++iter2;
+        }
+    }
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+void KalmanClusterCreationAlgorithm::AllocateAmbiguousHits(IDKalmanFitMap &kalmanFits, HitKalmanFitMap &hitKalmanFitMap)
+{
+    (void)kalmanFits;
+    for (const auto &[pCaloHit, fitIDs] : hitKalmanFitMap)
+    {
+        std::cout << pCaloHit << ": " << fitIDs.size() << std::endl;
+        for (const int id : fitIDs)
+        {
+            // Should consider removing deleted Kalman fits from the id to fit map to avoid the need for this check
+            // For ease, can probably just loop through the hit to id map at the end of slice processing and remove
+            // anything not found in the id to fit map at that point
+            if (kalmanFits.find(id) != kalmanFits.end())
+            {
+                const CaloHitVector &caloHits{kalmanFits.at(id).m_caloHits};
+                auto targetHit{std::find(caloHits.begin(), caloHits.end(), pCaloHit)};
+                if (targetHit != caloHits.end())
+                {
+                    const auto dForward{std::distance(caloHits.begin(), targetHit)};
+                    const auto dBackward{caloHits.size() - dForward - 1};
+                    // Look at the quality of the different Kalman fits for ambiguous hits
+                    if (dForward > 3 && dBackward > 3)
+                    {
+                        // Enough hits to check fit quality from both directions
+                        // Average the result and store in a mini map with the id as the key, then pick at the end
+                    }
+                    else if (dForward > 3)
+                    {
+                        // Fit more reliable in forward direction, use that
+                    }
+                    else if (dBackward > 3)
+                    {
+                        // Fit more reliable in backward direction, use that
+                    }
+                    else
+                    {
+                        // Small cluster, try both directions
+                    }
+                }
+            }
         }
     }
 }
@@ -588,7 +635,7 @@ bool KalmanClusterCreationAlgorithm::SkipsOverHit(const CaloHitVector &caloHits,
 
 void KalmanClusterCreationAlgorithm::KalmanFit::InsertHit(const CaloHit *const pCaloHit)
 {
-    m_caloHits.insert(pCaloHit);
+    m_caloHits.emplace_back(pCaloHit);
     m_pLastHit = pCaloHit;
 }
 

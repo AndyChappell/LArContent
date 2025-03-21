@@ -47,11 +47,11 @@ private:
         const pandora::CaloHit *m_pSeedHit1;
         const pandora::CaloHit *m_pSeedHit2;
         KalmanFilter2D m_kalmanFilter;
-        pandora::CaloHitSet m_caloHits;
+        pandora::CaloHitVector m_caloHits;
         const pandora::CaloHit *m_pLastHit;
         int m_id;
 
-        KalmanFit(const pandora::CaloHit *const pSeedHit1, const pandora::CaloHit *const pSeedHit2, const KalmanFilter2D &kalmanFilter, const pandora::CaloHitSet &caloHits,
+        KalmanFit(const pandora::CaloHit *const pSeedHit1, const pandora::CaloHit *const pSeedHit2, const KalmanFilter2D &kalmanFilter, const pandora::CaloHitVector &caloHits,
             const pandora::CaloHit *const pLastHit) :
             m_pSeedHit1(pSeedHit1),
             m_pSeedHit2(pSeedHit2),
@@ -67,7 +67,7 @@ private:
     };
 
     typedef std::set<int> KalmanFitIDSet;
-    typedef std::vector<KalmanFit> KalmanFitVector;
+    typedef std::map<int, KalmanFit> IDKalmanFitMap;
     typedef std::map<const pandora::CaloHit *, KalmanFitIDSet> HitKalmanFitMap;
 
     /**
@@ -134,27 +134,35 @@ private:
      *  @brief  Make cluster seeds from hits in a single view
      *
      *  @param[in]  sliceCaloHits the input slice calo hits
-     *  @param[out]  kalmanFits the vector of kalman fits to update
+     *  @param[out]  kalmanFits the map of kalman fits to update
      *  @param[out]  hitKalmanFitMap the map from hits to kalman fits to update
      */
-    void MakeClusterSeeds(const pandora::CaloHitVector &sliceCaloHits, KalmanFitVector &kalmanFits, HitKalmanFitMap &hitKalmanFitMap);
+    void MakeClusterSeeds(const pandora::CaloHitVector &sliceCaloHits, IDKalmanFitMap &kalmanFits, HitKalmanFitMap &hitKalmanFitMap);
 
     /**
      *  @brief  Build clusters from hits in a single view
      *
      *  @param[in]  sliceCaloHits the input slice calo hits
-     *  @param[in,out]  kalmanFits the vector of kalman fits to update
+     *  @param[in,out]  kalmanFits the map of kalman fits to update
      *  @param[in,out]  hitKalmanFitMap the map from hits to kalman fits to update
      */
-    void BuildClusters(const pandora::CaloHitVector &sliceCaloHits, KalmanFitVector &kalmanFits, HitKalmanFitMap &hitKalmanFitMap);
+    void BuildClusters(const pandora::CaloHitVector &sliceCaloHits, IDKalmanFitMap &kalmanFits, HitKalmanFitMap &hitKalmanFitMap);
 
     /**
      *  @brief  Remove duplicate kalman fits
      *
-     *  @param[in,out]  kalmanFits the vector of kalman fits to update
+     *  @param[in,out]  kalmanFits the map of kalman fits to update
      *  @param[in,out]  hitKalmanFitMap the map from hits to kalman fits to update
      */
-    void RemoveDuplicateKalmanFits(KalmanFitVector &kalmanFits, HitKalmanFitMap &hitKalmanFitMap);
+    void RemoveDuplicateKalmanFits(IDKalmanFitMap &kalmanFits, HitKalmanFitMap &hitKalmanFitMap);
+
+    /**
+     *  @brief  Determine which Kalman fit best describes hits that are represented in multiple fits
+     *
+     *  @param[in,out]  kalmanFits the map of kalman fits to update
+     *  @param[in,out]  hitKalmanFitMap the map from hits to kalman fits to update
+     */
+    void AllocateAmbiguousHits(IDKalmanFitMap &kalmanFits, HitKalmanFitMap &hitKalmanFitMap);
 
     /**
      *  @brief  Make candidate 3D hits from hits in two or more views
