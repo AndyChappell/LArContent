@@ -283,6 +283,7 @@ private:
 
     float m_minMipFraction; ///< Minimum fraction of a MIP to consider a hit
     pandora::StringVector m_caloHitListNames; ///< The names of the calo hit lists to cluster
+    std::string m_clusterListPrefix; ///< The prefix to use for the output cluster lists
     ViewOrderedHitsMap m_viewHitsMap; ///< Map from the view to the corresponding ordered calo hits
     ViewSlicedHitsMap m_slicedCaloHits; ///< Collection of calo hits in each view organised into slices in the drift coordinate
 };

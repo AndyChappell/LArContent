@@ -119,15 +119,7 @@ StatusCode KalmanClusterCreationAlgorithm::Run()
             std::sort(caloHits.begin(), caloHits.end(), LArClusterHelper::SortHitsByPosition);
         }
     }
-    if (viewHitCountMap[order.back()] > 0)
-    {
-        // All three views have hits
-        this->IdentifyCandidateClusters(order);
-    }
-    else if (viewHitCountMap[order[1]] > 0)
-    {
-        // Only two views have hits - suspect we won't need this special case
-    }
+    this->IdentifyCandidateClusters(order);
 
     return STATUS_CODE_SUCCESS;
 }
@@ -136,7 +128,6 @@ StatusCode KalmanClusterCreationAlgorithm::Run()
 
 void KalmanClusterCreationAlgorithm::IdentifyCandidateClusters(const ViewVector &order)
 {
-    // Begin processing the "primary" view with reference to the secondary and tertiary views
     std::map<HitType, IDKalmanFitMap> viewKalmanFitsMap;
     std::map<HitType, HitKalmanFitMap> viewHitKalmanFitMap;
     for (const HitType &view : order)
@@ -155,13 +146,36 @@ void KalmanClusterCreationAlgorithm::IdentifyCandidateClusters(const ViewVector 
             this->AllocateAmbiguousHits(kalmanFits, hitKalmanFitMap);
         }
 
-        PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1.f, -1.f, 1.f));
+        /*PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1.f, -1.f, 1.f));
         for (auto &[id, kalmanFit] : kalmanFits)
         {
             const CaloHitList caloHits(kalmanFit.m_caloHits.begin(), kalmanFit.m_caloHits.end());
             PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &caloHits, "Kalman", AUTOITER));
         }
-        PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
+        PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));*/
+
+        const ClusterList *pClusterList{nullptr};
+        std::string temporaryListName;
+        PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::CreateTemporaryListAndSetCurrent(*this, pClusterList, temporaryListName));
+        for (auto &[id, kalmanFit] : kalmanFits)
+        {
+            const Cluster *pCluster{nullptr};
+            for(const CaloHit *const pCaloHit : kalmanFit.m_caloHits)
+            {
+                if (pCluster)
+                {
+                    PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::AddToCluster(*this, pCluster, pCaloHit));
+                }
+                else
+                {
+                    PandoraContentApi::Cluster::Parameters parameters;
+                    parameters.m_caloHitList.push_back(pCaloHit);
+                    PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::Cluster::Create(*this, parameters, pCluster));
+                }
+            }
+        }
+        const std::string viewStr{view == TPC_VIEW_U ? "U" : view == TPC_VIEW_V ? "V" : "W"};
+        PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::SaveList<Cluster>(*this, m_clusterListPrefix + viewStr));
     }
 }
 
@@ -246,15 +260,8 @@ void KalmanClusterCreationAlgorithm::BuildClusters(const CaloHitVector &sliceCal
                         PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
                     }
 
-                    if (cosTheta < 0.94) //0.866)
+                    if (cosTheta < 0.94)
                         continue;
-                    // Here we want to actually consider the quality of the prediction and only retain the best ones
-                    // This will need to become more sophisticated to consider not just the local hits, but also the alternative fits in the vicinity
-                    // It should probably guarantee splitting when forks develop - this might be detectable when comparing the final result - i.e. two
-                    // clusters with a common stem that then move in different directions at a vertex
-                    //
-                    // Would really like the prediction to sit inside the actual hit, but that's probably too strong a constraint, especially early on -
-                    // might be able to apply this once the cluster has a few hits already
                     const double distanceSquared{(state - measurement).squaredNorm()};
                     if (distanceSquared < bestDistanceSquared)
                     {
@@ -635,6 +642,7 @@ StatusCode KalmanClusterCreationAlgorithm::ReadSettings(const TiXmlHandle xmlHan
 {
     PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "MinMipFraction", m_minMipFraction));
     PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadVectorOfValues(xmlHandle, "CaloHitListNames", m_caloHitListNames));
+    PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadValue(xmlHandle, "ClusterListPrefix", m_clusterListPrefix));
 
     return STATUS_CODE_SUCCESS;
 }
