@@ -185,6 +185,7 @@ void KalmanClusterCreationAlgorithm::MakeClusterSeeds(const CaloHitVector &slice
             {
                 if (this->SkipsOverHit(sliceCaloHits, pSeedHit, pCaloHit))
                     continue;
+                // Consider whether the initial last hit should be pCaloHit instead of pSeedHit
                 KalmanFit kalmanFit{pSeedHit, pCaloHit, KalmanFilter2D(1, 0.0625, 0.0625, init), CaloHitVector(), pSeedHit};
                 kalmanFit.m_kalmanFilter.Predict();
                 Eigen::VectorXd measurement(2);
@@ -294,9 +295,18 @@ void KalmanClusterCreationAlgorithm::RemoveDuplicateKalmanFits(IDKalmanFitMap &k
                 }
             }
             if (subset)
+            {
+                for (const CaloHit *const pCaloHit : kalmanFit2.m_caloHits)
+                {
+                    auto found{hitKalmanFitMap[pCaloHit].find(kalmanFit2.m_id)};
+                    hitKalmanFitMap[pCaloHit].erase(found);
+                }
                 iter2 = kalmanFits.erase(iter2);
+            }
             else
+            {
                 ++iter2;
+            }
         }
     }
 }
@@ -305,45 +315,144 @@ void KalmanClusterCreationAlgorithm::RemoveDuplicateKalmanFits(IDKalmanFitMap &k
 
 void KalmanClusterCreationAlgorithm::AllocateAmbiguousHits(IDKalmanFitMap &kalmanFits, HitKalmanFitMap &hitKalmanFitMap)
 {
-    (void)kalmanFits;
+    HitKalmanFitMap removals;
     for (const auto &[pCaloHit, fitIDs] : hitKalmanFitMap)
     {
-        std::cout << pCaloHit << ": " << fitIDs.size() << std::endl;
+        if (fitIDs.size() == 1)
+            continue;
+        std::map<int, double> idErrorMap;
         for (const int id : fitIDs)
         {
-            // Should consider removing deleted Kalman fits from the id to fit map to avoid the need for this check
-            // For ease, can probably just loop through the hit to id map at the end of slice processing and remove
-            // anything not found in the id to fit map at that point
             if (kalmanFits.find(id) != kalmanFits.end())
             {
                 const CaloHitVector &caloHits{kalmanFits.at(id).m_caloHits};
                 auto targetHit{std::find(caloHits.begin(), caloHits.end(), pCaloHit)};
                 if (targetHit != caloHits.end())
                 {
+                    Eigen::VectorXd init(2);
+                    init << caloHits.front()->GetPositionVector().GetX(), caloHits.front()->GetPositionVector().GetZ();
+                    Eigen::VectorXd target(2);
+                    target << (*targetHit)->GetPositionVector().GetX(), (*targetHit)->GetPositionVector().GetZ();
                     const auto dForward{std::distance(caloHits.begin(), targetHit)};
-                    const auto dBackward{caloHits.size() - dForward - 1};
+                    const auto dBackward{static_cast<long>(caloHits.size()) - dForward - 1};
                     // Look at the quality of the different Kalman fits for ambiguous hits
-                    if (dForward > 3 && dBackward > 3)
+                    if (dForward >= 2 && dBackward >= 2)
                     {
-                        // Enough hits to check fit quality from both directions
-                        // Average the result and store in a mini map with the id as the key, then pick at the end
+                        // Either enough hits to check fit quality from both directions, or it's a small cluster so we do the best
+                        // we can with limited information
+                        Eigen::VectorXd last(2);
+                        last << caloHits.back()->GetPositionVector().GetX(), caloHits.back()->GetPositionVector().GetZ();
+                        idErrorMap[id] = std::min(this->GetForwardError(caloHits, init, target, dForward),
+                            this->GetBackwardError(caloHits, last, target, dBackward));
                     }
-                    else if (dForward > 3)
+                    else if (dForward >= 2)
                     {
                         // Fit more reliable in forward direction, use that
+                        idErrorMap[id] = this->GetForwardError(caloHits, init, target, dForward);
                     }
-                    else if (dBackward > 3)
+                    else if (dBackward >= 2)
                     {
                         // Fit more reliable in backward direction, use that
+                        Eigen::VectorXd last(2);
+                        last << caloHits.back()->GetPositionVector().GetX(), caloHits.back()->GetPositionVector().GetZ();
+                        idErrorMap[id] = this->GetBackwardError(caloHits, last, target, dBackward);
                     }
                     else
                     {
-                        // Small cluster, try both directions
+                        // 2 hit cluster - apply penalty
+                        idErrorMap[id] = 1000;
                     }
                 }
             }
         }
+        // Find the best match, but dont update yet, as it could have side-effects on the subsequent Kalman filters due to "missing" hits
+        double bestError{std::numeric_limits<double>::max()};
+        int bestId{0};
+        for (const auto &[id, error] : idErrorMap)
+        {
+            if (error < bestError)
+            {
+                bestError = error;
+                bestId = id;
+            }
+        }
+        // Update the hit to fit map to only retain the best cluster and retain the other ids for ease of removal later
+        std::copy_if(hitKalmanFitMap.at(pCaloHit).begin(), hitKalmanFitMap.at(pCaloHit).end(), std::inserter(removals[pCaloHit],
+            removals[pCaloHit].begin()), [&bestId](int id){ return id != bestId; });
+        hitKalmanFitMap[pCaloHit] = {bestId};
     }
+    // Now we're done with finding the best cluster for each hit, remove the respective hits from other clusters
+    for (const auto &[pCaloHit, ids] : removals)
+    {
+        for (const int id : ids)
+        {
+            if (kalmanFits.find(id) != kalmanFits.end())
+            {
+                CaloHitVector &caloHits{kalmanFits.at(id).m_caloHits};
+                auto found{std::find(caloHits.begin(), caloHits.end(), pCaloHit)};
+                if (found != caloHits.end())
+                    caloHits.erase(found);
+            }
+        }
+    }
+    // Remove any one hit clusters
+    for (auto iter = kalmanFits.begin(); iter != kalmanFits.end(); )
+    {
+        const int id{iter->second.m_id};
+        if (iter->second.m_caloHits.size() <= 1)
+        {
+            for (const CaloHit *const pCaloHit : iter->second.m_caloHits)
+            {
+                if (hitKalmanFitMap.find(pCaloHit) != hitKalmanFitMap.end())
+                {
+                    auto found{std::find(hitKalmanFitMap.at(pCaloHit).begin(), hitKalmanFitMap.at(pCaloHit).end(), id)};
+                    if (found != hitKalmanFitMap.at(pCaloHit).end())
+                        hitKalmanFitMap.at(pCaloHit).erase(found);
+                }
+            }
+            iter = kalmanFits.erase(iter);
+        }
+        else
+        {
+            ++iter;
+        }
+    }
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+double KalmanClusterCreationAlgorithm::GetForwardError(const CaloHitVector &caloHits, const Eigen::VectorXd &init, const Eigen::VectorXd &target,
+    const long steps)
+{
+    KalmanFilter2D kalman{1, 0.0625, 0.0625, init};
+    auto iter{std::next(caloHits.begin())};
+    for (long i = 1; i <= steps; ++i, ++iter)
+    {
+        kalman.Predict();
+        const CartesianVector pos{(*iter)->GetPositionVector()};
+        Eigen::VectorXd measurement(2);
+        measurement << pos.GetX(), pos.GetZ();
+        kalman.Update(measurement);
+    }
+    return (target - kalman.GetPosition()).squaredNorm();
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+double KalmanClusterCreationAlgorithm::GetBackwardError(const CaloHitVector &caloHits, const Eigen::VectorXd &init, const Eigen::VectorXd &target,
+    const long steps)
+{
+    KalmanFilter2D kalman{1, 0.0625, 0.0625, init};
+    auto iter{std::next(caloHits.rbegin())};
+    for (long i = 1; i <= steps; ++i, ++iter)
+    {
+        kalman.Predict();
+        const CartesianVector pos{(*iter)->GetPositionVector()};
+        Eigen::VectorXd measurement(2);
+        measurement << pos.GetX(), pos.GetZ();
+        kalman.Update(measurement);
+    }
+    return (target - kalman.GetPosition()).squaredNorm();
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------

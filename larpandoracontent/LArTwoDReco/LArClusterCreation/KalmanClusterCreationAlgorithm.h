@@ -165,6 +165,26 @@ private:
     void AllocateAmbiguousHits(IDKalmanFitMap &kalmanFits, HitKalmanFitMap &hitKalmanFitMap);
 
     /**
+     *  @brief  Compute the error between a Kalman filter prediction and the target measurement in the forward direction
+     *
+     *  @param[in]  caloHits The vector of hits in the candidate cluster
+     *  @param[in]  init The position of the first hit for initialising the Kalman filter
+     *  @param[in]  target The position of the target hit
+     *  @param[in]  pos The number of steps to predict to reach the target
+     */
+    double GetForwardError(const pandora::CaloHitVector &caloHits, const Eigen::VectorXd &init, const Eigen::VectorXd &target, const long steps);
+
+    /**
+     *  @brief  Compute the error between a Kalman filter prediction and the target measurement in the backward direction
+     *
+     *  @param[in]  caloHits The vector of hits in the candidate cluster
+     *  @param[in]  init The position of the first hit for initialising the Kalman filter
+     *  @param[in]  target The position of the target hit
+     *  @param[in]  pos The number of steps to predict to reach the target
+     */
+    double GetBackwardError(const pandora::CaloHitVector &caloHits, const Eigen::VectorXd &init, const Eigen::VectorXd &target, const long steps);
+
+    /**
      *  @brief  Make candidate 3D hits from hits in two or more views
      *
      *  @param  caloHits0 the first vector of input 2D calo hits
