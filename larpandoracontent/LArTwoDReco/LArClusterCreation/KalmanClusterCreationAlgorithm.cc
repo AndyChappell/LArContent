@@ -146,7 +146,7 @@ void KalmanClusterCreationAlgorithm::IdentifyCandidateClusters(const ViewVector 
             this->AllocateAmbiguousHits(kalmanFits, hitKalmanFitMap);
         }
 
-        /*PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1.f, -1.f, 1.f));
+/*        PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1.f, -1.f, 1.f));
         for (auto &[id, kalmanFit] : kalmanFits)
         {
             const CaloHitList caloHits(kalmanFit.m_caloHits.begin(), kalmanFit.m_caloHits.end());
@@ -387,6 +387,45 @@ void KalmanClusterCreationAlgorithm::AllocateAmbiguousHits(IDKalmanFitMap &kalma
         std::copy_if(hitKalmanFitMap.at(pCaloHit).begin(), hitKalmanFitMap.at(pCaloHit).end(), std::inserter(removals[pCaloHit],
             removals[pCaloHit].begin()), [&bestId](int id){ return id != bestId; });
         hitKalmanFitMap[pCaloHit] = {bestId};
+    }
+    for (const auto &[id, kalmanFit] : kalmanFits)
+    {
+        std::map<int, int> idCountMap;
+        for (const CaloHit *const pCaloHit : kalmanFit.m_caloHits)
+        {
+            if (hitKalmanFitMap.find(pCaloHit) != hitKalmanFitMap.end())
+            {
+                for (const int i : hitKalmanFitMap.at(pCaloHit))
+                    if (id != i)
+                        ++idCountMap[i];
+            }
+        }
+        for (const auto &[i, count] : idCountMap)
+        {
+            // Only consider reallocation of hits now if this is the larger cluster, or, if they're the same size, if this is the earlier cluster
+            if ((kalmanFit.m_caloHits.size() < kalmanFits.at(i).m_caloHits.size()) ||
+                (id > i && kalmanFit.m_caloHits.size() == kalmanFits.at(i).m_caloHits.size()))
+                continue;
+
+            CaloHitVector intersection;
+            std::set_intersection(kalmanFit.m_caloHits.begin(), kalmanFit.m_caloHits.end(), kalmanFits.at(i).m_caloHits.begin(),
+                kalmanFits.at(i).m_caloHits.end(), std::back_inserter(intersection));
+
+            if (intersection.size() > 1)
+            {
+                for (const CaloHit *const pCaloHit : intersection)
+                {
+                    if (hitKalmanFitMap.at(pCaloHit).find(i) != hitKalmanFitMap.at(pCaloHit).end())
+                    {
+                        hitKalmanFitMap[pCaloHit] = {id};
+                        removals[pCaloHit].insert(i);
+                        auto found{removals[pCaloHit].find(id)};
+                        if (found != removals[pCaloHit].end())
+                            removals[pCaloHit].erase(found);
+                    }
+                }
+            }
+        }
     }
     // Now we're done with finding the best cluster for each hit, remove the respective hits from other clusters
     for (const auto &[pCaloHit, ids] : removals)
