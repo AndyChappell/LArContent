@@ -6,6 +6,8 @@
  *  $Log: $
  */
 
+#include <tuple>
+
 #include <Eigen/Dense>
 
 #include "Pandora/AlgorithmHeaders.h"
@@ -142,11 +144,11 @@ void KalmanClusterCreationAlgorithm::IdentifyCandidateClusters(const ViewVector 
             this->MakeClusterSeeds(caloHits0, kalmanFits, hitKalmanFitMap);
             this->BuildClusters(caloHits0, kalmanFits, hitKalmanFitMap);
             this->RemoveDuplicateKalmanFits(kalmanFits, hitKalmanFitMap);
-            // Here we also want to identify hits that are in multiple clusters and begin removing hits where they fit better with another cluster
             this->AllocateAmbiguousHits(kalmanFits, hitKalmanFitMap);
+            this->ConsolidateInterleavedClusters(caloHits0, kalmanFits, hitKalmanFitMap);
         }
 
-/*        PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1.f, -1.f, 1.f));
+        /*PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1.f, -1.f, 1.f));
         for (auto &[id, kalmanFit] : kalmanFits)
         {
             const CaloHitList caloHits(kalmanFit.m_caloHits.begin(), kalmanFit.m_caloHits.end());
@@ -374,7 +376,7 @@ void KalmanClusterCreationAlgorithm::AllocateAmbiguousHits(IDKalmanFitMap &kalma
         }
         // Find the best match, but dont update yet, as it could have side-effects on the subsequent Kalman filters due to "missing" hits
         double bestError{std::numeric_limits<double>::max()};
-        int bestId{0};
+        int bestId{-1};
         for (const auto &[id, error] : idErrorMap)
         {
             if (error < bestError)
@@ -383,24 +385,29 @@ void KalmanClusterCreationAlgorithm::AllocateAmbiguousHits(IDKalmanFitMap &kalma
                 bestId = id;
             }
         }
+
         // Update the hit to fit map to only retain the best cluster and retain the other ids for ease of removal later
-        std::copy_if(hitKalmanFitMap.at(pCaloHit).begin(), hitKalmanFitMap.at(pCaloHit).end(), std::inserter(removals[pCaloHit],
-            removals[pCaloHit].begin()), [&bestId](int id){ return id != bestId; });
-        hitKalmanFitMap[pCaloHit] = {bestId};
+        if (bestId > -1)
+        {
+            std::copy_if(hitKalmanFitMap.at(pCaloHit).begin(), hitKalmanFitMap.at(pCaloHit).end(), std::inserter(removals[pCaloHit],
+                removals[pCaloHit].begin()), [&bestId](int id){ return id != bestId; });
+            hitKalmanFitMap[pCaloHit] = {bestId};
+        }
     }
     for (const auto &[id, kalmanFit] : kalmanFits)
     {
-        std::map<int, int> idCountMap;
+        IntVector competingIds;
         for (const CaloHit *const pCaloHit : kalmanFit.m_caloHits)
         {
             if (hitKalmanFitMap.find(pCaloHit) != hitKalmanFitMap.end())
             {
                 for (const int i : hitKalmanFitMap.at(pCaloHit))
                     if (id != i)
-                        ++idCountMap[i];
+                        competingIds.emplace_back(i);
             }
         }
-        for (const auto &[i, count] : idCountMap)
+        std::sort(competingIds.begin(), competingIds.end());
+        for (const int i : competingIds)
         {
             // Only consider reallocation of hits now if this is the larger cluster, or, if they're the same size, if this is the earlier cluster
             if ((kalmanFit.m_caloHits.size() < kalmanFits.at(i).m_caloHits.size()) ||
@@ -427,6 +434,7 @@ void KalmanClusterCreationAlgorithm::AllocateAmbiguousHits(IDKalmanFitMap &kalma
             }
         }
     }
+
     // Now we're done with finding the best cluster for each hit, remove the respective hits from other clusters
     for (const auto &[pCaloHit, ids] : removals)
     {
@@ -437,9 +445,133 @@ void KalmanClusterCreationAlgorithm::AllocateAmbiguousHits(IDKalmanFitMap &kalma
                 CaloHitVector &caloHits{kalmanFits.at(id).m_caloHits};
                 auto found{std::find(caloHits.begin(), caloHits.end(), pCaloHit)};
                 if (found != caloHits.end())
+                {
                     caloHits.erase(found);
+                    if (hitKalmanFitMap.find(pCaloHit) != hitKalmanFitMap.end())
+                    {
+                        auto found2{std::find(hitKalmanFitMap.at(pCaloHit).begin(), hitKalmanFitMap.at(pCaloHit).end(), id)};
+                        if (found2 != hitKalmanFitMap.at(pCaloHit).end())
+                            hitKalmanFitMap.at(pCaloHit).erase(found2);
+                    }
+                }
             }
         }
+    }
+
+    // Remove any one hit clusters
+    for (auto iter = kalmanFits.begin(); iter != kalmanFits.end(); )
+    {
+        const int id{iter->second.m_id};
+        if (iter->second.m_caloHits.size() <= 1)
+        {
+            for (const CaloHit *const pCaloHit : iter->second.m_caloHits)
+            {
+                if (hitKalmanFitMap.find(pCaloHit) != hitKalmanFitMap.end())
+                {
+                    auto found{std::find(hitKalmanFitMap.at(pCaloHit).begin(), hitKalmanFitMap.at(pCaloHit).end(), id)};
+                    if (found != hitKalmanFitMap.at(pCaloHit).end())
+                        hitKalmanFitMap.at(pCaloHit).erase(found);
+                }
+            }
+            iter = kalmanFits.erase(iter);
+        }
+        else
+        {
+            ++iter;
+        }
+    }
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+void KalmanClusterCreationAlgorithm::ConsolidateInterleavedClusters(const CaloHitVector &caloHits, IDKalmanFitMap &kalmanFits, HitKalmanFitMap &hitKalmanFitMap)
+{
+    PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1.f, -1.f, 1.f));
+    KalmanFitIDSet sliceIDs;
+    // Identify the fits that are part of this slice
+    for (const CaloHit *const pCaloHit : caloHits)
+    {
+        if (hitKalmanFitMap.find(pCaloHit) != hitKalmanFitMap.end())
+        {
+            for (const int id : hitKalmanFitMap.at(pCaloHit))
+                sliceIDs.insert(id);
+        }
+    }
+    if (sliceIDs.size() < 2)
+        return;
+    std::vector<std::pair<int, int>> sliceIDHitPairs;
+    for (const int id : sliceIDs)
+        sliceIDHitPairs.emplace_back(std::make_pair(kalmanFits.at(id).m_caloHits.size(), id));
+    if (sliceIDHitPairs.size() < 2)
+        return;
+    std::sort(sliceIDHitPairs.begin(), sliceIDHitPairs.end(), [](const std::pair<int, int> &a, const std::pair<int, int> &b) { return a.first > b.first; });
+
+    std::map<int, CaloHitVector> hitVectors;
+    for (auto &[hitCount, id] : sliceIDHitPairs)
+    {
+        const CaloHitVector &fitCaloHits{kalmanFits.at(id).m_caloHits};
+        for (const CaloHit *const pCaloHit : fitCaloHits)
+        {
+            if (std::find(caloHits.begin(), caloHits.end(), pCaloHit) != caloHits.end())
+                hitVectors[id].emplace_back(pCaloHit);
+        }
+    }
+
+    for (auto pairIter1 = sliceIDHitPairs.begin(); pairIter1 != sliceIDHitPairs.end(); ++pairIter1)
+    {
+        const CaloHitVector &hits1{hitVectors[pairIter1->second]};
+        std::vector<std::tuple<int, const CaloHit *, const CaloHit *>> collectedHits;
+        // Get consecutive hits in this cluster and look for intervening hits in the other
+        for (auto hIter = hits1.begin(); hIter != hits1.end(); ++hIter)
+        {
+            const CaloHit *const pCaloHit1{*hIter};
+            if (std::next(hIter) == hits1.end())
+                break;
+            const CaloHit *const pCaloHit2{*std::next(hIter)};
+            for (auto pairIter2 = std::next(pairIter1); pairIter2 != sliceIDHitPairs.end(); ++pairIter2)
+            {
+                const CaloHitVector &hits2{hitVectors[pairIter2->second]};
+                for (const CaloHit *const pCheckedHit : hits2)
+                {
+                    CaloHitVector singleHit{pCheckedHit};
+                    if (this->SkipsOverHit(singleHit, pCaloHit1, pCaloHit2))
+                        collectedHits.emplace_back(std::make_tuple(pairIter2->second, pCaloHit2, pCheckedHit));
+                }
+            }
+        }
+        if (collectedHits.empty())
+            continue;
+
+/*        const CaloHitList caloHits1(hits1.begin(), hits1.end());
+        PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &caloHits1, "Main", BLUE));
+        CaloHitList caloHits2;
+        for (const auto &[id, pCaloHit1, pCaloHit2] : collectedHits)
+            caloHits2.emplace_back(pCaloHit2);
+        PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &caloHits2, "Collected", RED));*/
+
+        // There is something wrong here, the hits are not being moved correctly
+        for (const auto &[id, pCaloHit1, pCaloHit2] : collectedHits)
+        {
+            CaloHitVector &otherHits{kalmanFits.at(id).m_caloHits};
+            auto oldPos{std::find(otherHits.begin(), otherHits.end(), pCaloHit2)};
+            // There are edge cases where a hit can be between more than one pair of hits, need to skip these to avoid double removal
+            if (oldPos == otherHits.end())
+                continue;
+            otherHits.erase(oldPos);
+            oldPos = std::find(hitVectors.at(id).begin(), hitVectors.at(id).end(), pCaloHit2);
+            hitVectors.at(id).erase(oldPos);
+            CaloHitVector &currentHits{kalmanFits.at(pairIter1->second).m_caloHits};
+            auto newPos{std::find(currentHits.begin(), currentHits.end(), pCaloHit1)};
+            currentHits.insert(newPos, pCaloHit2);
+            newPos = std::find(hitVectors.at(pairIter1->second).begin(), hitVectors.at(pairIter1->second).end(), pCaloHit1);
+            hitVectors.at(pairIter1->second).insert(newPos, pCaloHit2);
+            hitKalmanFitMap[pCaloHit2] = {pairIter1->second};
+        }
+        /*
+        const CaloHitList caloHits3(kalmanFits.at(vIter1->first).m_caloHits.begin(), kalmanFits.at(vIter1->first).m_caloHits.end());
+        PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &caloHits3, "Updated", BLACK));
+
+        PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));*/
     }
     // Remove any one hit clusters
     for (auto iter = kalmanFits.begin(); iter != kalmanFits.end(); )

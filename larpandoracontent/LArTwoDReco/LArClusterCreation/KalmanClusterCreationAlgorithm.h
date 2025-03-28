@@ -165,6 +165,15 @@ private:
     void AllocateAmbiguousHits(IDKalmanFitMap &kalmanFits, HitKalmanFitMap &hitKalmanFitMap);
 
     /**
+     *  @brief  Identify clusters that are interleaved and combine them
+     *
+     *  @param[in]  caloHits the input slice calo hits
+     *  @param[in,out]  kalmanFits the map of kalman fits to update
+     *  @param[in,out]  hitKalmanFitMap the map from hits to kalman fits to update
+     */
+    void ConsolidateInterleavedClusters(const pandora::CaloHitVector &caloHits, IDKalmanFitMap &kalmanFits, HitKalmanFitMap &hitKalmanFitMap);
+
+    /**
      *  @brief  Compute the error between a Kalman filter prediction and the target measurement in the forward direction
      *
      *  @param[in]  caloHits The vector of hits in the candidate cluster
