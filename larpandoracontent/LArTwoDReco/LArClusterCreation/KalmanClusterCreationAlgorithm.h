@@ -260,6 +260,10 @@ private:
     float m_kalmanDelta; ///< The time step for updating the Kalman fit
     float m_kalmanProcessVarCoeff; ///< The process variance modifier for the Kalman fit
     float m_kalmanMeasurementVarCoeff; ///< The measurement variance modifier for the Kalman fit
+    float m_minCosTheta; ///< The minimum cosine theta for cluster continuation with small clusters
+    float m_xTol; ///< The x tolerance for containment
+    float m_zTol; ///< The z tolerance for containment
+    int m_kalmanMinHits; ///< The maximum number of hits in a cluster to rely on predicted hit containment
     std::string m_caloHitListName; ///< The names of the calo hit lists to cluster
     std::string m_clusterListPrefix; ///< The prefix to use for the output cluster lists
     ViewOrderedHitsMap m_viewHitsMap; ///< Map from the view to the corresponding ordered calo hits

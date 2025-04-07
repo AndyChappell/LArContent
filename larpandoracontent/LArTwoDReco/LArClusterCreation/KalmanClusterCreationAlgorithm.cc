@@ -28,7 +28,11 @@ std::atomic<int> KalmanClusterCreationAlgorithm::KalmanFit::m_counter(0);
 KalmanClusterCreationAlgorithm::KalmanClusterCreationAlgorithm() :
     m_kalmanDelta(1.f),
     m_kalmanProcessVarCoeff(1.f),
-    m_kalmanMeasurementVarCoeff(1.f)
+    m_kalmanMeasurementVarCoeff(1.f),
+    m_minCosTheta(0.94f),
+    m_xTol(0.25f),
+    m_zTol(0.125f),
+    m_kalmanMinHits(4)
 {
 }
 
@@ -185,7 +189,7 @@ void KalmanClusterCreationAlgorithm::BuildClusters(const CaloHitVector &sliceCal
                 if (std::find(kalmanFit.m_caloHits.begin(), kalmanFit.m_caloHits.end(), pCaloHit) != kalmanFit.m_caloHits.end())
                     continue;
                 const CartesianVector &other{pCaloHit->GetPositionVector()};
-                if ((kalmanFit.m_caloHits.size() < 4 && this->Proximate(kalmanFit.m_pLastHit, pCaloHit)) || this->Contains(pCaloHit, state, 0.25f, 0.125f))
+                if ((kalmanFit.m_caloHits.size() < 4 && this->Proximate(kalmanFit.m_pLastHit, pCaloHit)) || this->Contains(pCaloHit, state, m_xTol, m_zTol))
                 {
                     Eigen::VectorXd measurement(2);
                     measurement << other.GetX(), other.GetZ();
@@ -206,7 +210,7 @@ void KalmanClusterCreationAlgorithm::BuildClusters(const CaloHitVector &sliceCal
                         PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
                     }
 
-                    if (cosTheta < 0.94)
+                    if (cosTheta < m_minCosTheta)
                         continue;
                     const double distanceSquared{(state - measurement).squaredNorm()};
                     if (distanceSquared < bestDistanceSquared)
@@ -773,6 +777,10 @@ StatusCode KalmanClusterCreationAlgorithm::ReadSettings(const TiXmlHandle xmlHan
     PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "KalmanDelta", m_kalmanDelta));
     PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "KalmanProcessVarCoeff", m_kalmanProcessVarCoeff));
     PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "KalmanMeasurementVarCoeff", m_kalmanMeasurementVarCoeff));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "m_minCosTheta", m_minCosTheta));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "m_xTol", m_xTol));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "m_zTol", m_zTol));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "KalmanMinHits", m_kalmanMinHits));
     PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadValue(xmlHandle, "CaloHitListName", m_caloHitListName));
     PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadValue(xmlHandle, "ClusterListPrefix", m_clusterListPrefix));
 
