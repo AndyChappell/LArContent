@@ -26,7 +26,9 @@ namespace lar_content
 std::atomic<int> KalmanClusterCreationAlgorithm::KalmanFit::m_counter(0);
 
 KalmanClusterCreationAlgorithm::KalmanClusterCreationAlgorithm() :
-    m_minMipFraction{0.f}
+    m_kalmanDelta(1.f),
+    m_kalmanProcessVarCoeff(1.f),
+    m_kalmanMeasurementVarCoeff(1.f)
 {
 }
 
@@ -42,148 +44,91 @@ KalmanClusterCreationAlgorithm::~KalmanClusterCreationAlgorithm()
 StatusCode KalmanClusterCreationAlgorithm::Run()
 {
     this->Reset();
-    std::map<HitType, int> viewHitCountMap;
-    for (const HitType view : {TPC_VIEW_U, TPC_VIEW_V, TPC_VIEW_W})
-    {
-        m_viewHitsMap[view] = OrderedCaloHitList();
-        viewHitCountMap[view] = 0;
-    }
-    // Collect hits from all views into layer-ordered hit lists
-    for (std::string listName : m_caloHitListNames)
-    {
-        const CaloHitList *pCaloHitList{nullptr};
-        PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetList(*this, listName, pCaloHitList));
-        if (!pCaloHitList->empty())
-        {
-            HitType view{pCaloHitList->front()->GetHitType()};
-            PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, this->FilterCaloHits(pCaloHitList, m_viewHitsMap[view]));
-            for (OrderedCaloHitList::const_iterator iter = m_viewHitsMap[view].begin(), iterEnd = m_viewHitsMap[view].end(); iter != iterEnd; ++iter)
-                viewHitCountMap[view] += iter->second->size();
-        }
-    }
+    // Collect hits into layer-ordered hit lists
+    const CaloHitList *pCaloHitList{nullptr};
+    PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetList(*this, m_caloHitListName, pCaloHitList));
+    if (!pCaloHitList || pCaloHitList->empty())
+        return STATUS_CODE_SUCCESS;
+    HitType view{pCaloHitList->front()->GetHitType()};
+    m_viewHitsMap[view] = OrderedCaloHitList();
+    PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, this->FilterCaloHits(pCaloHitList, m_viewHitsMap[view]));
 
     float min{std::numeric_limits<float>::max()}, max{std::numeric_limits<float>::lowest()};
     this->GetSpanX(min, max);
-    for (const HitType view : {TPC_VIEW_U, TPC_VIEW_V, TPC_VIEW_W})
-    {
-        CaloHitList caloHitList;
-        m_viewHitsMap[view].FillCaloHitList(caloHitList);
-        if (!caloHitList.empty())
-        {
-            if (m_slicedCaloHits.find(view) == m_slicedCaloHits.end())
-            {
-                m_slicedCaloHits[view] = new LArSlicedCaloHitList(caloHitList, min, max);
-            }
-            else
-            {
-                std::cout << "Error: KalmanClusterCreationAlgorithm - Duplciate view specified in calo hit lists" << std::endl;
-                throw StatusCodeException(STATUS_CODE_ALREADY_INITIALIZED);
-            }
-        }
-    }
-    for (HitType view : {TPC_VIEW_U, TPC_VIEW_V, TPC_VIEW_W})
-    {
-        if (m_slicedCaloHits.find(view) == m_slicedCaloHits.end())
-            m_slicedCaloHits[view] = new LArSlicedCaloHitList(CaloHitList(), min, max);
-    }
-
-    // Order the views by hit count, because we want to use the view with the most hits as our "primary" view
-    std::vector<HitType> order;
-    if (viewHitCountMap[TPC_VIEW_W] >= viewHitCountMap[TPC_VIEW_V])
-    {
-        order.emplace_back(TPC_VIEW_W);
-        order.emplace_back(TPC_VIEW_V);
-        if (viewHitCountMap[TPC_VIEW_U] > viewHitCountMap[TPC_VIEW_W])
-            order.insert(order.begin(), TPC_VIEW_U);
-        else if (viewHitCountMap[TPC_VIEW_U] <= viewHitCountMap[TPC_VIEW_V])
-            order.insert(order.end(), TPC_VIEW_U);
-        else
-            order.insert(order.begin() + 1, TPC_VIEW_U);
-    }
-    else
-    {
-        order.emplace_back(TPC_VIEW_V);
-        order.emplace_back(TPC_VIEW_W);
-        if (viewHitCountMap[TPC_VIEW_U] > viewHitCountMap[TPC_VIEW_V])
-            order.insert(order.begin(), TPC_VIEW_U);
-        else if (viewHitCountMap[TPC_VIEW_U] <= viewHitCountMap[TPC_VIEW_W])
-            order.insert(order.end(), TPC_VIEW_U);
-        else
-            order.insert(order.begin() + 1, TPC_VIEW_U);
-    }
-
-    for (const HitType view : {TPC_VIEW_U, TPC_VIEW_V, TPC_VIEW_W})
-    {
-        for (OrderedCaloHitList::const_iterator iter = m_viewHitsMap[view].begin(), iterEnd = m_viewHitsMap[view].end(); iter != iterEnd; ++iter)
-        {
-            CaloHitVector caloHits(iter->second->begin(), iter->second->end());
-            std::sort(caloHits.begin(), caloHits.end(), LArClusterHelper::SortHitsByPosition);
-        }
-    }
-    this->IdentifyCandidateClusters(order);
+    CaloHitList caloHitList;
+    m_viewHitsMap[view].FillCaloHitList(caloHitList);
+    if (caloHitList.empty())
+        return STATUS_CODE_SUCCESS;
+    m_slicedCaloHits[view] = new LArSlicedCaloHitList(caloHitList, min, max);
+    this->IdentifyCandidateClusters(view);
 
     return STATUS_CODE_SUCCESS;
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-void KalmanClusterCreationAlgorithm::IdentifyCandidateClusters(const ViewVector &order)
+void KalmanClusterCreationAlgorithm::IdentifyCandidateClusters(const HitType view)
 {
     std::map<HitType, IDKalmanFitMap> viewKalmanFitsMap;
     std::map<HitType, HitKalmanFitMap> viewHitKalmanFitMap;
-    for (const HitType &view : order)
+    viewKalmanFitsMap[view] = IDKalmanFitMap();
+    viewHitKalmanFitMap[view] = HitKalmanFitMap();
+    IDKalmanFitMap &kalmanFits{viewKalmanFitsMap[view]};
+    HitKalmanFitMap &hitKalmanFitMap{viewHitKalmanFitMap[view]};
+
+    for (const auto &[bin, caloHits0] : m_slicedCaloHits[view]->GetSliceHitMap())
     {
-        viewKalmanFitsMap[view] = IDKalmanFitMap();
-        viewHitKalmanFitMap[view] = HitKalmanFitMap();
-        IDKalmanFitMap &kalmanFits{viewKalmanFitsMap[view]};
-        HitKalmanFitMap &hitKalmanFitMap{viewHitKalmanFitMap[view]};
+        this->MakeClusterSeeds(caloHits0, kalmanFits, hitKalmanFitMap);
+        this->BuildClusters(caloHits0, kalmanFits, hitKalmanFitMap);
+        this->RemoveDuplicateKalmanFits(kalmanFits, hitKalmanFitMap);
+        this->AllocateAmbiguousHits(kalmanFits, hitKalmanFitMap);
+        this->ConsolidateInterleavedClusters(caloHits0, kalmanFits, hitKalmanFitMap);
+    }
 
-        for (const auto &[bin, caloHits0] : m_slicedCaloHits[view]->GetSliceHitMap())
-        {
-            this->MakeClusterSeeds(caloHits0, kalmanFits, hitKalmanFitMap);
-            this->BuildClusters(caloHits0, kalmanFits, hitKalmanFitMap);
-            this->RemoveDuplicateKalmanFits(kalmanFits, hitKalmanFitMap);
-            this->AllocateAmbiguousHits(kalmanFits, hitKalmanFitMap);
-            this->ConsolidateInterleavedClusters(caloHits0, kalmanFits, hitKalmanFitMap);
-        }
+    /*PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1.f, -1.f, 1.f));
+    for (auto &[id, kalmanFit] : kalmanFits)
+    {
+        const CaloHitList caloHits(kalmanFit.m_caloHits.begin(), kalmanFit.m_caloHits.end());
+        PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &caloHits, "Kalman", AUTOITER));
+    }
+    PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));*/
 
-        /*PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1.f, -1.f, 1.f));
-        for (auto &[id, kalmanFit] : kalmanFits)
+    const ClusterList *pClusterList{nullptr};
+    std::string temporaryListName;
+    PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::CreateTemporaryListAndSetCurrent(*this, pClusterList, temporaryListName));
+    for (auto &[id, kalmanFit] : kalmanFits)
+    {
+        const Cluster *pCluster{nullptr};
+        for(const CaloHit *const pCaloHit : kalmanFit.m_caloHits)
         {
-            const CaloHitList caloHits(kalmanFit.m_caloHits.begin(), kalmanFit.m_caloHits.end());
-            PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &caloHits, "Kalman", AUTOITER));
-        }
-        PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));*/
-
-        const ClusterList *pClusterList{nullptr};
-        std::string temporaryListName;
-        PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::CreateTemporaryListAndSetCurrent(*this, pClusterList, temporaryListName));
-        for (auto &[id, kalmanFit] : kalmanFits)
-        {
-            const Cluster *pCluster{nullptr};
-            for(const CaloHit *const pCaloHit : kalmanFit.m_caloHits)
+            if (pCluster)
             {
-                if (pCluster)
-                {
-                    PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::AddToCluster(*this, pCluster, pCaloHit));
-                }
-                else
-                {
-                    PandoraContentApi::Cluster::Parameters parameters;
-                    parameters.m_caloHitList.push_back(pCaloHit);
-                    PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::Cluster::Create(*this, parameters, pCluster));
-                }
+                PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::AddToCluster(*this, pCluster, pCaloHit));
+            }
+            else
+            {
+                PandoraContentApi::Cluster::Parameters parameters;
+                parameters.m_caloHitList.push_back(pCaloHit);
+                PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::Cluster::Create(*this, parameters, pCluster));
             }
         }
-        const std::string viewStr{view == TPC_VIEW_U ? "U" : view == TPC_VIEW_V ? "V" : "W"};
-        PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::SaveList<Cluster>(*this, m_clusterListPrefix + viewStr));
     }
+    const std::string viewStr{view == TPC_VIEW_U ? "U" : view == TPC_VIEW_V ? "V" : "W"};
+    PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::SaveList<Cluster>(*this, m_clusterListPrefix + viewStr));
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
 void KalmanClusterCreationAlgorithm::MakeClusterSeeds(const CaloHitVector &sliceCaloHits, IDKalmanFitMap &kalmanFits, HitKalmanFitMap &hitKalmanFitMap)
 {
+    if (sliceCaloHits.empty())
+        return;
+    const LArTPC *const pTPC(this->GetPandora().GetGeometry()->GetLArTPCMap().begin()->second);
+    const HitType view{sliceCaloHits.front()->GetHitType()};
+    const float pitch(view == TPC_VIEW_U ? pTPC->GetWirePitchU() : view == TPC_VIEW_V ? pTPC->GetWirePitchV() : pTPC->GetWirePitchW());
+    const float processVariance{m_kalmanProcessVarCoeff * pitch * pitch};
+    const float measurementVariance{m_kalmanMeasurementVarCoeff * pitch * pitch};
+
     for (auto iter1 = sliceCaloHits.begin(); iter1 != sliceCaloHits.end(); ++iter1)
     {
         const CaloHit *const pSeedHit{*iter1};
@@ -201,7 +146,7 @@ void KalmanClusterCreationAlgorithm::MakeClusterSeeds(const CaloHitVector &slice
                 if (this->SkipsOverHit(sliceCaloHits, pSeedHit, pCaloHit))
                     continue;
                 // Consider whether the initial last hit should be pCaloHit instead of pSeedHit
-                KalmanFit kalmanFit{pSeedHit, pCaloHit, KalmanFilter2D(1, 0.0625, 0.0625, init), CaloHitVector(), pSeedHit};
+                KalmanFit kalmanFit{pSeedHit, pCaloHit, KalmanFilter2D(m_kalmanDelta, processVariance, measurementVariance, init), CaloHitVector(), pSeedHit};
                 kalmanFit.m_kalmanFilter.Predict();
                 Eigen::VectorXd measurement(2);
                 measurement << other.GetX(), other.GetZ();
@@ -307,7 +252,8 @@ void KalmanClusterCreationAlgorithm::RemoveDuplicateKalmanFits(IDKalmanFitMap &k
                 for (const CaloHit *const pCaloHit : kalmanFit2.m_caloHits)
                 {
                     auto found{hitKalmanFitMap[pCaloHit].find(kalmanFit2.m_id)};
-                    hitKalmanFitMap[pCaloHit].erase(found);
+                    if (found != hitKalmanFitMap[pCaloHit].end())
+                        hitKalmanFitMap[pCaloHit].erase(found);
                 }
                 iter2 = kalmanFits.erase(iter2);
             }
@@ -601,7 +547,14 @@ void KalmanClusterCreationAlgorithm::ConsolidateInterleavedClusters(const CaloHi
 double KalmanClusterCreationAlgorithm::GetForwardError(const CaloHitVector &caloHits, const Eigen::VectorXd &init, const Eigen::VectorXd &target,
     const long steps)
 {
-    KalmanFilter2D kalman{1, 0.0625, 0.0625, init};
+    const LArTPC *const pTPC(this->GetPandora().GetGeometry()->GetLArTPCMap().begin()->second);
+    // caloHits cannot be empty, as empty Kalman fits are deleted
+    const HitType view{caloHits.front()->GetHitType()};
+    const float pitch(view == TPC_VIEW_U ? pTPC->GetWirePitchU() : view == TPC_VIEW_V ? pTPC->GetWirePitchV() : pTPC->GetWirePitchW());
+    const float processVariance{m_kalmanProcessVarCoeff * pitch * pitch};
+    const float measurementVariance{m_kalmanMeasurementVarCoeff * pitch * pitch};
+
+    KalmanFilter2D kalman{m_kalmanDelta, processVariance, measurementVariance, init};
     auto iter{std::next(caloHits.begin())};
     for (long i = 1; i <= steps; ++i, ++iter)
     {
@@ -619,7 +572,14 @@ double KalmanClusterCreationAlgorithm::GetForwardError(const CaloHitVector &calo
 double KalmanClusterCreationAlgorithm::GetBackwardError(const CaloHitVector &caloHits, const Eigen::VectorXd &init, const Eigen::VectorXd &target,
     const long steps)
 {
-    KalmanFilter2D kalman{1, 0.0625, 0.0625, init};
+    const LArTPC *const pTPC(this->GetPandora().GetGeometry()->GetLArTPCMap().begin()->second);
+    // caloHits cannot be empty, as empty Kalman fits are deleted
+    const HitType view{caloHits.front()->GetHitType()};
+    const float pitch(view == TPC_VIEW_U ? pTPC->GetWirePitchU() : view == TPC_VIEW_V ? pTPC->GetWirePitchV() : pTPC->GetWirePitchW());
+    const float processVariance{m_kalmanProcessVarCoeff * pitch * pitch};
+    const float measurementVariance{m_kalmanMeasurementVarCoeff * pitch * pitch};
+
+    KalmanFilter2D kalman{m_kalmanDelta, processVariance, measurementVariance, init};
     auto iter{std::next(caloHits.rbegin())};
     for (long i = 1; i <= steps; ++i, ++iter)
     {
@@ -810,8 +770,10 @@ void KalmanClusterCreationAlgorithm::GetSlices(const LArSlicedCaloHitList::Slice
 
 StatusCode KalmanClusterCreationAlgorithm::ReadSettings(const TiXmlHandle xmlHandle)
 {
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "MinMipFraction", m_minMipFraction));
-    PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadVectorOfValues(xmlHandle, "CaloHitListNames", m_caloHitListNames));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "KalmanDelta", m_kalmanDelta));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "KalmanProcessVarCoeff", m_kalmanProcessVarCoeff));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "KalmanMeasurementVarCoeff", m_kalmanMeasurementVarCoeff));
+    PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadValue(xmlHandle, "CaloHitListName", m_caloHitListName));
     PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadValue(xmlHandle, "ClusterListPrefix", m_clusterListPrefix));
 
     return STATUS_CODE_SUCCESS;

@@ -87,48 +87,15 @@ private:
         std::vector<HitTriplet> m_hitTriplets;
     };
 
-    /**
-     *  @brief  HitAssociation class
-     */
-    class HitAssociation
-    {
-    public:
-        /**
-         *  @brief  Constructor
-         *
-         *  @param  pPrimaryTarget address of the primary target hit
-         *  @param  primaryDistanceSquared distance to the primary target hit squared
-         */
-        HitAssociation(const pandora::CaloHit *const pPrimaryTarget, const float primaryDistanceSquared);
-
-        /**
-         *  @brief  Get the primary target
-         *
-         *  @return the target distance
-         */
-        const pandora::CaloHit *GetPrimaryTarget() const;
-
-        /**
-         *  @brief  Get the primary distance squared
-         *
-         *  @return the primary distance squared
-         */
-        float GetPrimaryDistanceSquared() const;
-
-    private:
-        const pandora::CaloHit *m_pPrimaryTarget;   ///< the primary target
-        float m_primaryDistanceSquared;             ///< the primary distance squared
-    };
-
     pandora::StatusCode Run();
     pandora::StatusCode ReadSettings(const pandora::TiXmlHandle xmlHandle);
 
     /**
      *  @brief  Identifies potential clusters. At this stage hits can appear in more than one cluster.
      *
-     *  @param  order the orderied vector of views
+     *  @param  view the view to process
      */
-    void IdentifyCandidateClusters(const ViewVector &order);
+    void IdentifyCandidateClusters(const pandora::HitType view);
 
     /**
      *  @brief  Make cluster seeds from hits in a single view
@@ -290,32 +257,14 @@ private:
 
     typedef std::map<pandora::HitType, LArSlicedCaloHitList *> ViewSlicedHitsMap;
 
-    float m_minMipFraction; ///< Minimum fraction of a MIP to consider a hit
-    pandora::StringVector m_caloHitListNames; ///< The names of the calo hit lists to cluster
+    float m_kalmanDelta; ///< The time step for updating the Kalman fit
+    float m_kalmanProcessVarCoeff; ///< The process variance modifier for the Kalman fit
+    float m_kalmanMeasurementVarCoeff; ///< The measurement variance modifier for the Kalman fit
+    std::string m_caloHitListName; ///< The names of the calo hit lists to cluster
     std::string m_clusterListPrefix; ///< The prefix to use for the output cluster lists
     ViewOrderedHitsMap m_viewHitsMap; ///< Map from the view to the corresponding ordered calo hits
     ViewSlicedHitsMap m_slicedCaloHits; ///< Collection of calo hits in each view organised into slices in the drift coordinate
 };
-
-//------------------------------------------------------------------------------------------------------------------------------------------
-
-inline KalmanClusterCreationAlgorithm::HitAssociation::HitAssociation(const pandora::CaloHit *const pPrimaryTarget, const float primaryDistanceSquared) :
-    m_pPrimaryTarget(pPrimaryTarget),
-    m_primaryDistanceSquared(primaryDistanceSquared)
-{
-}
-
-//------------------------------------------------------------------------------------------------------------------------------------------
-
-inline const pandora::CaloHit *KalmanClusterCreationAlgorithm::HitAssociation::GetPrimaryTarget() const
-{
-    return m_pPrimaryTarget;
-}
-
-inline float KalmanClusterCreationAlgorithm::HitAssociation::GetPrimaryDistanceSquared() const
-{
-    return m_primaryDistanceSquared;
-}
 
 } // namespace lar_content
 
