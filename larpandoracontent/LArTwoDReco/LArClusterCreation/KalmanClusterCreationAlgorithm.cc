@@ -64,16 +64,15 @@ StatusCode KalmanClusterCreationAlgorithm::Run()
 
     float min{std::numeric_limits<float>::max()}, max{std::numeric_limits<float>::lowest()};
     this->GetSpanX(min, max);
-    for (std::string listName : m_caloHitListNames)
+    for (const HitType view : {TPC_VIEW_U, TPC_VIEW_V, TPC_VIEW_W})
     {
-        const CaloHitList *pCaloHitList{nullptr};
-        PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetList(*this, listName, pCaloHitList));
-        if (!pCaloHitList->empty())
+        CaloHitList caloHitList;
+        m_viewHitsMap[view].FillCaloHitList(caloHitList);
+        if (!caloHitList.empty())
         {
-            HitType view{pCaloHitList->front()->GetHitType()};
             if (m_slicedCaloHits.find(view) == m_slicedCaloHits.end())
             {
-                m_slicedCaloHits[view] = new LArSlicedCaloHitList(*pCaloHitList, min, max);
+                m_slicedCaloHits[view] = new LArSlicedCaloHitList(caloHitList, min, max);
             }
             else
             {
@@ -724,7 +723,7 @@ StatusCode KalmanClusterCreationAlgorithm::FilterCaloHits(const CaloHitList *con
 
     for (const CaloHit *const pCaloHit : *pCaloHitList)
     {
-        if (PandoraContentApi::IsAvailable(*this, pCaloHit) && pCaloHit->GetMipEquivalentEnergy() >= m_minMipFraction)
+        if (PandoraContentApi::IsAvailable(*this, pCaloHit))
             availableHitList.push_back(pCaloHit);
     }
 
