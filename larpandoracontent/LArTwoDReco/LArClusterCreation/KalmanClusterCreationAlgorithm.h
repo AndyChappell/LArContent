@@ -1,0 +1,261 @@
+/**
+ *  @file   larpandoracontent/LArTwoDReco/LArClusterCreation/KalmanClusterCreationAlgorithm.h
+ *
+ *  @brief  Header file for the cluster creation algorithm class.
+ *
+ *  $Log: $
+ */
+#ifndef LAR_KALMAN_CLUSTER_CREATION_ALGORITHM_H
+#define LAR_KALMAN_CLUSTER_CREATION_ALGORITHM_H 1
+
+#include "Pandora/Algorithm.h"
+
+#include "larpandoracontent/LArObjects/LArSlicedCaloHitList.h"
+#include "larpandoracontent/LArUtility/KalmanFilter.h"
+
+#include <atomic>
+#include <unordered_map>
+
+namespace lar_content
+{
+
+/**
+ *  @brief  KalmanClusterCreationAlgorithm class
+ */
+class KalmanClusterCreationAlgorithm : public pandora::Algorithm
+{
+public:
+    /**
+     *  @brief  Default constructor
+     */
+    KalmanClusterCreationAlgorithm();
+
+    /**
+     *  @brief  Destructor
+     */
+    ~KalmanClusterCreationAlgorithm();
+
+private:
+    typedef std::vector<pandora::HitType> ViewVector;
+    typedef std::map<pandora::HitType, pandora::OrderedCaloHitList> ViewOrderedHitsMap;
+    typedef std::map<const pandora::CaloHit *, pandora::IntVector> HitCandidateCLusterMap;
+
+    struct KalmanFit
+    {
+        void InsertHit(const pandora::CaloHit *const pCaloHit);
+
+        KalmanFilter2D m_kalmanFilter;
+        pandora::CaloHitVector m_caloHits;
+        const pandora::CaloHit *m_pLastHit;
+        int m_id;
+
+        KalmanFit(const pandora::CaloHit *const pSeedHit, const KalmanFilter2D &kalmanFilter, const pandora::CaloHitVector &caloHits) :
+            m_kalmanFilter(kalmanFilter),
+            m_caloHits(caloHits),
+            m_pLastHit(pSeedHit),
+            m_id(m_counter.fetch_add(1))
+        {
+        };
+
+    private:
+        static std::atomic<int> m_counter;
+    };
+
+    typedef std::set<int> KalmanFitIDSet;
+    typedef std::map<int, KalmanFit> IDKalmanFitMap;
+    typedef std::map<const pandora::CaloHit *, KalmanFitIDSet> HitKalmanFitMap;
+
+    /**
+     *  @brief  CandidateCluster class
+     */
+    class CandidateCluster
+    {
+    public:
+        typedef std::tuple<const pandora::CaloHit *, const pandora::CaloHit *, const pandora::CaloHit *> HitTriplet;
+        typedef std::vector<HitTriplet> HitTripletVector;
+
+        CandidateCluster() = default;
+
+        void AddTriplet(const pandora::CaloHit *const pHit1, const pandora::CaloHit *const pHit2, const pandora::CaloHit *const pHit3);
+
+    private:
+        std::vector<HitTriplet> m_hitTriplets;
+    };
+
+    pandora::StatusCode Run();
+    pandora::StatusCode ReadSettings(const pandora::TiXmlHandle xmlHandle);
+
+    /**
+     *  @brief  Identifies potential clusters. At this stage hits can appear in more than one cluster.
+     *
+     *  @param  view the view to process
+     */
+    void IdentifyCandidateClusters(const pandora::HitType view);
+
+    /**
+     *  @brief  Make cluster seeds from hits in a single view
+     *
+     *  @param[in]  sliceCaloHits the input slice calo hits
+     *  @param[out]  kalmanFits the map of kalman fits to update
+     *  @param[out]  hitKalmanFitMap the map from hits to kalman fits to update
+     */
+    void MakeClusterSeeds(const pandora::CaloHitVector &sliceCaloHits, IDKalmanFitMap &kalmanFits, HitKalmanFitMap &hitKalmanFitMap);
+
+    /**
+     *  @brief  Build clusters from hits in a single view
+     *
+     *  @param[in]  sliceCaloHits the input slice calo hits
+     *  @param[in,out]  kalmanFits the map of kalman fits to update
+     *  @param[in,out]  hitKalmanFitMap the map from hits to kalman fits to update
+     */
+    void BuildClusters(const pandora::CaloHitVector &sliceCaloHits, IDKalmanFitMap &kalmanFits, HitKalmanFitMap &hitKalmanFitMap);
+
+    /**
+     *  @brief  Remove duplicate kalman fits
+     *
+     *  @param[in,out]  kalmanFits the map of kalman fits to update
+     *  @param[in,out]  hitKalmanFitMap the map from hits to kalman fits to update
+     */
+    void RemoveDuplicateKalmanFits(IDKalmanFitMap &kalmanFits, HitKalmanFitMap &hitKalmanFitMap);
+
+    /**
+     *  @brief  Determine which Kalman fit best describes hits that are represented in multiple fits
+     *
+     *  @param[in,out]  kalmanFits the map of kalman fits to update
+     *  @param[in,out]  hitKalmanFitMap the map from hits to kalman fits to update
+     */
+    void AllocateAmbiguousHits(IDKalmanFitMap &kalmanFits, HitKalmanFitMap &hitKalmanFitMap);
+
+    /**
+     *  @brief  Identify clusters that are interleaved and combine them
+     *
+     *  @param[in]  caloHits the input slice calo hits
+     *  @param[in,out]  kalmanFits the map of kalman fits to update
+     *  @param[in,out]  hitKalmanFitMap the map from hits to kalman fits to update
+     */
+    void ConsolidateInterleavedClusters(const pandora::CaloHitVector &caloHits, IDKalmanFitMap &kalmanFits, HitKalmanFitMap &hitKalmanFitMap);
+
+    /**
+     *  @brief  Compute the error between a Kalman filter prediction and the target measurement in the forward direction
+     *
+     *  @param[in]  caloHits The vector of hits in the candidate cluster
+     *  @param[in]  init The position of the first hit for initialising the Kalman filter
+     *  @param[in]  target The position of the target hit
+     *  @param[in]  pos The number of steps to predict to reach the target
+     */
+    double GetForwardError(const pandora::CaloHitVector &caloHits, const Eigen::VectorXd &init, const Eigen::VectorXd &target, const long steps);
+
+    /**
+     *  @brief  Compute the error between a Kalman filter prediction and the target measurement in the backward direction
+     *
+     *  @param[in]  caloHits The vector of hits in the candidate cluster
+     *  @param[in]  init The position of the first hit for initialising the Kalman filter
+     *  @param[in]  target The position of the target hit
+     *  @param[in]  pos The number of steps to predict to reach the target
+     */
+    double GetBackwardError(const pandora::CaloHitVector &caloHits, const Eigen::VectorXd &init, const Eigen::VectorXd &target, const long steps);
+
+    /**
+     *  @brief  Make candidate 3D hits from hits in two or more views
+     *
+     *  @param  caloHits0 the first vector of input 2D calo hits
+     *  @param  caloHits1 the second vector of input 2D calo hits
+     *  @param  caloHits2 the third vector of input 2D calo hits
+     *  @param  triplets the output triplets (or doublets with element 3 null)
+     */
+    void Make3DHitPermutations(const pandora::CaloHitVector &caloHits0, const pandora::CaloHitVector &caloHits1, const pandora::CaloHitVector &caloHits2, CandidateCluster::HitTripletVector &triplets) const;
+
+    /**
+     *  @brief  Filter out hits below any MIP threshold and organise into an ordered calo hit list
+     *
+     *  @param  pCaloHitList input hit list
+     *  @param  selectedCaloHitList the output list of selected hits
+     */
+    pandora::StatusCode FilterCaloHits(const pandora::CaloHitList *const pCaloHitList, pandora::OrderedCaloHitList &selectedCaloHitList) const;
+
+    /**
+     *  @brief  Retrieve the event span in x across all views
+     *
+     *  @param  min the output for the minimum x coordinate
+     *  @param  max the output for the maximum x coordinate
+     */
+    void GetSpanX(float &min, float &max) const;
+
+    /**
+     *  @brief  Clean up member variables between events
+     */
+    pandora::StatusCode Reset() override;
+
+    /**
+     *  @brief  Retrieve the slices from a given view/slice map in the vicinty of a given bin. Empty or missing bins will leave the hit lists unfilled
+     *
+     *  @param  sliceHitMap The slice-to-hit map from which slices should be retrieved
+     *  @param  bin The central bin around which slices should be retrieved
+     *  @param  caloHits_m1 The output hit list into which hits from the lesser adjacent bin (if populated) will be placed
+     *  @param  caloHits_p1 The output hit list into which hits from the greater adjacent bin (if populated) will be placed
+     */
+    void GetSlices(const LArSlicedCaloHitList::SliceHitMap &sliceHitMap, const size_t bin, pandora::CaloHitVector &caloHits_m1,
+        pandora::CaloHitVector &caloHits_p1) const;
+
+    /**
+     *  @brief  Retrieve the slices from a given view/slice map in the vicinty of a given bin. Empty or missing bins will leave the hit lists unfilled
+     *
+     *  @param  sliceHitMap The slice-to-hit map from which slices should be retrieved
+     *  @param  bin The central bin around which slices should be retrieved
+     *  @param  caloHits The output hit list into which hits from the target bin and adjacent bins (if populated) will be placed
+     */
+    void GetSlices(const LArSlicedCaloHitList::SliceHitMap &sliceHitMap, const size_t bin, pandora::CaloHitVector &caloHits) const;
+
+    /**
+     *  @brief  Determines if two hits are within a given proximity of each other
+     *
+     *  @param  pCaloHit1 the first calo hit
+     *  @param  pCaloHit2 the second calo hit
+     *  @param  proximity the radius of the neighbourhood considered proximate
+     *
+     *  @return true if the hits are within a given proximity of each other, false otherwise
+     */
+    bool Proximate(const pandora::CaloHit *const pCaloHit1, const pandora::CaloHit *const pCaloHit2, const float proximity = 1.f) const;
+
+    /**
+     *  @brief  Determines if a position is contained within a hit
+     *
+     *  @param  pCaloHit the calo hit
+     *  @param  position the position to check
+     *  @param  xTol the containment tolerance in the x direction
+     *  @param  zTol the containment tolerance in the z direction
+     *
+     *  @return true if the position is contained within the hit, false otherwise
+     */
+    bool Contains(const pandora::CaloHit *const pCaloHit, const Eigen::VectorXd &position, const float xTol = 0.f, const float zTol = 0.f) const;
+
+    /**
+     *  @brief  Determines if there is a hit between two hits. If the intervening hit significantly overlaps with either of the extremal hits
+     *          then the two hits are not considered to skip over the intervening hit.
+     *
+     *  @param  caloHits the collection of hits within the slice
+     *  @param  pCaloHit1 the first calo hit
+     *  @param  pCaloHit2 the second calo hit
+     *
+     *  @return true if there is a hit between the two hits, false otherwise
+     */
+    bool SkipsOverHit(const pandora::CaloHitVector &caloHits, const pandora::CaloHit *const pCaloHit1, const pandora::CaloHit *const pCaloHit2) const;
+
+    typedef std::map<pandora::HitType, LArSlicedCaloHitList *> ViewSlicedHitsMap;
+
+    float m_kalmanDelta; ///< The time step for updating the Kalman fit
+    float m_kalmanProcessVarCoeff; ///< The process variance modifier for the Kalman fit
+    float m_kalmanMeasurementVarCoeff; ///< The measurement variance modifier for the Kalman fit
+    float m_minCosTheta; ///< The minimum cosine theta for cluster continuation with small clusters
+    float m_xTol; ///< The x tolerance for containment
+    float m_zTol; ///< The z tolerance for containment
+    int m_kalmanMinHits; ///< The maximum number of hits in a cluster to rely on predicted hit containment
+    std::string m_caloHitListName; ///< The names of the calo hit lists to cluster
+    std::string m_clusterListPrefix; ///< The prefix to use for the output cluster lists
+    ViewOrderedHitsMap m_viewHitsMap; ///< Map from the view to the corresponding ordered calo hits
+    ViewSlicedHitsMap m_slicedCaloHits; ///< Collection of calo hits in each view organised into slices in the drift coordinate
+};
+
+} // namespace lar_content
+
+#endif // #ifndef LAR_KALMAN_CLUSTER_CREATION_ALGORITHM_H
