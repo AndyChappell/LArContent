@@ -80,7 +80,7 @@ private:
     std::string m_rootFileName; ///< The name of the root file to write the ntuple to
     std::string m_rootTreeName; ///< The name of the root tree to write the ntuple to
     bool m_trainingMode; ///< Whether the algorithm is in training mode or not
-    std::vector<double> m_thresholds; ///< The thresholds for distance classes
+    std::vector<int> m_thresholds; ///< The thresholds for distance classes
 };
 
 } // namespace lar_dl_content

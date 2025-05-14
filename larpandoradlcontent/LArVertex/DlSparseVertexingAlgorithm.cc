@@ -85,9 +85,9 @@ StatusCode DlSparseVertexingAlgorithm::PrepareTrainingSample()
     // Zero initialisation is fine, the function will overwrite it
     float xMin{0}, xMax{0}, zMin{0}, zMax{0};
     this->GetHitRegion(*pCaloHitList, xMin, xMax, zMin, zMax, std::numeric_limits<float>::epsilon());
-    const float xIndexMin{0.f}, xIndexMax{std::floor((xMax - xMin) / pitch)};
-    const float zIndexMin{0.f}, zIndexMax{std::floor((zMax - zMin) / pitch)};
-    const float scale{std::sqrt((xIndexMax - xIndexMin) * (xIndexMax - xIndexMin) + (zIndexMax - zIndexMin) * (zIndexMax - zIndexMin))};
+    //const float xIndexMin{0.f}, xIndexMax{std::floor((xMax - xMin) / pitch)};
+    //const float zIndexMin{0.f}, zIndexMax{std::floor((zMax - zMin) / pitch)};
+    //const float scale{std::sqrt((xIndexMax - xIndexMin) * (xIndexMax - xIndexMin) + (zIndexMax - zIndexMin) * (zIndexMax - zIndexMin))};
 
     // Get the true vertex location and convert to pixel coordinates
     float vx{0.f}, vu{0.f}, vv{0.f}, vw{0.f};
@@ -113,41 +113,43 @@ StatusCode DlSparseVertexingAlgorithm::PrepareTrainingSample()
     const float vxIndex{std::floor((vx - xMin) / pitch)};
     const float vzIndex{std::floor((vz - zMin) / pitch)};
 
-    std::map<std::pair<int, int>, std::tuple<float, int>> featureMap;
+    std::map<std::pair<int, int>, std::tuple<float, float, int>> featureMap;
     for (const CaloHit *const pCaloHit : *pCaloHitList)
     {
         const float x{pCaloHit->GetPositionVector().GetX()}, z{pCaloHit->GetPositionVector().GetZ()};
+        const float width{pCaloHit->GetCellSize1() / pitch};
         const int xIndex{static_cast<int>(std::floor((x - xMin) / pitch))};
         const int zIndex{static_cast<int>(std::floor((z - zMin) / pitch))};
         if (featureMap.find({xIndex, zIndex}) == featureMap.end())
         {
-            float dr{std::sqrt((vxIndex - xIndex) * (vxIndex - xIndex) + (vzIndex - zIndex) * (vzIndex - zIndex)) / scale};
+            //float dr{std::sqrt((vxIndex - xIndex) * (vxIndex - xIndex) + (vzIndex - zIndex) * (vzIndex - zIndex)) / scale};
+            float dr{std::sqrt((vxIndex - xIndex) * (vxIndex - xIndex) + (vzIndex - zIndex) * (vzIndex - zIndex))};
             int cls{this->GetClassFromDistance(dr)};
-            featureMap[{xIndex, zIndex}] = std::make_tuple(pCaloHit->GetMipEquivalentEnergy(), cls);
+            featureMap[{xIndex, zIndex}] = std::make_tuple(pCaloHit->GetMipEquivalentEnergy(), width, cls);
         }
         else
         {
             // Pick the maximum energy deposit in the pixel
             if (std::get<0>(featureMap[{xIndex, zIndex}]) < pCaloHit->GetMipEquivalentEnergy())
-            {
-                featureMap[{xIndex, zIndex}] = std::make_tuple(pCaloHit->GetMipEquivalentEnergy(), std::get<1>(featureMap[{xIndex, zIndex}]));
-            }
+                featureMap[{xIndex, zIndex}] = std::make_tuple(pCaloHit->GetMipEquivalentEnergy(), width, std::get<2>(featureMap[{xIndex, zIndex}]));
         }
     }
     // Consolidate coordinates and features
     IntVector xx, zz;
-    FloatVector adc, distance;
+    FloatVector adc, width, distance;
     for (const auto &[key, value] : featureMap)
     {
         xx.emplace_back(key.first);
         zz.emplace_back(key.second);
         adc.emplace_back(std::get<0>(value));
-        distance.emplace_back(std::get<1>(value));
+        width.emplace_back(std::get<1>(value));
+        distance.emplace_back(std::get<2>(value));
     }
 
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "xx", &xx));
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "zz", &zz));
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "adc", &adc));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "width", &width));
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "distance", &distance));
     PANDORA_MONITORING_API(FillTree(this->GetPandora(), m_rootTreeName));
 
