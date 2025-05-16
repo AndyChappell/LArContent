@@ -46,6 +46,28 @@ private:
         }
     };
 
+    struct MatrixHit
+    {
+        bool operator==(const MatrixHit &other) const
+        {
+            return m_x == other.m_x && m_z == other.m_z;
+        }
+
+        float m_x;
+        float m_z;
+    };
+
+    struct MatrixHitHash
+    {
+        std::size_t operator()(const MatrixHit &hit) const
+        {
+            size_t h1 = std::hash<float>()(hit.m_x);
+            size_t h2 = std::hash<float>()(hit.m_z);
+
+            return h1 ^ (h2 << 1);
+        }
+    };
+
     typedef std::map<const pandora::Pfo *, pandora::MCParticleSet> PfoToMCMap;
     typedef std::map<const pandora::MCParticle *, pandora::PfoSet> MCToPfoMap;
     typedef std::map<const pandora::MCParticle *, pandora::CaloHitSet> MCToHitsMap;
@@ -55,7 +77,8 @@ private:
     pandora::StatusCode Run();
     pandora::StatusCode ReadSettings(const pandora::TiXmlHandle xmlHandle);
     pandora::StatusCode CreateMaps();
-    pandora::StatusCode FindTrueOverlapCandidates(MCToMCMap &mcToMCMap) const;
+    pandora::StatusCode FindTrueOverlapCandidates(MCToMCMap &overlapCandidates) const;
+    pandora::StatusCode AssessPfos(const MCToMCMap &overlapCandidates, const pandora::PfoList &pfoList) const;
     void CollectHitsByView(const pandora::MCParticle *const pMC, pandora::CaloHitList &uHits, pandora::CaloHitList &vHits, pandora::CaloHitList &wHits) const;
     void VectorizeAndFilterHits(const pandora::CaloHitList &hits, const Eigen::RowVector2f &vertex, const float distance, Eigen::MatrixXf &filteredHits) const;
     void GetDifferenceAndFilterHits(const Eigen::MatrixXf &hits1, const Eigen::MatrixXf &hits2, const float distance, Eigen::MatrixXf &filteredHits1, Eigen::MatrixXf &filteredHits2) const;
