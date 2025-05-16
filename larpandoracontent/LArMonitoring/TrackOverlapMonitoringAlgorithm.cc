@@ -49,17 +49,9 @@ StatusCode TrackOverlapMonitoringAlgorithm::Run()
     }
 
     this->CreateMaps();
-    for (const auto &[vertex, mcParticles] : m_vertexToMCMap)
-    {
-        std::cout << "(" << vertex.GetX() << "," << vertex.GetY() << "," << vertex.GetZ() << ": ";
-        for (const auto &pMC : mcParticles)
-        {
-            std::cout << pMC->GetParticleId() << " ";
-        }
-        std::cout << std::endl;
-    }
-    MCToMCMap mcToMCMap;
-    this->FindTrueOverlapCandidates(mcToMCMap);
+    MCToMCMap overlapCandidates;
+    this->FindTrueOverlapCandidates(overlapCandidates);
+
 
     if (m_visualise)
     {
@@ -114,9 +106,8 @@ StatusCode TrackOverlapMonitoringAlgorithm::CreateMaps()
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-StatusCode TrackOverlapMonitoringAlgorithm::FindTrueOverlapCandidates(MCToMCMap &mcToMCMap) const
+StatusCode TrackOverlapMonitoringAlgorithm::FindTrueOverlapCandidates(MCToMCMap &overlapCandidates) const
 {
-    (void) mcToMCMap;
     const LArTransformationPlugin *pTransform{this->GetPandora().GetPlugins()->GetLArTransformationPlugin()};
     for (const auto &[vertex, mcParticles] : m_vertexToMCMap)
     {
@@ -152,12 +143,6 @@ StatusCode TrackOverlapMonitoringAlgorithm::FindTrueOverlapCandidates(MCToMCMap 
                 const float costheta{dir1.GetDotProduct(dir2)};
                 if (costheta < 0.866f)
                     continue;
-                std::cout <<pMC1<< "(" << pMC1->GetParticleId() << ") " << "dir1:" << dir1.GetX() << "," << dir1.GetY() << "," << dir1.GetZ() <<
-                    " (" << pMC1->GetVertex().GetX() << "," << pMC1->GetVertex().GetY() << "," << pMC1->GetVertex().GetZ() << ")" << std::endl;
-                std::cout <<pMC2<< "(" << pMC2->GetParticleId() << ") " << "dir2:" << dir2.GetX() << "," << dir2.GetY() << "," << dir2.GetZ() <<
-                    " (" << pMC2->GetVertex().GetX() << "," << pMC2->GetVertex().GetY() << "," << pMC2->GetVertex().GetZ() << ")" << std::endl;
-                std::cout << "costheta: " << costheta << std::endl;
-                std::cout << (pMC1->GetVertex() == pMC2->GetVertex()) << std::endl;
 
                 CaloHitList uHits2, vHits2, wHits2;
                 this->CollectHitsByView(pMC2, uHits2, vHits2, wHits2);
@@ -166,36 +151,59 @@ StatusCode TrackOverlapMonitoringAlgorithm::FindTrueOverlapCandidates(MCToMCMap 
                 Eigen::MatrixXf uHitMatrix1Filtered, uHitMatrix2Filtered;
                 this->GetDifferenceAndFilterHits(uHitMatrix1, uHitMatrix2, m_distance, uHitMatrix1Filtered, uHitMatrix2Filtered);
 
-                const CartesianVector pos(x, 0, u);
-                if (m_visualise && uHitMatrix1Filtered.rows() > 0 && uHitMatrix2Filtered.rows() > 0)
+                // Find shared hits by hashing one lot of filtered hits and storing in a set, then look for hashed hits from the other lot of filtered
+                // hits in the set
+                std::unordered_set<MatrixHit, MatrixHitHash> uHitSet;
+                for (int i = 0; i < uHitMatrix1Filtered.rows(); ++i)
                 {
+                    uHitSet.insert({uHitMatrix1Filtered(i, 0), uHitMatrix1Filtered(i, 1)});
+                }
+                size_t sharedHits{0};
+                for (int i = 0; i < uHitMatrix2Filtered.rows(); ++i)
+                {
+                    if (uHitSet.find({uHitMatrix2Filtered(i, 0), uHitMatrix2Filtered(i, 1)}) != uHitSet.end())
+                        ++sharedHits;
+                }
+                const size_t uniqueHits1{uHitMatrix1Filtered.rows() - sharedHits};
+                const size_t uniqueHits2{uHitMatrix2Filtered.rows() - sharedHits};
+                const bool isCandidate{sharedHits > 2 || (uniqueHits1 >= 2 && uniqueHits2 >= 2)};
+                if (isCandidate)
+                {
+                    overlapCandidates[pMC1].insert(pMC2);
+                    overlapCandidates[pMC2].insert(pMC1);
+                }
+                if (m_visualise && isCandidate && uHitMatrix1Filtered.rows() > 0 && uHitMatrix2Filtered.rows() > 0)
+                {
+                    const CartesianVector pos(x, 0, u); (void)pos;
                     PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &uHits1, "1 (" + std::to_string(uHitMatrix1.rows()) + ")", BLACK));
                     PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &uHits2, "2 (" + std::to_string(uHitMatrix2.rows()) + ")", RED));
                     for (int i = 0; i < uHitMatrix1Filtered.rows(); ++i)
                     {
-                        const CartesianVector pos1{uHitMatrix1Filtered(i, 0), 0, uHitMatrix1Filtered(i, 1)};
+                        const CartesianVector pos1{uHitMatrix1Filtered(i, 0), 0, uHitMatrix1Filtered(i, 1)}; (void)pos1;
                         PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &pos1, "1", BLACK, 1));
                     }
                     for (int i = 0; i < uHitMatrix2Filtered.rows(); ++i)
                     {
-                        const CartesianVector pos2{uHitMatrix2Filtered(i, 0), 0, uHitMatrix2Filtered(i, 1)};
+                        const CartesianVector pos2{uHitMatrix2Filtered(i, 0), 0, uHitMatrix2Filtered(i, 1)}; (void)pos2;
                         PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &pos2, "2", RED, 1));
                     }
 
                     PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &pos, "vtx", BLUE, 1));
                     PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
                 }
-
-                std::cout << "Vertex: " << vertex.GetX() << "," << vertex.GetY() << "," << vertex.GetZ() << std::endl;
-                std::cout << "   Hits in 1 (" << pMC1->GetParticleId() << "): " << uHitMatrix1.size() << " Filtered: " << uHitMatrix1Filtered.size() << std::endl;
-                std::cout << "   Hits in 2 (" << pMC2->GetParticleId()  << "): " << uHitMatrix2.size() << " Filtered: " << uHitMatrix2Filtered.size() << std::endl;
-
-                // Once we know if we have overlkap candidates, add them to the map
-                //mcToMCMap[pMC1].insert(pMC2);
-                //mcToMCMap[pMC2].insert(pMC1);
             }
         }
     }
+
+    return STATUS_CODE_SUCCESS;
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+StatusCode TrackOverlapMonitoringAlgorithm::AssessPfos(const MCToMCMap &overlapCandidates, const PfoList &pfoList) const
+{
+    (void)overlapCandidates;
+    (void)pfoList;
 
     return STATUS_CODE_SUCCESS;
 }
