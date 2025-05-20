@@ -64,6 +64,44 @@ LArVertexHelper::ClusterDirection LArVertexHelper::GetClusterDirectionInZ(
 
 //-----------------------------------------------------------------------------------------------------------------------------------------
 
+bool LArVertexHelper::IsInActiveVolume(const Pandora &pandora, const CartesianVector &vertex)
+{
+    const LArTPCMap &larTPCMap(pandora.GetGeometry()->GetLArTPCMap());
+
+    if (larTPCMap.empty())
+    {
+        std::cout << "LArVertexHelper::IsInFiducialVolume - LArTPC description not registered with Pandora as required " << std::endl;
+        throw StatusCodeException(STATUS_CODE_NOT_INITIALIZED);
+    }
+
+    float tpcMinX{std::numeric_limits<float>::max()}, tpcMaxX{-std::numeric_limits<float>::max()};
+    float tpcMinY{std::numeric_limits<float>::max()}, tpcMaxY{-std::numeric_limits<float>::max()};
+    float tpcMinZ{std::numeric_limits<float>::max()}, tpcMaxZ{-std::numeric_limits<float>::max()};
+
+    for (const auto &[volumeId, pLArTPC] : larTPCMap)
+    {
+        (void)volumeId;
+        const float centreX{pLArTPC->GetCenterX()}, halfWidthX{0.5f * pLArTPC->GetWidthX()};
+        const float centreY{pLArTPC->GetCenterY()}, halfWidthY{0.5f * pLArTPC->GetWidthY()};
+        const float centreZ{pLArTPC->GetCenterZ()}, halfWidthZ{0.5f * pLArTPC->GetWidthZ()};
+        tpcMinX = std::min(tpcMinX, centreX - halfWidthX);
+        tpcMaxX = std::max(tpcMaxX, centreX + halfWidthX);
+        tpcMinY = std::min(tpcMinY, centreY - halfWidthY);
+        tpcMaxY = std::max(tpcMaxY, centreY + halfWidthY);
+        tpcMinZ = std::min(tpcMinZ, centreZ - halfWidthZ);
+        tpcMaxZ = std::max(tpcMaxZ, centreZ + halfWidthZ);
+    }
+
+    const float x{vertex.GetX()};
+    const float y{vertex.GetY()};
+    const float z{vertex.GetZ()};
+
+    return tpcMinX < x && x < tpcMaxX && tpcMinY < y && y < tpcMaxY && tpcMinZ < z && z < tpcMaxZ;
+}
+
+
+//-----------------------------------------------------------------------------------------------------------------------------------------
+
 bool LArVertexHelper::IsInFiducialVolume(const Pandora &pandora, const CartesianVector &vertex, const std::string &detector)
 {
     const LArTPCMap &larTPCMap(pandora.GetGeometry()->GetLArTPCMap());
@@ -106,6 +144,13 @@ bool LArVertexHelper::IsInFiducialVolume(const Pandora &pandora, const Cartesian
         const float y{vertex.GetY()};
         const float z{vertex.GetZ()};
         return tpcMinX < x && x < tpcMaxX && tpcMinY < y && y < tpcMaxY && tpcMinZ < z && z < tpcMaxZ;
+    }
+    else if (detector == "sbnd")
+    {
+        const float x{vertex.GetX()};
+        const float y{vertex.GetY()};
+        const float z{vertex.GetZ()};
+        return (5 < std::fabs(x)) && (std::fabs(x) < 180) && (-180 < y) && (y < 180) && (20 < z) && (z < 470);
     }
     else
     {

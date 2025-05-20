@@ -47,6 +47,16 @@ public:
         const pandora::Cluster *const pCluster, const float tanAngle, const float apexShift);
 
     /**
+     *  @brief  Determine if a vertex is within a detector's active volume.
+     *
+     *  @param  pandora The Pandora instance
+     *  @param  vertex The vertex to check
+     *
+     *  @return true if in active volume, false if not
+     */
+    static bool IsInActiveVolume(const pandora::Pandora &pandora, const pandora::CartesianVector &vertex);
+
+    /**
      *  @brief  Determine if a vertex is within a detector's fiducial volume. This throws a STATUS_CODE_INVALID_PARAMETER exception if the detector
      *          is not recognised.
      *
