@@ -425,8 +425,9 @@ InteractionDescriptor LArInteractionTypeHelper::GetInteractionDescriptor(const M
 
     for (const MCParticle *const pMCPrimary : mcPrimaryList)
     {
-        if (!LArMCParticleHelper::IsBeamNeutrinoFinalState(pMCPrimary) ||
-            (pMCNeutrino && (pMCNeutrino != LArMCParticleHelper::GetParentMCParticle(pMCPrimary))))
+        if (!LArMCParticleHelper::IsBeamNeutrinoFinalState(pMCPrimary))
+            continue;
+        if (pMCNeutrino && (pMCNeutrino != LArMCParticleHelper::GetParentMCParticle(pMCPrimary)))
             throw StatusCodeException(STATUS_CODE_INVALID_PARAMETER);
 
         pMCNeutrino = LArMCParticleHelper::GetParentMCParticle(pMCPrimary);
