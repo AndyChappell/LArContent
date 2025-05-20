@@ -68,7 +68,7 @@ StatusCode MCMonitoringAlgorithm::Run()
     {
         const int pdg{std::abs(pRoot->GetParticleId())};
         if (pdg == 12 || pdg == 14 || pdg == 16)
-            this->PrintHierarchy(pRoot, "");
+            this->PrintHierarchy(pRoot, 0);
     }
 
     std::cout << "------------------------------------------------------------------------------------------------" << std::endl;
@@ -78,11 +78,14 @@ StatusCode MCMonitoringAlgorithm::Run()
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-void MCMonitoringAlgorithm::PrintHierarchy(const MCParticle *const pMC, const std::string &tab) const
+void MCMonitoringAlgorithm::PrintHierarchy(const MCParticle *const pMC, const int depth) const
 {
+    const std::string tab(depth, '\t');
     std::cout << tab << pMC->GetParticleId() << " " << pMC->GetDaughterList().size() << std::endl;
+    if (depth >= 1)
+        return;
     for (const MCParticle *const pChild : pMC->GetDaughterList())
-        this->PrintHierarchy(pChild, tab + "  ");
+        this->PrintHierarchy(pChild, depth + 1);
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------

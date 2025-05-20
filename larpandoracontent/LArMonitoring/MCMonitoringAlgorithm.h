@@ -30,7 +30,7 @@ private:
     pandora::StatusCode Run();
     pandora::StatusCode ReadSettings(const pandora::TiXmlHandle xmlHandle);
 
-    void PrintHierarchy(const pandora::MCParticle *const pMC, const std::string &tab) const;
+    void PrintHierarchy(const pandora::MCParticle *const pMC, const int depth) const;
 
     std::string m_caloHitListName;    ///< Name of input calo hit list
     std::string m_mcParticleListName; ///< Name of input MC particle list
