@@ -36,9 +36,12 @@ private:
     bool m_visualise;                ///< Whether to produce visual monitoring output
     bool m_writeFile;                ///< Whether to produce ROOT output file
     bool m_useSecondaries;           ///< Whether to assess secondary vertices
+    bool m_useVertexList;            ///< Whether to use the vertex list for the assessment (as opposed to using the neutrino PFO, which might not exist)
     std::string m_filename;          ///< The filename of the ROOT output file
     std::string m_treename;          ///< The name of the ROOT tree
+    std::string m_vertexListName;    ///< The name of the list containing primary vertex
     std::string m_secVertexListName; ///< The name of the list containing secondary vertices
+    std::string m_detector;          ///< The name of the detector
     float m_transparencyThresholdE;  ///< Cell energy for which transparency is saturated (0%, fully opaque)
     float m_energyScaleThresholdE;   ///< Cell energy for which color is at top end of continous color palette
     float m_scalingFactor;           ///< TEve works with [cm], Pandora usually works with [mm] (but LArContent went with cm too)
