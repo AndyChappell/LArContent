@@ -157,7 +157,8 @@ StatusCode DlVertexingAlgorithm::PrepareTrainingSample()
         }
         featureVector.insert(featureVector.begin() + 8, static_cast<double>(nHits));
         // Only write out the feature vector if there were enough hits in the region of interest
-        if (nHits > 10)
+        if (LArVertexHelper::IsInActiveVolume(this->GetPandora(), vertex) && nHits > 0)
+
             LArMvaHelper::ProduceTrainingExample(trainingFilename, true, featureVector);
     }
 
