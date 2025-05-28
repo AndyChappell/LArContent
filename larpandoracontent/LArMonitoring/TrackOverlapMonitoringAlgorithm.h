@@ -68,6 +68,16 @@ private:
         }
     };
 
+    struct AssessmentResult
+    {
+        const pandora::CaloHit *pCaloHit;
+        int originalCluster;
+        int sequenceIndex;
+        double mdSelf;
+        double mdOther;
+        int suggestedCluster;
+    };
+
     typedef std::map<const pandora::Pfo *, pandora::MCParticleSet> PfoToMCMap;
     typedef std::map<const pandora::MCParticle *, pandora::PfoSet> MCToPfoMap;
     typedef std::map<const pandora::MCParticle *, pandora::CaloHitSet> MCToHitsMap;
@@ -78,7 +88,8 @@ private:
     pandora::StatusCode ReadSettings(const pandora::TiXmlHandle xmlHandle);
     pandora::StatusCode CreateMaps();
     pandora::StatusCode FindTrueOverlapCandidates(MCToMCMap &overlapCandidates) const;
-    pandora::StatusCode AssessPfos(const MCToMCMap &overlapCandidates, const pandora::PfoList &pfoList) const;
+    pandora::StatusCode AssessPfos(const MCToMCMap &overlapCandidates) const;
+    pandora::StatusCode AssessClusterAllocations(const pandora::CaloHitVector &hits1, const pandora::CaloHitVector &hits2, std::vector<AssessmentResult> &results) const;
     void CollectHitsByView(const pandora::MCParticle *const pMC, pandora::CaloHitList &uHits, pandora::CaloHitList &vHits, pandora::CaloHitList &wHits) const;
     void VectorizeAndFilterHits(const pandora::CaloHitList &hits, const Eigen::RowVector2f &vertex, const float distance, Eigen::MatrixXf &filteredHits) const;
     void GetDifferenceAndFilterHits(const Eigen::MatrixXf &hits1, const Eigen::MatrixXf &hits2, const float distance, Eigen::MatrixXf &filteredHits1, Eigen::MatrixXf &filteredHits2) const;
@@ -94,6 +105,9 @@ private:
     VertexToMCMap m_vertexToMCMap; ///< Vertex to MC map
     float m_vertexRadius; ///< The radius of the vertex to consider
     float m_distance; ///< The distance to consider for overlap
+    float m_delta; ///< The time step for the Kalman filter
+    float m_processVarCoeff; ///< The process variance coefficient for the Kalman filter
+    float m_measurementVarCoeff; ///< The measurement variance coefficient for the Kalman filter
 };
 
 } // namespace lar_content
