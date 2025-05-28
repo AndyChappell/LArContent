@@ -58,6 +58,13 @@ public:
     void Update(const MeasurementVector &z);
 
     /**
+     * @brief  Uses the measurement matrix to predict and update the state estimate
+     *
+     * @param  z The position to use for updating the state estimate
+     */
+    void PredictAndUpdate(const MeasurementVector &z);
+
+    /**
      * @brief  Get the current state vector
      *
      * @return The current state vector
@@ -160,6 +167,15 @@ void KalmanFilter<DIM>::Update(const KalmanFilter<DIM>::MeasurementVector &z)
     auto K = m_P * Ht * S.inverse();
     m_x += K * y;
     m_P = (m_identity - K * m_H) * m_P;
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+template <int DIM>
+void KalmanFilter<DIM>::PredictAndUpdate(const KalmanFilter<DIM>::MeasurementVector &z)
+{
+    Predict();
+    Update(z);
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
