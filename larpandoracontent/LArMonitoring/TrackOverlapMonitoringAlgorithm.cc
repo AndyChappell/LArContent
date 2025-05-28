@@ -16,6 +16,8 @@
 #include "larpandoracontent/LArHelpers/LArPfoHelper.h"
 #include "larpandoracontent/LArHelpers/LArVertexHelper.h"
 
+#include "larpandoracontent/LArUtility/KalmanFilter.h"
+
 using namespace pandora;
 
 namespace lar_content
@@ -25,7 +27,10 @@ TrackOverlapMonitoringAlgorithm::TrackOverlapMonitoringAlgorithm() :
     m_visualise{true},
     m_writeFile{false},
     m_vertexRadius{10.f},
-    m_distance{2.f}
+    m_distance{2.f},
+    m_delta{0.5f},
+    m_processVarCoeff{1.f},
+    m_measurementVarCoeff{1.f}
 {
 }
 
@@ -51,7 +56,8 @@ StatusCode TrackOverlapMonitoringAlgorithm::Run()
     this->CreateMaps();
     MCToMCMap overlapCandidates;
     this->FindTrueOverlapCandidates(overlapCandidates);
-
+    std::cout << "Overlap candidates found: " << overlapCandidates.size() << std::endl;
+    this->AssessPfos(overlapCandidates);
 
     if (m_visualise)
     {
@@ -123,9 +129,7 @@ StatusCode TrackOverlapMonitoringAlgorithm::FindTrueOverlapCandidates(MCToMCMap 
             CaloHitList uHits1, vHits1, wHits1;
             this->CollectHitsByView(pMC1, uHits1, vHits1, wHits1);
             float x{0}, u{0}, v{0}, w{0};
-            (void)v;
-            (void)w;
-            LArVertexHelper::GetTrueVertexPosition(pMC1->GetVertex(), pTransform, x, u, v, w);
+            LArVertexHelper::GetPositionProjections(pMC1->GetVertex(), pTransform, x, u, v, w);
             Eigen::RowVector2f uVertex(x, u);
             Eigen::MatrixXf uHitMatrix1; // Size will be set by FilterHits
             this->VectorizeAndFilterHits(uHits1, uVertex, m_vertexRadius, uHitMatrix1);
@@ -169,8 +173,8 @@ StatusCode TrackOverlapMonitoringAlgorithm::FindTrueOverlapCandidates(MCToMCMap 
                 const bool isCandidate{sharedHits > 2 || (uniqueHits1 >= 2 && uniqueHits2 >= 2)};
                 if (isCandidate)
                 {
+                    std::cout << "Overlap MC: " << pMC1 << " and " << pMC2 << ", vertex: (" << x << ", " << u << ")" << std::endl;
                     overlapCandidates[pMC1].insert(pMC2);
-                    overlapCandidates[pMC2].insert(pMC1);
                 }
                 if (m_visualise && isCandidate && uHitMatrix1Filtered.rows() > 0 && uHitMatrix2Filtered.rows() > 0)
                 {
@@ -200,10 +204,207 @@ StatusCode TrackOverlapMonitoringAlgorithm::FindTrueOverlapCandidates(MCToMCMap 
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-StatusCode TrackOverlapMonitoringAlgorithm::AssessPfos(const MCToMCMap &overlapCandidates, const PfoList &pfoList) const
+StatusCode TrackOverlapMonitoringAlgorithm::AssessPfos(const MCToMCMap &overlapCandidates) const
 {
-    (void)overlapCandidates;
-    (void)pfoList;
+    auto distanceSq = [](const CartesianVector &vertex, const CaloHit *const pCaloHit) -> float
+    {
+        const float dx{vertex.GetX() - pCaloHit->GetPositionVector().GetX()};
+        const float dy{vertex.GetY() - pCaloHit->GetPositionVector().GetY()};
+        const float dz{vertex.GetZ() - pCaloHit->GetPositionVector().GetZ()};
+        return dx * dx + dy * dy + dz * dz;
+    };
+
+    // Look through the overlap candidates and identify the associated PFOs
+    std::set<std::tuple<const MCParticle *, const Pfo *, const Pfo *>> pfoTuples;
+    for (const auto &[pMC, pMCSet] : overlapCandidates)
+    {
+        if (pMCSet.empty())
+            continue;
+        const PfoSet &pfoSet{m_mcToPfoMap.at(pMC)};
+        if (pfoSet.empty())
+            continue;
+
+        const CaloHitSet &caloHitSetMC1{m_mcToHitsMap.at(pMC)};
+        CaloHitList caloHitListMC1;
+        for (const CaloHit *const pCaloHit : caloHitSetMC1)
+        {
+            if (pCaloHit->GetHitType() == TPC_VIEW_U)
+                caloHitListMC1.emplace_back(pCaloHit);
+        }
+
+        for (const MCParticle *const pMCOther : pMCSet)
+        {
+            std::cout << "Assessing overlap MC: " << pMC << " " << pMCOther << std::endl;
+            const PfoSet &pfoSetOther{m_mcToPfoMap.at(pMCOther)};
+            std::cout << "  PFOs: " << pfoSet.size() << " vs " << pfoSetOther.size() << std::endl;
+            if (pfoSetOther.empty())
+                continue;
+
+            const CaloHitSet &caloHitSetMC2{m_mcToHitsMap.at(pMCOther)};
+            CaloHitList caloHitListMC2;
+            for (const CaloHit *const pCaloHit : caloHitSetMC2)
+            {
+                if (pCaloHit->GetHitType() == TPC_VIEW_U)
+                    caloHitListMC2.emplace_back(pCaloHit);
+            }
+
+            for (const Pfo *const pPfo : pfoSet)
+            {
+                for (const Pfo *const pPfoOther : pfoSetOther)
+                {
+                    if (pPfo == pPfoOther)
+                        continue;
+                    pfoTuples.insert({pMC, pPfo, pPfoOther});
+                    std::cout << "    Keeping " << pPfo << " " << pPfoOther << std::endl;
+                    // Need to visualise these PFOs, or at least the hits sufficiently close to the common vertex
+                    // to see what are inputs are. Seems like we're looking at quite a few PFOs given 2 MC
+
+                    PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &caloHitListMC1, "MC Hits 1", BLACK));
+                    PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &caloHitListMC2, "MC Hits 2", RED));
+                    CaloHitList caloHits1;
+                    LArPfoHelper::GetCaloHits(pPfo, TPC_VIEW_U, caloHits1);
+                    LArPfoHelper::GetIsolatedCaloHits(pPfo, TPC_VIEW_U, caloHits1);
+                    PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &caloHits1, "PFO Hits 1", BLUE));
+                    CaloHitList caloHits2;
+                    LArPfoHelper::GetCaloHits(pPfoOther, TPC_VIEW_U, caloHits2);
+                    LArPfoHelper::GetIsolatedCaloHits(pPfoOther, TPC_VIEW_U, caloHits2);
+                    PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &caloHits2, "PFO Hits 2", ORANGE));
+                    PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
+                }
+            }
+        }
+    }
+
+    const LArTransformationPlugin *pTransform{this->GetPandora().GetPlugins()->GetLArTransformationPlugin()};
+    for (const auto &[pMC, pPfo1, pPfo2] : pfoTuples)
+    {
+        for (const HitType view : {TPC_VIEW_U, TPC_VIEW_V, TPC_VIEW_W})
+        {
+            if (view != TPC_VIEW_U)
+                continue; // For now, only assess U view
+            CaloHitList caloHits1;
+            LArPfoHelper::GetCaloHits(pPfo1, view, caloHits1);
+            LArPfoHelper::GetIsolatedCaloHits(pPfo1, view, caloHits1);
+            if (caloHits1.empty())
+                continue;
+            CaloHitList caloHits2;
+            LArPfoHelper::GetCaloHits(pPfo2, view, caloHits2);
+            LArPfoHelper::GetIsolatedCaloHits(pPfo2, view, caloHits2);
+            if (caloHits2.empty())
+                continue;
+            // Get the MC vertex and order the hits according to distance from the vertex
+            float x{0}, c{0};
+            LArVertexHelper::GetPositionProjection(pMC->GetVertex(), pTransform, view, x, c);
+            const CartesianVector &vertex{x, 0, c};
+            CaloHitVector caloHits1Sorted;
+            std::copy_if(caloHits1.begin(), caloHits1.end(), std::back_inserter(caloHits1Sorted),
+                [&](const CaloHit *hit) { return distanceSq(vertex, hit) < m_vertexRadius * m_vertexRadius; });
+            if (caloHits1Sorted.empty())
+                continue;
+            CaloHitVector caloHits2Sorted;
+            std::copy_if(caloHits2.begin(), caloHits2.end(), std::back_inserter(caloHits2Sorted),
+                [&](const CaloHit *hit) { return distanceSq(vertex, hit) < m_vertexRadius * m_vertexRadius; });
+            if (caloHits2Sorted.empty())
+                continue;
+            std::cout << "Assessing PFOs: " << pMC << " " << pPfo1 << " and " << pPfo2 << std::endl;
+            std::cout << "   Hits in view " << view << ": " << caloHits1.size() << " vs " << caloHits2.size();
+            std::cout << " Filtered: " << caloHits1Sorted.size() << " vs " << caloHits2Sorted.size() << std::endl;
+
+            auto sortHits = [&](const CaloHit *const hit1, const CaloHit *const hit2)
+            {
+                return distanceSq(vertex, hit1) < distanceSq(vertex, hit2);
+            };
+            std::sort(caloHits1Sorted.begin(), caloHits1Sorted.end(), sortHits);
+            std::sort(caloHits2Sorted.begin(), caloHits2Sorted.end(), sortHits);
+
+            std::vector<AssessmentResult> results;
+            const StatusCode statusCode{this->AssessClusterAllocations(caloHits1Sorted, caloHits2Sorted, results)};
+            (void)statusCode; // Ignore the status code for now
+            // Do something with the result
+        }
+    }
+
+    return STATUS_CODE_SUCCESS;
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+StatusCode TrackOverlapMonitoringAlgorithm::AssessClusterAllocations(const CaloHitVector &hits1, const CaloHitVector &hits2, std::vector<AssessmentResult> &results) const
+{
+    if (hits1.empty() || hits2.empty())
+        return STATUS_CODE_SUCCESS;
+
+    Eigen::MatrixXf hitMatrix1(hits1.size(), 2);
+    LArEigenHelper::Vectorize(hits1, hitMatrix1);
+    Eigen::MatrixXf hitMatrix2(hits2.size(), 2);
+    LArEigenHelper::Vectorize(hits2, hitMatrix2);
+
+    const LArTPC *const pTPC{this->GetPandora().GetGeometry()->GetLArTPCMap().begin()->second};
+    const HitType view{hits1.front()->GetHitType()};
+    const float pitch{view == TPC_VIEW_U ? pTPC->GetWirePitchU() : (view == TPC_VIEW_V ? pTPC->GetWirePitchV() : pTPC->GetWirePitchW())};
+    const float processVariance{m_processVarCoeff * pitch * pitch};
+    const float measurementVariance{m_measurementVarCoeff * pitch * pitch};
+
+    KalmanFilter2D kf1(KalmanFilter2D(m_delta, processVariance, measurementVariance, hitMatrix1.row(0).cast<double>().transpose()));
+    if (hits1.size() > 1)
+        kf1.PredictAndUpdate(hitMatrix1.row(1).cast<double>().transpose());
+    KalmanFilter2D kf2(KalmanFilter2D(m_delta, processVariance, measurementVariance, hitMatrix2.row(0).cast<double>().transpose()));
+    if (hits2.size() > 1)
+        kf2.PredictAndUpdate(hitMatrix2.row(1).cast<double>().transpose());
+
+    CaloHitList caloHitList1(hits1.begin(), hits1.end());
+    CaloHitList caloHitList2(hits2.begin(), hits2.end());
+
+    size_t N1{hits1.size()};
+    size_t N2{hits2.size()};
+    size_t N{std::max(N1, N2)};
+
+    // Currently this just walks through both clusters at the same rate. We may want to pass in a third vector of pairs that describes
+    // the global order of hits (so first element is the cluster, 1 or 2, second element is the index in that cluster), such that we
+    // always consider the next closest hit to the vertex
+    for (size_t i = 0; i < N; ++i)
+    {
+        kf1.Predict();
+        kf2.Predict();
+        PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &caloHitList1, "Hits 1", BLUE));
+        PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &caloHitList2, "Hits 2", ORANGE));
+        if (i < N1)
+        {
+            const KalmanFilter2D::PositionVector &hit1{hitMatrix1.row(i).cast<double>().transpose()};
+            const CartesianVector pos1{static_cast<float>(hit1(0)), 0, static_cast<float>(hit1(1))};
+            PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &pos1, "1", BLACK, 1));
+            const double md1{kf1.GetMahalanobisDistance(hit1)};
+            const double md2{kf2.GetMahalanobisDistance(hit1)};
+            std::cout << "1: MD1: " << md1 << ", MD2: " << md2 << std::endl;
+            results.emplace_back(AssessmentResult{hits1[i], 1, static_cast<int>(i), md1, md2, md1 < md2 ? 1 : 2});
+            kf1.Update(hit1);
+            auto statePos1{kf1.GetPosition()};
+            const CartesianVector pred1{static_cast<float>(statePos1(0)), 0, static_cast<float>(statePos1(1))};
+            PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &pred1, "1 P1", BLUE, 1));
+            auto statePos2{kf2.GetTemporaryState().head<2>()};
+            const CartesianVector pred2{static_cast<float>(statePos2(0)), 0, static_cast<float>(statePos2(1))};
+            PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &pred2, "1 P2", BLUE, 1));
+        }
+        if (i < N2)
+        {
+            const KalmanFilter2D::PositionVector &hit2{hitMatrix2.row(i).cast<double>().transpose()};
+            const CartesianVector pos2{static_cast<float>(hit2(0)), 0, static_cast<float>(hit2(1))};
+            PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &pos2, "2", RED, 1));
+            const double md1{kf1.GetMahalanobisDistance(hit2)};
+            const double md2{kf2.GetMahalanobisDistance(hit2)};
+            std::cout << "2: MD2: " << md2 << ", MD1: " << md1 << std::endl;
+            results.emplace_back(AssessmentResult{hits2[i], 2, static_cast<int>(i), md2, md1, md2 < md1 ? 2 : 1});
+            kf2.Update(hit2);
+            auto statePos1{kf2.GetPosition()};
+            const CartesianVector pred1{static_cast<float>(statePos1(0)), 0, static_cast<float>(statePos1(1))};
+            PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &pred1, "2 P1", ORANGE, 1));
+            auto statePos2{kf1.GetTemporaryState().head<2>()};
+            const CartesianVector pred2{static_cast<float>(statePos2(0)), 0, static_cast<float>(statePos2(1))};
+            PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &pred2, "2 P2", ORANGE, 1));
+        }
+
+        PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
+    }
 
     return STATUS_CODE_SUCCESS;
 }
@@ -299,6 +500,9 @@ StatusCode TrackOverlapMonitoringAlgorithm::ReadSettings(const TiXmlHandle xmlHa
     PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadValue(xmlHandle, "PfoListName", m_pfoListName));
     PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "VertexRadius", m_vertexRadius));
     PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "OverlapDistance", m_distance));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "Delta", m_delta));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "ProcessVarianceCoefficient", m_processVarCoeff));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "MeasurementVarianceCoefficient", m_measurementVarCoeff));
 
     return STATUS_CODE_SUCCESS;
 }
