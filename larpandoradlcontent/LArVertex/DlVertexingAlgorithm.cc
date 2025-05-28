@@ -272,7 +272,7 @@ StatusCode DlVertexingAlgorithm::Infer()
             {
                 float x{0.f}, u{0.f}, v{0.f}, w{0.f};
                 const LArTransformationPlugin *transform{this->GetPandora().GetPlugins()->GetLArTransformationPlugin()};
-                LArVertexHelper::GetTrueVertexPosition(trueVertex3D, transform, x, u, v, w);
+                LArVertexHelper::GetPositionProjections(trueVertex3D, transform, x, u, v, w);
                 if (isU)
                 {
                     const CartesianVector trueVertex(x, 0.f, u);

@@ -60,25 +60,29 @@ public:
     static bool IsInFiducialVolume(const pandora::Pandora &pandora, const pandora::CartesianVector &vertex, const std::string &detector);
 
     /**
-     *  @brief  Retrieve the true neutrino vertex position.
-     *  @param  vertex The cartesian vector containing the 3D vertex position
-     *  @param  x The output x coordinate
-     *  @param  u The output y coordinate
-     *  @param  v The output z coordinate
-     */
-    static void GetTrueVertexPosition(const pandora::CartesianVector &vertex, float &x, float &y, float &z);
-
-    /**
-     *  @brief  Retrieve the true neutrino vertex position.
+     *  @brief  Retrieve the various projections from a 3D position.
      *
      *  @param  vertex The cartesian vector containing the 3D vertex position
+     *  @param  pTransform The LAr transformation plugin to use for the projections
      *  @param  x The output drift coordinate
      *  @param  u The output channel coordinate in the U plane
      *  @param  v The output channel coordinate in the V plane
      *  @param  w The output channel coordinate in the W plane
      */
-    static void GetTrueVertexPosition(const pandora::CartesianVector &vertex, const pandora::LArTransformationPlugin *const pTransform,
+    static void GetPositionProjections(const pandora::CartesianVector &vertex, const pandora::LArTransformationPlugin *const pTransform,
         float &x, float &u, float &v, float &w);
+
+    /**
+     *  @brief  Retrieve a specified projection from a 3D position.
+     *
+     *  @param  vertex The cartesian vector containing the 3D vertex position
+     *  @param  pTransform The LAr transformation plugin to use for the projections
+     *  @param  view The view into which the vertex should be projected
+     *  @param[out]  x The output drift coordinate
+     *  @param[out]  c The channel coordinate
+     */
+    static void GetPositionProjection(const pandora::CartesianVector &vertex, const pandora::LArTransformationPlugin *const pTransform,
+        const pandora::HitType view, float &x, float &c);
 };
 
 } // namespace lar_content

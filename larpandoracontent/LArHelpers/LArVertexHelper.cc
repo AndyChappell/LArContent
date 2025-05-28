@@ -115,22 +115,35 @@ bool LArVertexHelper::IsInFiducialVolume(const Pandora &pandora, const Cartesian
 
 //-----------------------------------------------------------------------------------------------------------------------------------------
 
-void LArVertexHelper::GetTrueVertexPosition(const CartesianVector &trueVertex, float &x, float &y, float &z)
-{
-    x = trueVertex.GetX();
-    y = trueVertex.GetY();
-    z = trueVertex.GetZ();
-}
-
-//-----------------------------------------------------------------------------------------------------------------------------------------
-
-void LArVertexHelper::GetTrueVertexPosition(
+void LArVertexHelper::GetPositionProjections(
     const CartesianVector &trueVertex, const LArTransformationPlugin *const pTransform, float &x, float &u, float &v, float &w)
 {
     x = trueVertex.GetX();
     u = static_cast<float>(pTransform->YZtoU(trueVertex.GetY(), trueVertex.GetZ()));
     v = static_cast<float>(pTransform->YZtoV(trueVertex.GetY(), trueVertex.GetZ()));
     w = static_cast<float>(pTransform->YZtoW(trueVertex.GetY(), trueVertex.GetZ()));
+}
+
+//-----------------------------------------------------------------------------------------------------------------------------------------
+
+void LArVertexHelper::GetPositionProjection(
+    const CartesianVector &trueVertex, const LArTransformationPlugin *const pTransform, const HitType view, float &x, float &c)
+{
+    x = trueVertex.GetX();
+    switch (view)
+    {
+        case TPC_VIEW_U:
+            c = static_cast<float>(pTransform->YZtoU(trueVertex.GetY(), trueVertex.GetZ()));
+            break;
+        case TPC_VIEW_V:
+            c = static_cast<float>(pTransform->YZtoV(trueVertex.GetY(), trueVertex.GetZ()));
+            break;
+        case TPC_VIEW_W:
+            c = static_cast<float>(pTransform->YZtoW(trueVertex.GetY(), trueVertex.GetZ()));
+            break;
+        default:
+            throw StatusCodeException(STATUS_CODE_INVALID_PARAMETER);
+    }
 }
 
 } // namespace lar_content
