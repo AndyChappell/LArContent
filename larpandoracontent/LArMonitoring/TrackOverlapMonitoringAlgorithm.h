@@ -68,6 +68,15 @@ private:
         }
     };
 
+    struct PcaResult
+    {
+        pandora::CartesianVector principalAxis = pandora::CartesianVector(0.f, 0.f, 0.f);
+        pandora::CartesianVector centroid = pandora::CartesianVector(0.f, 0.f, 0.f);
+        std::vector<unsigned int> sortedIndices = std::vector<unsigned int>();
+        std::vector<float> deviations = std::vector<float>();
+        bool succeeded = false;
+    };
+
     struct AssessmentResult
     {
         const pandora::CaloHit *pCaloHit;
@@ -90,6 +99,7 @@ private:
     pandora::StatusCode FindTrueOverlapCandidates(MCToMCMap &overlapCandidates) const;
     pandora::StatusCode AssessPfos(const MCToMCMap &overlapCandidates) const;
     pandora::StatusCode AssessClusterAllocations(const pandora::CaloHitVector &hits1, const pandora::CaloHitVector &hits2, std::vector<AssessmentResult> &results) const;
+    PcaResult PerformPCA(const pandora::CaloHitVector &hits, const pandora::CartesianVector &vertex) const;
     void CollectHitsByView(const pandora::MCParticle *const pMC, pandora::CaloHitList &uHits, pandora::CaloHitList &vHits, pandora::CaloHitList &wHits) const;
     void VectorizeAndFilterHits(const pandora::CaloHitList &hits, const Eigen::RowVector2f &vertex, const float distance, Eigen::MatrixXf &filteredHits) const;
     void GetDifferenceAndFilterHits(const Eigen::MatrixXf &hits1, const Eigen::MatrixXf &hits2, const float distance, Eigen::MatrixXf &filteredHits1, Eigen::MatrixXf &filteredHits2) const;

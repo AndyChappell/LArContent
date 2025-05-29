@@ -13,10 +13,13 @@
 #include "larpandoracontent/LArHelpers/LArEigenHelper.h"
 #include "larpandoracontent/LArHelpers/LArGeometryHelper.h"
 #include "larpandoracontent/LArHelpers/LArMCParticleHelper.h"
+#include "larpandoracontent/LArHelpers/LArPcaHelper.h"
 #include "larpandoracontent/LArHelpers/LArPfoHelper.h"
 #include "larpandoracontent/LArHelpers/LArVertexHelper.h"
 
 #include "larpandoracontent/LArUtility/KalmanFilter.h"
+
+#include <numeric>
 
 using namespace pandora;
 
@@ -172,10 +175,7 @@ StatusCode TrackOverlapMonitoringAlgorithm::FindTrueOverlapCandidates(MCToMCMap 
                 const size_t uniqueHits2{uHitMatrix2Filtered.rows() - sharedHits};
                 const bool isCandidate{sharedHits > 2 || (uniqueHits1 >= 2 && uniqueHits2 >= 2)};
                 if (isCandidate)
-                {
-                    std::cout << "Overlap MC: " << pMC1 << " and " << pMC2 << ", vertex: (" << x << ", " << u << ")" << std::endl;
                     overlapCandidates[pMC1].insert(pMC2);
-                }
                 if (m_visualise && isCandidate && uHitMatrix1Filtered.rows() > 0 && uHitMatrix2Filtered.rows() > 0)
                 {
                     const CartesianVector pos(x, 0, u); (void)pos;
@@ -234,9 +234,7 @@ StatusCode TrackOverlapMonitoringAlgorithm::AssessPfos(const MCToMCMap &overlapC
 
         for (const MCParticle *const pMCOther : pMCSet)
         {
-            std::cout << "Assessing overlap MC: " << pMC << " " << pMCOther << std::endl;
             const PfoSet &pfoSetOther{m_mcToPfoMap.at(pMCOther)};
-            std::cout << "  PFOs: " << pfoSet.size() << " vs " << pfoSetOther.size() << std::endl;
             if (pfoSetOther.empty())
                 continue;
 
@@ -255,7 +253,6 @@ StatusCode TrackOverlapMonitoringAlgorithm::AssessPfos(const MCToMCMap &overlapC
                     if (pPfo == pPfoOther)
                         continue;
                     pfoTuples.insert({pMC, pPfo, pPfoOther});
-                    std::cout << "    Keeping " << pPfo << " " << pPfoOther << std::endl;
                     // Need to visualise these PFOs, or at least the hits sufficiently close to the common vertex
                     // to see what are inputs are. Seems like we're looking at quite a few PFOs given 2 MC
 
@@ -306,16 +303,47 @@ StatusCode TrackOverlapMonitoringAlgorithm::AssessPfos(const MCToMCMap &overlapC
                 [&](const CaloHit *hit) { return distanceSq(vertex, hit) < m_vertexRadius * m_vertexRadius; });
             if (caloHits2Sorted.empty())
                 continue;
-            std::cout << "Assessing PFOs: " << pMC << " " << pPfo1 << " and " << pPfo2 << std::endl;
-            std::cout << "   Hits in view " << view << ": " << caloHits1.size() << " vs " << caloHits2.size();
-            std::cout << " Filtered: " << caloHits1Sorted.size() << " vs " << caloHits2Sorted.size() << std::endl;
 
-            auto sortHits = [&](const CaloHit *const hit1, const CaloHit *const hit2)
+            PcaResult pca1{this->PerformPCA(caloHits1Sorted, vertex)};
+            float meanDeviation1{std::accumulate(pca1.deviations.begin(), pca1.deviations.end(), 0.f) / pca1.deviations.size()};
+            if (meanDeviation1 > 1.f)
+                continue;
+            PcaResult pca2{this->PerformPCA(caloHits2Sorted, vertex)};
+            float meanDeviation2{std::accumulate(pca2.deviations.begin(), pca2.deviations.end(), 0.f) / pca2.deviations.size()};
+            if (meanDeviation2 > 1.f)
+                continue;
+
+            std::vector<bool> visited1(caloHits1Sorted.size(), false);
+            for (size_t i = 0; i < caloHits1Sorted.size(); ++i)
             {
-                return distanceSq(vertex, hit1) < distanceSq(vertex, hit2);
-            };
-            std::sort(caloHits1Sorted.begin(), caloHits1Sorted.end(), sortHits);
-            std::sort(caloHits2Sorted.begin(), caloHits2Sorted.end(), sortHits);
+                if (visited1[i] || pca1.sortedIndices[i] == i)
+                    continue;
+                size_t j{i};
+                auto temp = std::move(caloHits1Sorted[i]);
+                while (!visited1[j])
+                {
+                    visited1[j] = true;
+                    size_t next{pca1.sortedIndices[j]};
+                    std::swap(temp, caloHits1Sorted[next]);
+                    j = next;
+                }
+            }
+
+            std::vector<bool> visited2(caloHits2Sorted.size(), false);
+            for (size_t i = 0; i < caloHits2Sorted.size(); ++i)
+            {
+                if (visited2[i] || pca2.sortedIndices[i] == i)
+                    continue;
+                size_t j{i};
+                auto temp = std::move(caloHits2Sorted[i]);
+                while (!visited2[j])
+                {
+                    visited2[j] = true;
+                    size_t next{pca2.sortedIndices[j]};
+                    std::swap(temp, caloHits2Sorted[next]);
+                    j = next;
+                }
+            }
 
             std::vector<AssessmentResult> results;
             const StatusCode statusCode{this->AssessClusterAllocations(caloHits1Sorted, caloHits2Sorted, results)};
@@ -407,6 +435,118 @@ StatusCode TrackOverlapMonitoringAlgorithm::AssessClusterAllocations(const CaloH
     }
 
     return STATUS_CODE_SUCCESS;
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+TrackOverlapMonitoringAlgorithm::PcaResult TrackOverlapMonitoringAlgorithm::PerformPCA(const CaloHitVector &hits, const CartesianVector &vertex) const
+{
+    std::cout << "Performing PCA" << std::endl;
+    PcaResult result;
+    CartesianVector centroid{0.f, 0.f, 0.f};
+    LArPcaHelper::EigenValues eigenValues{0.f, 0.f, 0.f};
+    LArPcaHelper::EigenVectors eigenVectors;
+
+    CartesianPointVector pcaPoints;
+    result.centroid = vertex;
+    for (const CaloHit *const pCaloHit : hits)
+    {
+        CartesianVector relativePos{pCaloHit->GetPositionVector() - vertex};
+        pcaPoints.emplace_back(relativePos);
+    }
+
+    try
+    {
+        LArPcaHelper::RunPca(pcaPoints, centroid, eigenValues, eigenVectors);
+    }
+    catch (const StatusCodeException &)
+    {
+        std::cout << "PCA failed for " << hits.size() << " hits" << std::endl;
+        return result;
+    }
+
+    result.principalAxis = eigenVectors.front();
+    std::vector<std::pair<float, unsigned int>> projectedValues(hits.size());
+    unsigned int negativeCount{0};
+    for (unsigned int i = 0; i < hits.size(); ++i)
+    {
+        const CartesianVector &relativePos{pcaPoints[i]};
+        projectedValues[i] = {relativePos.GetDotProduct(result.principalAxis), i};
+        if (projectedValues[i].first < 0.f)
+            ++negativeCount;
+    }
+    if (negativeCount > projectedValues.size() / 2)
+    {
+        // If more than half of the projected values are negative, flip the principal axis
+        result.principalAxis = result.principalAxis * -1.f;
+        for (auto &projectedValue : projectedValues)
+        {
+            projectedValue.first = -projectedValue.first;
+        }
+    }
+    std::cout << "In PCA: Input " << hits.size() << " hits, projected " << projectedValues.size() << " values" << std::endl;
+    std::cout << "Projected values: " << std::endl;
+    std::cout << "Negative count: " << negativeCount << std::endl;
+    for (unsigned int i = 0; i < projectedValues.size(); ++i)
+    {
+        std::cout << "  " << i << ": " << projectedValues[i].first << " at index " << projectedValues[i].second << std::endl;
+    }
+
+    std::sort(projectedValues.begin(), projectedValues.end(),
+        [](const std::pair<float, unsigned int> &lhs, const std::pair<float, unsigned int> &rhs) -> bool
+        {
+            return lhs.first < rhs.first;
+        });
+    std::cout << "Sorted projected values: " << std::endl;
+    for (unsigned int i = 0; i < projectedValues.size(); ++i)
+    {
+        std::cout << "  " << i << ": " << projectedValues[i].first << " at index " << projectedValues[i].second << std::endl;
+    }
+
+    for (const CartesianVector &relativePos : pcaPoints)
+    {
+        PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &relativePos, "PCA", GRAY, 1));
+    }
+    const CartesianVector a(0, 0, 0);
+    const CartesianVector b(a + result.principalAxis * 5.f);
+    PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &a, "vertex", BLACK, 2));
+    PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &a, &b, "PCA", ORANGE, 2, 1));
+    PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
+
+    result.sortedIndices.resize(projectedValues.size());
+    result.deviations.resize(projectedValues.size());
+    for (unsigned int i = 0; i < projectedValues.size(); ++i)
+    {
+        result.sortedIndices[i] = projectedValues[i].second;
+        // Compute the perpendicular distance using
+        // || v - (v . u) * u || == sqrt(||v||^2 - (v . u)^2)
+        const CartesianVector &v{pcaPoints[i]};
+        const float vDotU{v.GetDotProduct(result.principalAxis)};
+        const float vSq{v.GetMagnitudeSquared()};
+        const float vDotUSq{vDotU * vDotU};
+        if (vSq >= vDotUSq)
+        {
+            // Thise should generally be the case
+            result.deviations[i] = std::sqrt(vSq - vDotUSq);
+        }
+        else
+        {
+            // Can get here based on floating point precision issues
+            const CartesianVector pointOnAxis{result.centroid + result.principalAxis * vDotU};
+            result.deviations[i] = (hits[i]->GetPositionVector() - pointOnAxis).GetMagnitude();
+        }
+    }
+    result.succeeded = true;
+
+    std::cout << "PCA result: " << std::endl;
+    std::cout << "  Principal axis: " << result.principalAxis << std::endl;
+    std::cout << "  Sorted indices: " << std::endl;
+    for (const float deviation : result.deviations)
+    {
+        std::cout << "    " << deviation << std::endl;
+    }
+
+    return result;
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
