@@ -73,7 +73,8 @@ private:
         pandora::CartesianVector principalAxis = pandora::CartesianVector(0.f, 0.f, 0.f);
         pandora::CartesianVector centroid = pandora::CartesianVector(0.f, 0.f, 0.f);
         std::vector<unsigned int> sortedIndices = std::vector<unsigned int>();
-        std::vector<float> deviations = std::vector<float>();
+        std::vector<float> dL = std::vector<float>();
+        std::vector<float> dT = std::vector<float>();
         bool succeeded = false;
     };
 
@@ -87,11 +88,21 @@ private:
         int suggestedCluster;
     };
 
+    struct PairHash
+    {
+        std::size_t operator()(const std::pair<int, int> &pair) const
+        {
+            return std::hash<int>()(pair.first) ^ (std::hash<int>()(pair.second) << 1);
+        }
+    };
+
     typedef std::map<const pandora::Pfo *, pandora::MCParticleSet> PfoToMCMap;
     typedef std::map<const pandora::MCParticle *, pandora::PfoSet> MCToPfoMap;
     typedef std::map<const pandora::MCParticle *, pandora::CaloHitSet> MCToHitsMap;
     typedef std::map<const pandora::CartesianVector, pandora::MCParticleSet, VertexCompare> VertexToMCMap;
     typedef std::map<const pandora::MCParticle *, pandora::MCParticleSet> MCToMCMap;
+    typedef std::tuple<int, bool, int, bool> MahalanobisPair;
+    typedef std::vector<MahalanobisPair> MahalanobisPairs;
 
     pandora::StatusCode Run();
     pandora::StatusCode ReadSettings(const pandora::TiXmlHandle xmlHandle);
@@ -99,7 +110,8 @@ private:
     pandora::StatusCode FindTrueOverlapCandidates(MCToMCMap &overlapCandidates) const;
     pandora::StatusCode AssessPfos(const MCToMCMap &overlapCandidates) const;
     pandora::StatusCode AssessClusterAllocations(const pandora::CaloHitVector &hits1, const pandora::CaloHitVector &hits2, std::vector<AssessmentResult> &results) const;
-    PcaResult PerformPCA(const pandora::CaloHitVector &hits, const pandora::CartesianVector &vertex) const;
+    PcaResult PerformPca(const pandora::CaloHitVector &hits, const pandora::CartesianVector &vertex) const;
+    void AlignPcaResults(const PcaResult &pca1, const PcaResult &pca2, MahalanobisPairs &mPairs) const;
     void CollectHitsByView(const pandora::MCParticle *const pMC, pandora::CaloHitList &uHits, pandora::CaloHitList &vHits, pandora::CaloHitList &wHits) const;
     void VectorizeAndFilterHits(const pandora::CaloHitList &hits, const Eigen::RowVector2f &vertex, const float distance, Eigen::MatrixXf &filteredHits) const;
     void GetDifferenceAndFilterHits(const Eigen::MatrixXf &hits1, const Eigen::MatrixXf &hits2, const float distance, Eigen::MatrixXf &filteredHits1, Eigen::MatrixXf &filteredHits2) const;

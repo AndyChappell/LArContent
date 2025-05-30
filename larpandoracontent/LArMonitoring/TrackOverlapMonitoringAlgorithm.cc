@@ -304,16 +304,19 @@ StatusCode TrackOverlapMonitoringAlgorithm::AssessPfos(const MCToMCMap &overlapC
             if (caloHits2Sorted.empty())
                 continue;
 
-            PcaResult pca1{this->PerformPCA(caloHits1Sorted, vertex)};
-            float meanDeviation1{std::accumulate(pca1.deviations.begin(), pca1.deviations.end(), 0.f) / pca1.deviations.size()};
+            PcaResult pca1{this->PerformPca(caloHits1Sorted, vertex)};
+            float meanDeviation1{std::accumulate(pca1.dT.begin(), pca1.dT.end(), 0.f) / pca1.dT.size()};
             if (meanDeviation1 > 1.f)
                 continue;
-            PcaResult pca2{this->PerformPCA(caloHits2Sorted, vertex)};
-            float meanDeviation2{std::accumulate(pca2.deviations.begin(), pca2.deviations.end(), 0.f) / pca2.deviations.size()};
+            PcaResult pca2{this->PerformPca(caloHits2Sorted, vertex)};
+            float meanDeviation2{std::accumulate(pca2.dT.begin(), pca2.dT.end(), 0.f) / pca2.dT.size()};
             if (meanDeviation2 > 1.f)
                 continue;
 
-            std::vector<bool> visited1(caloHits1Sorted.size(), false);
+            MahalanobisPairs mPairs;
+            this->AlignPcaResults(pca1, pca2, mPairs);
+
+            /*std::vector<bool> visited1(caloHits1Sorted.size(), false);
             for (size_t i = 0; i < caloHits1Sorted.size(); ++i)
             {
                 if (visited1[i] || pca1.sortedIndices[i] == i)
@@ -349,6 +352,7 @@ StatusCode TrackOverlapMonitoringAlgorithm::AssessPfos(const MCToMCMap &overlapC
             const StatusCode statusCode{this->AssessClusterAllocations(caloHits1Sorted, caloHits2Sorted, results)};
             (void)statusCode; // Ignore the status code for now
             // Do something with the result
+            */
         }
     }
 
@@ -439,9 +443,8 @@ StatusCode TrackOverlapMonitoringAlgorithm::AssessClusterAllocations(const CaloH
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-TrackOverlapMonitoringAlgorithm::PcaResult TrackOverlapMonitoringAlgorithm::PerformPCA(const CaloHitVector &hits, const CartesianVector &vertex) const
+TrackOverlapMonitoringAlgorithm::PcaResult TrackOverlapMonitoringAlgorithm::PerformPca(const CaloHitVector &hits, const CartesianVector &vertex) const
 {
-    std::cout << "Performing PCA" << std::endl;
     PcaResult result;
     CartesianVector centroid{0.f, 0.f, 0.f};
     LArPcaHelper::EigenValues eigenValues{0.f, 0.f, 0.f};
@@ -484,23 +487,16 @@ TrackOverlapMonitoringAlgorithm::PcaResult TrackOverlapMonitoringAlgorithm::Perf
             projectedValue.first = -projectedValue.first;
         }
     }
-    std::cout << "In PCA: Input " << hits.size() << " hits, projected " << projectedValues.size() << " values" << std::endl;
-    std::cout << "Projected values: " << std::endl;
-    std::cout << "Negative count: " << negativeCount << std::endl;
-    for (unsigned int i = 0; i < projectedValues.size(); ++i)
-    {
-        std::cout << "  " << i << ": " << projectedValues[i].first << " at index " << projectedValues[i].second << std::endl;
-    }
 
     std::sort(projectedValues.begin(), projectedValues.end(),
         [](const std::pair<float, unsigned int> &lhs, const std::pair<float, unsigned int> &rhs) -> bool
         {
             return lhs.first < rhs.first;
         });
-    std::cout << "Sorted projected values: " << std::endl;
-    for (unsigned int i = 0; i < projectedValues.size(); ++i)
+    std::cout << "Check sorted" << std::endl;
+    for (const auto &[value, index] : projectedValues)
     {
-        std::cout << "  " << i << ": " << projectedValues[i].first << " at index " << projectedValues[i].second << std::endl;
+        std::cout << "Hit " << index << ": " << value << std::endl;
     }
 
     for (const CartesianVector &relativePos : pcaPoints)
@@ -514,10 +510,12 @@ TrackOverlapMonitoringAlgorithm::PcaResult TrackOverlapMonitoringAlgorithm::Perf
     PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
 
     result.sortedIndices.resize(projectedValues.size());
-    result.deviations.resize(projectedValues.size());
+    result.dL.resize(projectedValues.size());
+    result.dT.resize(projectedValues.size());
     for (unsigned int i = 0; i < projectedValues.size(); ++i)
     {
         result.sortedIndices[i] = projectedValues[i].second;
+        result.dL[i] = projectedValues[i].first;
         // Compute the perpendicular distance using
         // || v - (v . u) * u || == sqrt(||v||^2 - (v . u)^2)
         const CartesianVector &v{pcaPoints[i]};
@@ -527,26 +525,121 @@ TrackOverlapMonitoringAlgorithm::PcaResult TrackOverlapMonitoringAlgorithm::Perf
         if (vSq >= vDotUSq)
         {
             // Thise should generally be the case
-            result.deviations[i] = std::sqrt(vSq - vDotUSq);
+            result.dT[i] = std::sqrt(vSq - vDotUSq);
         }
         else
         {
             // Can get here based on floating point precision issues
             const CartesianVector pointOnAxis{result.centroid + result.principalAxis * vDotU};
-            result.deviations[i] = (hits[i]->GetPositionVector() - pointOnAxis).GetMagnitude();
+            result.dT[i] = (hits[i]->GetPositionVector() - pointOnAxis).GetMagnitude();
         }
     }
     result.succeeded = true;
 
-    std::cout << "PCA result: " << std::endl;
-    std::cout << "  Principal axis: " << result.principalAxis << std::endl;
-    std::cout << "  Sorted indices: " << std::endl;
-    for (const float deviation : result.deviations)
+    return result;
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+void TrackOverlapMonitoringAlgorithm::AlignPcaResults(const PcaResult &pca1, const PcaResult &pca2, MahalanobisPairs &mPairs) const
+{
+    std::cout << "PCA 1: ";
+    for (int index : pca1.sortedIndices)
     {
-        std::cout << "    " << deviation << std::endl;
+        std::cout << index << " ";
+    }
+    std::cout << std::endl;
+    std::cout << "PCA 2: ";
+    for (int index : pca2.sortedIndices)
+    {
+        std::cout << index << " ";
+    }
+    std::cout << std::endl;
+    // For the Mahalanobis distance comparison to be meaningful, we can't walk through clusters at different rates
+    // If needed, pad the hit indices to account for gaps, overlapping hits etc
+
+    // First, find the closest approach for each hit to a hit in the other cluster
+    IntVector closestPartner1;
+    for (size_t i = 0; i < pca1.dL.size(); ++i)
+    {
+        float minDistance{std::numeric_limits<float>::max()};
+        int closestIndex{-1};
+        for (size_t j = 0; j < pca2.dL.size(); ++j)
+        {
+            const float distance{std::abs(pca1.dL[i] - pca2.dL[j])};
+            if (distance < minDistance)
+            {
+                minDistance = distance;
+                closestIndex = static_cast<int>(j);
+            }
+        }
+        closestPartner1.emplace_back(closestIndex);
+    }
+    IntVector closestPartner2;
+    for (size_t i = 0; i < pca2.dL.size(); ++i)
+    {
+        float minDistance{std::numeric_limits<float>::max()};
+        int closestIndex{-1};
+        for (size_t j = 0; j < pca1.dL.size(); ++j)
+        {
+            const float distance{std::abs(pca2.dL[i] - pca1.dL[j])};
+            if (distance < minDistance)
+            {
+                minDistance = distance;
+                closestIndex = static_cast<int>(j);
+            }
+        }
+        closestPartner2.emplace_back(closestIndex);
     }
 
-    return result;
+    std::cout << "Closest partners 1: " << std::endl;
+    for (size_t i = 0; i < pca1.dL.size(); ++i)
+    {
+        std::cout << "Hit " << i << " - " << pca1.sortedIndices[i] << ": " << pca1.dL[pca1.sortedIndices[i]] << " -> " <<
+            pca2.sortedIndices[closestPartner1[i]] << ": " << pca2.dL[pca2.sortedIndices[closestPartner1[i]]] << std::endl;
+    }
+    std::cout << "Closest partners 2: " << std::endl;
+    for (size_t i = 0; i < pca2.dL.size(); ++i)
+    {
+        std::cout << "Hit " << i << " - " << pca2.sortedIndices[i] << ": " << pca2.dL[pca2.sortedIndices[i]] << " -> " <<
+            pca1.sortedIndices[closestPartner2[i]] << ": " << pca1.dL[pca1.sortedIndices[closestPartner2[i]]] << std::endl;
+    }
+
+    std::vector<std::pair<int, int>> candidatePairs;
+    for (size_t j = 0; j < closestPartner2.size(); ++j)
+    {
+        int i{closestPartner2[j]};
+        candidatePairs.emplace_back(i, static_cast<int>(j));
+    }
+    for (size_t i = 0; i < closestPartner1.size(); ++i)
+    {
+        int j{closestPartner1[i]};
+        candidatePairs.emplace_back(static_cast<int>(i), j);
+    }
+
+    // sort by i, then j
+    std::sort(candidatePairs.begin(), candidatePairs.end());
+
+    std::unordered_set<std::pair<int, int>, PairHash> seenPairs;
+    std::unordered_map<int, int> usage1, usage2;
+
+    for (const auto &pair : candidatePairs)
+    {
+        int i{pair.first};
+        int j{pair.second};
+        if (seenPairs.insert(pair).second)
+        {
+            bool i_reused{usage1[i]++ > 0};
+            bool j_reused{usage2[j]++ > 0};
+            mPairs.emplace_back(std::make_tuple(i, i_reused, j, j_reused));
+        }
+    }
+
+    for (const auto &[index1, isDuplicate1, index2, isDuplicate2] : mPairs)
+    {
+        std::cout << "Pair: " << index1 << " (" << isDuplicate1 << ") = " << pca1.dL[index1] << ", " << index2 << " (" << isDuplicate2 <<
+            ") = " << pca2.dL[index2] << std::endl;
+    }
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
