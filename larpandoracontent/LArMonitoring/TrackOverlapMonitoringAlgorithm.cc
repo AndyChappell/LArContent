@@ -293,22 +293,22 @@ StatusCode TrackOverlapMonitoringAlgorithm::AssessPfos(const MCToMCMap &overlapC
             float x{0}, c{0};
             LArVertexHelper::GetPositionProjection(pMC->GetVertex(), pTransform, view, x, c);
             const CartesianVector &vertex{x, 0, c};
-            CaloHitVector caloHits1Sorted;
-            std::copy_if(caloHits1.begin(), caloHits1.end(), std::back_inserter(caloHits1Sorted),
+            CaloHitVector caloHits1Filtered;
+            std::copy_if(caloHits1.begin(), caloHits1.end(), std::back_inserter(caloHits1Filtered),
                 [&](const CaloHit *hit) { return distanceSq(vertex, hit) < m_vertexRadius * m_vertexRadius; });
-            if (caloHits1Sorted.empty())
+            if (caloHits1Filtered.empty())
                 continue;
-            CaloHitVector caloHits2Sorted;
-            std::copy_if(caloHits2.begin(), caloHits2.end(), std::back_inserter(caloHits2Sorted),
+            CaloHitVector caloHits2Filtered;
+            std::copy_if(caloHits2.begin(), caloHits2.end(), std::back_inserter(caloHits2Filtered),
                 [&](const CaloHit *hit) { return distanceSq(vertex, hit) < m_vertexRadius * m_vertexRadius; });
-            if (caloHits2Sorted.empty())
+            if (caloHits2Filtered.empty())
                 continue;
 
-            PcaResult pca1{this->PerformPca(caloHits1Sorted, vertex)};
+            PcaResult pca1{this->PerformPca(caloHits1Filtered, vertex)};
             float meanDeviation1{std::accumulate(pca1.dT.begin(), pca1.dT.end(), 0.f) / pca1.dT.size()};
             if (meanDeviation1 > 1.f)
                 continue;
-            PcaResult pca2{this->PerformPca(caloHits2Sorted, vertex)};
+            PcaResult pca2{this->PerformPca(caloHits2Filtered, vertex)};
             float meanDeviation2{std::accumulate(pca2.dT.begin(), pca2.dT.end(), 0.f) / pca2.dT.size()};
             if (meanDeviation2 > 1.f)
                 continue;
@@ -316,43 +316,11 @@ StatusCode TrackOverlapMonitoringAlgorithm::AssessPfos(const MCToMCMap &overlapC
             MahalanobisPairs mPairs;
             this->AlignPcaResults(pca1, pca2, mPairs);
 
-            /*std::vector<bool> visited1(caloHits1Sorted.size(), false);
-            for (size_t i = 0; i < caloHits1Sorted.size(); ++i)
-            {
-                if (visited1[i] || pca1.sortedIndices[i] == i)
-                    continue;
-                size_t j{i};
-                auto temp = std::move(caloHits1Sorted[i]);
-                while (!visited1[j])
-                {
-                    visited1[j] = true;
-                    size_t next{pca1.sortedIndices[j]};
-                    std::swap(temp, caloHits1Sorted[next]);
-                    j = next;
-                }
-            }
-
-            std::vector<bool> visited2(caloHits2Sorted.size(), false);
-            for (size_t i = 0; i < caloHits2Sorted.size(); ++i)
-            {
-                if (visited2[i] || pca2.sortedIndices[i] == i)
-                    continue;
-                size_t j{i};
-                auto temp = std::move(caloHits2Sorted[i]);
-                while (!visited2[j])
-                {
-                    visited2[j] = true;
-                    size_t next{pca2.sortedIndices[j]};
-                    std::swap(temp, caloHits2Sorted[next]);
-                    j = next;
-                }
-            }
-
+            // Now we have a collection of hits to compare, assess the clusters to see if any hits should move between them
             std::vector<AssessmentResult> results;
-            const StatusCode statusCode{this->AssessClusterAllocations(caloHits1Sorted, caloHits2Sorted, results)};
+            const StatusCode statusCode{this->AssessClusterAllocations(caloHits1Filtered, caloHits2Filtered, mPairs, results)};
             (void)statusCode; // Ignore the status code for now
             // Do something with the result
-            */
         }
     }
 
@@ -361,7 +329,7 @@ StatusCode TrackOverlapMonitoringAlgorithm::AssessPfos(const MCToMCMap &overlapC
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-StatusCode TrackOverlapMonitoringAlgorithm::AssessClusterAllocations(const CaloHitVector &hits1, const CaloHitVector &hits2, std::vector<AssessmentResult> &results) const
+StatusCode TrackOverlapMonitoringAlgorithm::AssessClusterAllocations(const CaloHitVector &hits1, const CaloHitVector &hits2, const MahalanobisPairs &mPairs, std::vector<AssessmentResult> &results) const
 {
     if (hits1.empty() || hits2.empty())
         return STATUS_CODE_SUCCESS;
@@ -378,65 +346,147 @@ StatusCode TrackOverlapMonitoringAlgorithm::AssessClusterAllocations(const CaloH
     const float measurementVariance{m_measurementVarCoeff * pitch * pitch};
 
     KalmanFilter2D kf1(KalmanFilter2D(m_delta, processVariance, measurementVariance, hitMatrix1.row(0).cast<double>().transpose()));
-    if (hits1.size() > 1)
-        kf1.PredictAndUpdate(hitMatrix1.row(1).cast<double>().transpose());
+    //if (hits1.size() > 1)
+    //    kf1.PredictAndUpdate(hitMatrix1.row(1).cast<double>().transpose());
     KalmanFilter2D kf2(KalmanFilter2D(m_delta, processVariance, measurementVariance, hitMatrix2.row(0).cast<double>().transpose()));
-    if (hits2.size() > 1)
-        kf2.PredictAndUpdate(hitMatrix2.row(1).cast<double>().transpose());
+    //if (hits2.size() > 1)
+    //    kf2.PredictAndUpdate(hitMatrix2.row(1).cast<double>().transpose());
 
     CaloHitList caloHitList1(hits1.begin(), hits1.end());
     CaloHitList caloHitList2(hits2.begin(), hits2.end());
 
-    size_t N1{hits1.size()};
-    size_t N2{hits2.size()};
-    size_t N{std::max(N1, N2)};
-
-    // Currently this just walks through both clusters at the same rate. We may want to pass in a third vector of pairs that describes
-    // the global order of hits (so first element is the cluster, 1 or 2, second element is the index in that cluster), such that we
-    // always consider the next closest hit to the vertex
-    for (size_t i = 0; i < N; ++i)
+    // Use the mPairs list to determine how to walk through the two sets of hits and whether or not to update the Kalman filters
+    std::vector<AssessmentResult> results1;
+    for (const auto &[i, i_reused, j, j_reused] : mPairs)
     {
         kf1.Predict();
-        kf2.Predict();
         PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &caloHitList1, "Hits 1", BLUE));
         PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &caloHitList2, "Hits 2", ORANGE));
-        if (i < N1)
+
+        const KalmanFilter2D::PositionVector &hit1{hitMatrix1.row(i).cast<double>().transpose()};
+        const KalmanFilter2D::PositionVector &hit2{hitMatrix2.row(j).cast<double>().transpose()};
+        const CartesianVector pos1{static_cast<float>(hit1(0)), 0, static_cast<float>(hit1(1))};
+        const CartesianVector pos2{static_cast<float>(hit2(0)), 0, static_cast<float>(hit2(1))};
+        PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &pos1, "1", BLACK, 1));
+        PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &pos2, "2", RED, 1));
+        const double md11{kf1.GetMahalanobisDistance(hit1)};
+        const double md12{kf1.GetMahalanobisDistance(hit2)};
+        std::cout << "Tuple: (" << i << ", " << i_reused << ", " << j << ", " << j_reused << ")" << std::endl;
+        std::cout << "MD11: " << md11 << ", MD12: " << md12 << std::endl;
+
+        if (md12 < md11)
         {
-            const KalmanFilter2D::PositionVector &hit1{hitMatrix1.row(i).cast<double>().transpose()};
-            const CartesianVector pos1{static_cast<float>(hit1(0)), 0, static_cast<float>(hit1(1))};
-            PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &pos1, "1", BLACK, 1));
-            const double md1{kf1.GetMahalanobisDistance(hit1)};
-            const double md2{kf2.GetMahalanobisDistance(hit1)};
-            std::cout << "1: MD1: " << md1 << ", MD2: " << md2 << std::endl;
-            results.emplace_back(AssessmentResult{hits1[i], 1, static_cast<int>(i), md1, md2, md1 < md2 ? 1 : 2});
+            results1.emplace_back(AssessmentResult{hits2[j], 2, static_cast<int>(j), md12, 1});
+            std::cout << "Red hit now part of blue cluster" << std::endl;
+            kf1.Update(hit2);
+        }
+        if (!i_reused && md11 <= md12)
+        {
+            results1.emplace_back(AssessmentResult{hits1[i], 1, static_cast<int>(i), md11, 1});
             kf1.Update(hit1);
-            auto statePos1{kf1.GetPosition()};
-            const CartesianVector pred1{static_cast<float>(statePos1(0)), 0, static_cast<float>(statePos1(1))};
-            PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &pred1, "1 P1", BLUE, 1));
-            auto statePos2{kf2.GetTemporaryState().head<2>()};
-            const CartesianVector pred2{static_cast<float>(statePos2(0)), 0, static_cast<float>(statePos2(1))};
-            PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &pred2, "1 P2", BLUE, 1));
         }
-        if (i < N2)
-        {
-            const KalmanFilter2D::PositionVector &hit2{hitMatrix2.row(i).cast<double>().transpose()};
-            const CartesianVector pos2{static_cast<float>(hit2(0)), 0, static_cast<float>(hit2(1))};
-            PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &pos2, "2", RED, 1));
-            const double md1{kf1.GetMahalanobisDistance(hit2)};
-            const double md2{kf2.GetMahalanobisDistance(hit2)};
-            std::cout << "2: MD2: " << md2 << ", MD1: " << md1 << std::endl;
-            results.emplace_back(AssessmentResult{hits2[i], 2, static_cast<int>(i), md2, md1, md2 < md1 ? 2 : 1});
-            kf2.Update(hit2);
-            auto statePos1{kf2.GetPosition()};
-            const CartesianVector pred1{static_cast<float>(statePos1(0)), 0, static_cast<float>(statePos1(1))};
-            PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &pred1, "2 P1", ORANGE, 1));
-            auto statePos2{kf1.GetTemporaryState().head<2>()};
-            const CartesianVector pred2{static_cast<float>(statePos2(0)), 0, static_cast<float>(statePos2(1))};
-            PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &pred2, "2 P2", ORANGE, 1));
-        }
+
+        auto statePos1{kf1.GetTemporaryState().head<2>()};
+        const CartesianVector pred1{static_cast<float>(statePos1(0)), 0, static_cast<float>(statePos1(1))};
+        PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &pred1, "P", BLUE, 1));
 
         PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
     }
+
+    std::vector<AssessmentResult> results2;
+    for (const auto &[i, i_reused, j, j_reused] : mPairs)
+    {
+        kf2.Predict();
+        PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &caloHitList1, "Hits 1", BLUE));
+        PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &caloHitList2, "Hits 2", ORANGE));
+
+        const KalmanFilter2D::PositionVector &hit1{hitMatrix1.row(i).cast<double>().transpose()};
+        const KalmanFilter2D::PositionVector &hit2{hitMatrix2.row(j).cast<double>().transpose()};
+        const CartesianVector pos1{static_cast<float>(hit1(0)), 0, static_cast<float>(hit1(1))};
+        const CartesianVector pos2{static_cast<float>(hit2(0)), 0, static_cast<float>(hit2(1))};
+        PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &pos1, "1", BLACK, 1));
+        PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &pos2, "2", RED, 1));
+        const double md21{kf2.GetMahalanobisDistance(hit1)};
+        const double md22{kf2.GetMahalanobisDistance(hit2)};
+        std::cout << "Tuple: (" << i << ", " << i_reused << ", " << j << ", " << j_reused << ")" << std::endl;
+        std::cout << "MD21: " << md21 << ", MD22: " << md22 << std::endl;
+
+        if (md21 < md22)
+        {
+            results2.emplace_back(AssessmentResult{hits1[i], 1, static_cast<int>(i), md21, 2});
+            std::cout << "Black hit now part of orange cluster" << std::endl;
+            kf2.Update(hit1);
+        }
+        if (!j_reused && md22 <= md21)
+        {
+            results2.emplace_back(AssessmentResult{hits2[j], 2, static_cast<int>(j), md22, 2});
+            kf2.Update(hit2);
+        }
+
+        auto statePos1{kf2.GetTemporaryState().head<2>()};
+        const CartesianVector pred1{static_cast<float>(statePos1(0)), 0, static_cast<float>(statePos1(1))};
+        PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &pred1, "P", ORANGE, 1));
+
+        PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
+    }
+
+    // We've got a list of potential swaps now, but some of them may be claimed by both, pick the best
+    for (const AssessmentResult &result1 : results1)
+    {
+        std::cout << "Assessing result 1: " << result1.pCaloHit << " Orig: " << result1.originalCluster << " MD: " << result1.md << " Suggested: " << result1.suggestedCluster << std::endl;
+        bool found{false};
+        for (const AssessmentResult &result2 : results2)
+        {
+            if (result1.pCaloHit == result2.pCaloHit)
+            {
+                if (result1.md < result2.md)
+                {
+                    results.emplace_back(result1);
+                }
+                else
+                {
+                    results.emplace_back(result2);
+                }
+                found = true;
+                break;
+            }
+        }
+        if (!found)
+        {
+            results.emplace_back(result1);
+        }
+    }
+    for (const AssessmentResult &result2 : results2)
+    {
+        std::cout << "Assessing result 2: " << result2.pCaloHit << " Orig: " << result2.originalCluster << " MD: " << result2.md << " Suggested: " << result2.suggestedCluster << std::endl;
+        bool found{false};
+        for (const AssessmentResult &result1 : results1)
+        {
+            if (result2.pCaloHit == result1.pCaloHit)
+            {
+                found = true;
+                break;
+            }
+        }
+        if (!found)
+        {
+            results.emplace_back(result2);
+        }
+    }
+
+    CaloHitList newList1, newList2;
+    for (const AssessmentResult &result : results)
+    {
+        if (result.suggestedCluster == 1)
+            newList1.emplace_back(result.pCaloHit);
+        else if (result.suggestedCluster == 2)
+            newList2.emplace_back(result.pCaloHit);
+        std::cout << "Final result: " << result.pCaloHit << " Orig: " << result.originalCluster << " MD: " << result.md << " Suggested: " << result.suggestedCluster << std::endl;
+    }
+
+    PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &newList1, "New 1", BLUE));
+    PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &newList2, "New 2", ORANGE));
+    PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
 
     return STATUS_CODE_SUCCESS;
 }
@@ -556,8 +606,6 @@ void TrackOverlapMonitoringAlgorithm::AlignPcaResults(const PcaResult &pca1, con
     }
     std::cout << std::endl;
     // For the Mahalanobis distance comparison to be meaningful, we can't walk through clusters at different rates
-    // If needed, pad the hit indices to account for gaps, overlapping hits etc
-
     // First, find the closest approach for each hit to a hit in the other cluster
     IntVector closestPartner1;
     for (size_t i = 0; i < pca1.dL.size(); ++i)
@@ -592,19 +640,7 @@ void TrackOverlapMonitoringAlgorithm::AlignPcaResults(const PcaResult &pca1, con
         closestPartner2.emplace_back(closestIndex);
     }
 
-    std::cout << "Closest partners 1: " << std::endl;
-    for (size_t i = 0; i < pca1.dL.size(); ++i)
-    {
-        std::cout << "Hit " << i << " - " << pca1.sortedIndices[i] << ": " << pca1.dL[pca1.sortedIndices[i]] << " -> " <<
-            pca2.sortedIndices[closestPartner1[i]] << ": " << pca2.dL[pca2.sortedIndices[closestPartner1[i]]] << std::endl;
-    }
-    std::cout << "Closest partners 2: " << std::endl;
-    for (size_t i = 0; i < pca2.dL.size(); ++i)
-    {
-        std::cout << "Hit " << i << " - " << pca2.sortedIndices[i] << ": " << pca2.dL[pca2.sortedIndices[i]] << " -> " <<
-            pca1.sortedIndices[closestPartner2[i]] << ": " << pca1.dL[pca1.sortedIndices[closestPartner2[i]]] << std::endl;
-    }
-
+    // Now create a list of candidate pairings
     std::vector<std::pair<int, int>> candidatePairs;
     for (size_t j = 0; j < closestPartner2.size(); ++j)
     {
@@ -620,9 +656,9 @@ void TrackOverlapMonitoringAlgorithm::AlignPcaResults(const PcaResult &pca1, con
     // sort by i, then j
     std::sort(candidatePairs.begin(), candidatePairs.end());
 
+    // Now construct an ordered set of pairs with duplciates removed, and track single index reusage
     std::unordered_set<std::pair<int, int>, PairHash> seenPairs;
     std::unordered_map<int, int> usage1, usage2;
-
     for (const auto &pair : candidatePairs)
     {
         int i{pair.first};
