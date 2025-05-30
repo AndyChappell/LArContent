@@ -83,8 +83,7 @@ private:
         const pandora::CaloHit *pCaloHit;
         int originalCluster;
         int sequenceIndex;
-        double mdSelf;
-        double mdOther;
+        double md;
         int suggestedCluster;
     };
 
@@ -109,7 +108,7 @@ private:
     pandora::StatusCode CreateMaps();
     pandora::StatusCode FindTrueOverlapCandidates(MCToMCMap &overlapCandidates) const;
     pandora::StatusCode AssessPfos(const MCToMCMap &overlapCandidates) const;
-    pandora::StatusCode AssessClusterAllocations(const pandora::CaloHitVector &hits1, const pandora::CaloHitVector &hits2, std::vector<AssessmentResult> &results) const;
+    pandora::StatusCode AssessClusterAllocations(const pandora::CaloHitVector &hits1, const pandora::CaloHitVector &hits2, const MahalanobisPairs &mPairs, std::vector<AssessmentResult> &results) const;
     PcaResult PerformPca(const pandora::CaloHitVector &hits, const pandora::CartesianVector &vertex) const;
     void AlignPcaResults(const PcaResult &pca1, const PcaResult &pca2, MahalanobisPairs &mPairs) const;
     void CollectHitsByView(const pandora::MCParticle *const pMC, pandora::CaloHitList &uHits, pandora::CaloHitList &vHits, pandora::CaloHitList &wHits) const;
