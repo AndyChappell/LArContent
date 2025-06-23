@@ -20,7 +20,7 @@ namespace lar_content
 MCMonitoringAlgorithm::MCMonitoringAlgorithm() :
     m_caloHitListName(""),
     m_mcListName("Input"),
-    m_visualise(true)
+    m_visualise(false)
 {
 }
 
@@ -91,20 +91,35 @@ StatusCode MCMonitoringAlgorithm::BuildMCHitMap()
             std::ostringstream oss;
             oss << parentList.front();
             desc += std::to_string(parentList.front()->GetParticleId()) + " (" + oss.str() + ")" + " -> ";
-            if (parentList.front()->GetParticleId() == 111)
+        }
+        else
+        {
+            if (std::abs(pMC->GetParticleId()) == 14)
             {
-                std::cout << "MCParticle: PDG " << pMC->GetParticleId() << " with parent PDG 111 has " << hits.size() << " hits." << std::endl;
+                std::cout << "Nu:" << std::endl;
+                this->PrintTree(pMC, 0);
+                std::cout << "==========================" << std::endl;
             }
         }
         desc += std::to_string(pMC->GetParticleId());
 
-        if (!hits.empty())
+        if (m_visualise && !hits.empty())
         {
             PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &hits, desc, AUTOITER));
         }
     }
 
     return STATUS_CODE_SUCCESS;
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+void MCMonitoringAlgorithm::PrintTree(const MCParticle *const pMC, const int depth)
+{
+    std::string tab(2 * depth, ' ');
+    std::cout << tab << pMC->GetParticleId() << ": " << m_mcHitsMap[pMC].size() << std::endl;
+    for (const MCParticle *const pChild : pMC->GetDaughterList())
+        this->PrintTree(pChild, depth + 1);
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------

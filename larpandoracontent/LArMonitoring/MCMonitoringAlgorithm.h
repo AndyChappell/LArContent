@@ -33,6 +33,8 @@ private:
     pandora::StatusCode ReadSettings(const pandora::TiXmlHandle xmlHandle);
 
     pandora::StatusCode BuildMCHitMap();
+
+    void PrintTree(const pandora::MCParticle *const pMC, const int depth=0);
    
     std::string m_caloHitListName; ///< Name of the CaloHit list to be used
     std::string m_mcListName; ///< Name of the MC particle list to be used
