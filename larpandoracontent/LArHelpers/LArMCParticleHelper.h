@@ -269,6 +269,16 @@ public:
     static void GetAllAncestorMCParticles(const pandora::MCParticle *const pMCParticle, pandora::MCParticleList &ancestorMCParticleList);
 
     /**
+     *  @brief  Get a map of MC particles to their corresponding hits.
+     *
+     *  @param[in]  caloHitList  the list of calo hits to link to MC particles
+     *  @param[out] mcToHitsMap the output map of MC particles to their corresponding hits
+     *  @param[in]  allowHitSharing whether to allow hits to be shared by MC particles in the map
+     */
+    static void GetMCToHitsMap(const pandora::CaloHitList &caloHitList, LArMCParticleHelper::MCContributionMap &mcToHitsMap,
+        const bool allowHitSharing = false);
+
+    /**
      *  @brief  Get mapping from individual mc particles (in a provided list) and their primary parent mc particles
      *
      *  @param  pMCParticleList the input mc particle list
