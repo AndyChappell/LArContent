@@ -34,17 +34,8 @@ MCMonitoringAlgorithm::~MCMonitoringAlgorithm()
 
 StatusCode MCMonitoringAlgorithm::Run()
 {
-    if (m_visualise)
-    {
-        PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), false, DETECTOR_VIEW_XZ, -1, 1, 1));
-    }
 
     this->BuildMCHitMap();
-
-    if (m_visualise)
-    {
-        PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
-    }
 
     return STATUS_CODE_SUCCESS;
 }
@@ -53,6 +44,11 @@ StatusCode MCMonitoringAlgorithm::Run()
 
 StatusCode MCMonitoringAlgorithm::BuildMCHitMap()
 {
+    if (m_visualise)
+    {
+        PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), false, DETECTOR_VIEW_XZ, -1, 1, 1));
+    }
+
     const MCParticleList *pMCParticleList{nullptr};
     PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetList(*this, m_mcListName, pMCParticleList));
 
@@ -82,6 +78,71 @@ StatusCode MCMonitoringAlgorithm::BuildMCHitMap()
         }
     }
 
+    MCHitsMap pizeroHitsMap, otherHitsMap;
+    for (const auto &[pMC, hits] : m_mcHitsMap)
+    {
+        if (pMC->GetParticleId() == 111)
+            continue;
+        MCParticleList parentList{pMC->GetParentList()};
+        bool found_pizero{false};
+        while (!parentList.empty())
+        {
+            if (parentList.front()->GetParticleId() == 111)
+            {
+                found_pizero = true;
+                if (pizeroHitsMap.find(parentList.front()) != pizeroHitsMap.end())
+                {
+                    pizeroHitsMap[parentList.front()].insert(pizeroHitsMap[parentList.front()].end(),
+                        hits.begin(), hits.end());
+                }
+                else
+                {
+                    pizeroHitsMap[parentList.front()] = CaloHitList();
+                    pizeroHitsMap[parentList.front()].insert(pizeroHitsMap[parentList.front()].end(),
+                        hits.begin(), hits.end());
+                }
+                break;
+            }
+            parentList = parentList.front()->GetParentList();
+        }
+        if (!found_pizero)
+        {
+            otherHitsMap[pMC] = hits;
+        }
+    }
+    for (const auto &[pMC, hits] : pizeroHitsMap)
+    {
+        if (hits.empty())
+            continue;
+
+        if (m_visualise)
+        {
+            std::ostringstream oss;
+            oss << pMC->GetParticleId() << " (" << hits.size() << ")";
+            PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &hits, oss.str(), AUTOITER));
+        }
+
+        std::cout << "Found visible pi-zero with " << hits.size() << " hits and momentum "
+                  << pMC->GetMomentum().GetMagnitude() << " GeV." << std::endl;
+    }
+    for (const auto &[pMC, hits] : otherHitsMap)
+    {
+        if (hits.empty())
+            continue;
+
+        if (m_visualise)
+        {
+            std::ostringstream oss;
+            oss << pMC->GetParticleId() << " (" << hits.size() << ")";
+            PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &hits, oss.str(), BLACK));
+        }
+    }
+
+    if (m_visualise)
+    {
+        PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
+    }
+
     for (const auto &[pMC, hits] : m_mcHitsMap)
     {
         const MCParticleList &parentList{pMC->GetParentList()};
@@ -98,10 +159,15 @@ StatusCode MCMonitoringAlgorithm::BuildMCHitMap()
         }
         desc += std::to_string(pMC->GetParticleId());
 
-        if (!hits.empty())
+        if (m_visualise && !hits.empty())
         {
             PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &hits, desc, AUTOITER));
         }
+    }
+
+    if (m_visualise)
+    {
+        PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
     }
 
     return STATUS_CODE_SUCCESS;
