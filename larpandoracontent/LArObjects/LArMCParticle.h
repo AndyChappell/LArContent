@@ -76,12 +76,33 @@ enum MCProcess
     MC_PROC_PRIMARY_BACKGROUND
 };
 
+enum MCInteractionMode
+{
+    MC_MODE_UNKNOWN = -1,
+    MC_MODE_QE = 0,
+    MC_MODE_RES,
+    MC_MODE_DIS,
+    MC_MODE_COH,
+    MC_MODE_COH_ELASTIC,
+    MC_MODE_E_SCATTER,
+    MC_MODE_IMD_ANNIHIL,
+    MC_MODE_IBD,
+    MC_MODE_GLASHOW_RES,
+    MC_MODE_AM_NU_GAMMA,
+    MC_MODE_MEC,
+    MC_MODE_DIFFRACTIVE,
+    MC_MODE_EM,
+    MC_MODE_WEAK_MIX
+};
+
 /**
  *  @brief  LAr mc particle parameters
  */
 class LArMCParticleParameters : public object_creation::MCParticle::Parameters
 {
 public:
+    pandora::InputInt m_isCC; ///< Whether or not the interaction is charged current
+    pandora::InputInt m_mode; //</ The interaction mode of the event
     pandora::InputInt m_nuanceCode; ///< The nuance code
     pandora::InputInt m_process;    ///< The process creating the particle
 };
@@ -100,6 +121,20 @@ public:
      *  @param  parameters the lar mc particle parameters
      */
     LArMCParticle(const LArMCParticleParameters &parameters);
+
+    /**
+     *  @brief  Check whether or not this is a charged current interaction
+     *
+     *  @return true if charged current, flase otherwise
+     */
+    int IsCC() const;
+
+    /**
+     *  @brief  Get the interaction mode for the interaction
+     *
+     *  @return the interaction mode
+     */
+    MCInteractionMode GetInteractionMode() const;
 
     /**
      *  @brief  Get the nuance code
@@ -123,6 +158,8 @@ public:
     MCProcess GetProcess() const;
 
 private:
+    int m_isCC; ///< Whether or not the interaction is charged current
+    int m_mode; ///< The interaction mode
     int m_nuanceCode; ///< The nuance code
     int m_process;    ///< The process that created the particle
 };
@@ -140,7 +177,7 @@ public:
      *
      *  @param  version the LArMCParticle version
      */
-    LArMCParticleFactory(const unsigned int version = 2);
+    LArMCParticleFactory(const unsigned int version = 3);
 
     /**
      *  @brief  Create new parameters instance on the heap (memory-management to be controlled by user)
@@ -182,9 +219,25 @@ private:
 
 inline LArMCParticle::LArMCParticle(const LArMCParticleParameters &parameters) :
     object_creation::MCParticle::Object(parameters),
+    m_isCC(parameters.m_isCC.Get()),
+    m_mode(parameters.m_mode.Get()),
     m_nuanceCode(parameters.m_nuanceCode.Get()),
     m_process(parameters.m_process.Get())
 {
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+inline int LArMCParticle::IsCC() const
+{
+    return m_isCC;
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+inline MCInteractionMode LArMCParticle::GetInteractionMode() const
+{
+    return MCInteractionMode(m_mode);
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
@@ -198,6 +251,8 @@ inline int LArMCParticle::GetNuanceCode() const
 
 inline void LArMCParticle::FillParameters(LArMCParticleParameters &parameters) const
 {
+    parameters.m_isCC = this->IsCC();
+    parameters.m_mode = this->GetInteractionMode();
     parameters.m_nuanceCode = this->GetNuanceCode();
     parameters.m_process = this->GetProcess();
     parameters.m_energy = this->GetEnergy();
@@ -247,6 +302,8 @@ inline pandora::StatusCode LArMCParticleFactory::Create(const Parameters &parame
 inline pandora::StatusCode LArMCParticleFactory::Read(Parameters &parameters, pandora::FileReader &fileReader) const
 {
     // ATTN: To receive this call-back must have already set file reader mc particle factory to this factory
+    int isCC(0);
+    int mode(0);
     int nuanceCode(0);
     int process(0);
 
@@ -257,6 +314,11 @@ inline pandora::StatusCode LArMCParticleFactory::Read(Parameters &parameters, pa
 
         if (m_version > 1)
             PANDORA_RETURN_RESULT_IF(pandora::STATUS_CODE_SUCCESS, !=, binaryFileReader.ReadVariable(process));
+        if (m_version > 2)
+        {
+            PANDORA_RETURN_RESULT_IF(pandora::STATUS_CODE_SUCCESS, !=, binaryFileReader.ReadVariable(isCC));
+            PANDORA_RETURN_RESULT_IF(pandora::STATUS_CODE_SUCCESS, !=, binaryFileReader.ReadVariable(mode));
+        }
     }
     else if (pandora::XML == fileReader.GetFileType())
     {
@@ -265,6 +327,11 @@ inline pandora::StatusCode LArMCParticleFactory::Read(Parameters &parameters, pa
 
         if (m_version > 1)
             PANDORA_RETURN_RESULT_IF(pandora::STATUS_CODE_SUCCESS, !=, xmlFileReader.ReadVariable("Process", process));
+        if (m_version > 2)
+        {
+            PANDORA_RETURN_RESULT_IF(pandora::STATUS_CODE_SUCCESS, !=, xmlFileReader.ReadVariable("IsCC", isCC));
+            PANDORA_RETURN_RESULT_IF(pandora::STATUS_CODE_SUCCESS, !=, xmlFileReader.ReadVariable("InteractionMode", mode));
+        }
     }
     else
     {
@@ -272,6 +339,8 @@ inline pandora::StatusCode LArMCParticleFactory::Read(Parameters &parameters, pa
     }
 
     LArMCParticleParameters &larMCParticleParameters(dynamic_cast<LArMCParticleParameters &>(parameters));
+    larMCParticleParameters.m_isCC = isCC;
+    larMCParticleParameters.m_mode = mode;
     larMCParticleParameters.m_nuanceCode = nuanceCode;
     larMCParticleParameters.m_process = process;
 
@@ -296,6 +365,11 @@ inline pandora::StatusCode LArMCParticleFactory::Write(const Object *const pObje
         if (m_version > 1)
             PANDORA_RETURN_RESULT_IF(
                 pandora::STATUS_CODE_SUCCESS, !=, binaryFileWriter.WriteVariable(static_cast<int>(pLArMCParticle->GetProcess())));
+        if (m_version > 2)
+        {
+            PANDORA_RETURN_RESULT_IF(pandora::STATUS_CODE_SUCCESS, !=, binaryFileWriter.WriteVariable(static_cast<int>(pLArMCParticle->IsCC())));
+            PANDORA_RETURN_RESULT_IF(pandora::STATUS_CODE_SUCCESS, !=, binaryFileWriter.WriteVariable(static_cast<int>(pLArMCParticle->GetInteractionMode())));
+        }
     }
     else if (pandora::XML == fileWriter.GetFileType())
     {
@@ -305,6 +379,11 @@ inline pandora::StatusCode LArMCParticleFactory::Write(const Object *const pObje
         if (m_version > 1)
             PANDORA_RETURN_RESULT_IF(
                 pandora::STATUS_CODE_SUCCESS, !=, xmlFileWriter.WriteVariable("Process", static_cast<int>(pLArMCParticle->GetProcess())));
+        if (m_version > 2)
+        {
+            PANDORA_RETURN_RESULT_IF(pandora::STATUS_CODE_SUCCESS, !=, xmlFileWriter.WriteVariable("IsCC", static_cast<int>(pLArMCParticle->IsCC())));
+            PANDORA_RETURN_RESULT_IF(pandora::STATUS_CODE_SUCCESS, !=, xmlFileWriter.WriteVariable("InteractionMode", static_cast<int>(pLArMCParticle->GetInteractionMode())));
+        }
     }
     else
     {
