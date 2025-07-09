@@ -24,13 +24,14 @@ namespace lar_content
 /**
  *  @brief  LAr calo hit parameters
  */
-class LArCaloHitParameters : public object_creation::CaloHit::Parameters
+class LArHitParameters : public object_creation::CaloHit::Parameters
 {
 public:
-    pandora::InputUInt m_larTPCVolumeId;   ///< The lar tpc volume id
+    pandora::InputUInt m_larTPCVolumeId; ///< The lar tpc volume id
     pandora::InputUInt m_daughterVolumeId; ///< The daughter volume id
-    pandora::InputFloat m_timeSigma;       ///< The uncertainty for the signal peak
-    pandora::InputUInt m_channel;          ///< The channel of the hit
+    pandora::InputFloat m_timeSigma; ///< The uncertainty for the signal peak
+    pandora::InputFloat m_width; ///< The width of the optical hit
+    pandora::InputUInt m_channel; ///< The channel of the hit
 };
 
 //------------------------------------------------------------------------------------------------------------------------------------------
@@ -46,7 +47,7 @@ public:
      *
      *  @param  parameters the lar calo hit parameters
      */
-    LArCaloHit(const LArCaloHitParameters &parameters);
+    LArCaloHit(const LArHitParameters &parameters);
 
     /**
      *  @brief  Get the lar tpc volume id
@@ -81,7 +82,7 @@ public:
      *
      *  @param  parameters the output parameters
      */
-    void FillParameters(LArCaloHitParameters &parameters) const;
+    void FillParameters(LArHitParameters &parameters) const;
 
     /**
      *  @brief  Get the probability that the hit is track-like
@@ -123,18 +124,6 @@ private:
 //------------------------------------------------------------------------------------------------------------------------------------------
 
 /**
- *  @brief  LAr op hit parameters
- */
-class LArOpHitParameters : public object_creation::CaloHit::Parameters
-{
-public:
-    pandora::InputFloat m_width; ///< The width of the optical hit
-    pandora::InputUInt m_channel; ///< The channel of the hit
-};
-
-//------------------------------------------------------------------------------------------------------------------------------------------
-
-/**
  *  @brief  LAr optical hit class
  */
 class LArOpHit : public object_creation::CaloHit::Object
@@ -145,7 +134,7 @@ public:
      *
      *  @param  parameters the lar op hit parameters
      */
-    LArOpHit(const LArOpHitParameters &parameters);
+    LArOpHit(const LArHitParameters &parameters);
 
     /**
      *  @brief  Get the lar tpc volume id
@@ -166,7 +155,7 @@ public:
      *
      *  @param  parameters the output parameters
      */
-    void FillParameters(LArOpHitParameters &parameters) const;
+    void FillParameters(LArHitParameters &parameters) const;
 
 private:
     float m_width; ///< The width of the optical hit
@@ -225,7 +214,7 @@ private:
 //------------------------------------------------------------------------------------------------------------------------------------------
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-inline LArCaloHit::LArCaloHit(const LArCaloHitParameters &parameters) :
+inline LArCaloHit::LArCaloHit(const LArHitParameters &parameters) :
     object_creation::CaloHit::Object(parameters),
     m_larTPCVolumeId(parameters.m_larTPCVolumeId.Get()),
     m_daughterVolumeId(parameters.m_daughterVolumeId.IsInitialized() ? parameters.m_daughterVolumeId.Get() : 0)
@@ -248,7 +237,7 @@ inline unsigned int LArCaloHit::GetDaughterVolumeId() const
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-inline void LArCaloHit::FillParameters(LArCaloHitParameters &parameters) const
+inline void LArCaloHit::FillParameters(LArHitParameters &parameters) const
 {
     parameters.m_positionVector = this->GetPositionVector();
     parameters.m_expectedDirection = this->GetExpectedDirection();
@@ -312,7 +301,7 @@ inline void LArCaloHit::SetShowerProbability(const float probability)
 //------------------------------------------------------------------------------------------------------------------------------------------
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-inline LArOpHit::LArOpHit(const LArOpHitParameters &parameters) :
+inline LArOpHit::LArOpHit(const LArHitParameters &parameters) :
     object_creation::CaloHit::Object(parameters),
     m_width(parameters.m_width.Get()),
     m_channel(parameters.m_channel.Get())
@@ -335,7 +324,7 @@ inline unsigned int LArOpHit::GetChannel() const
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-inline void LArOpHit::FillParameters(LArOpHitParameters &parameters) const
+inline void LArOpHit::FillParameters(LArHitParameters &parameters) const
 {
     parameters.m_positionVector = this->GetPositionVector();
     parameters.m_expectedDirection = this->GetExpectedDirection();
@@ -374,7 +363,7 @@ inline LArHitFactory::LArHitFactory(const unsigned int version) :
 
 inline LArHitFactory::Parameters *LArHitFactory::NewParameters() const
 {
-    throw pandora::StatusCodeException(pandora::STATUS_CODE_NOT_ALLOWED);
+    return new LArHitParameters;
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
@@ -387,15 +376,15 @@ inline pandora::StatusCode LArHitFactory::Create(const Parameters &parameters, c
         case pandora::OPTICAL_TRAP:
         case pandora::OPTICAL_TPC:
         {
-            const LArOpHitParameters &larOpHitParameters(dynamic_cast<const LArOpHitParameters &>(parameters));
-            pObject = new LArOpHit(larOpHitParameters);
+            const LArHitParameters &larHitParameters(dynamic_cast<const LArHitParameters &>(parameters));
+            pObject = new LArOpHit(larHitParameters);
 
             return pandora::STATUS_CODE_SUCCESS;
         }
         default:
         {
-            const LArCaloHitParameters &larCaloHitParameters(dynamic_cast<const LArCaloHitParameters &>(parameters));
-            pObject = new LArCaloHit(larCaloHitParameters);
+            const LArHitParameters &larHitParameters(dynamic_cast<const LArHitParameters &>(parameters));
+            pObject = new LArCaloHit(larHitParameters);
 
             return pandora::STATUS_CODE_SUCCESS;
         }
@@ -433,7 +422,7 @@ inline pandora::StatusCode LArHitFactory::Read(Parameters &parameters, pandora::
                 return pandora::STATUS_CODE_INVALID_PARAMETER;
             }
 
-            LArOpHitParameters &larOpHitParameters(dynamic_cast<LArOpHitParameters &>(parameters));
+            LArHitParameters &larOpHitParameters(dynamic_cast<LArHitParameters &>(parameters));
             larOpHitParameters.m_width = width;
             larOpHitParameters.m_channel = channel;
 
@@ -463,7 +452,7 @@ inline pandora::StatusCode LArHitFactory::Read(Parameters &parameters, pandora::
                 return pandora::STATUS_CODE_INVALID_PARAMETER;
             }
 
-            LArCaloHitParameters &larCaloHitParameters(dynamic_cast<LArCaloHitParameters &>(parameters));
+            LArHitParameters &larCaloHitParameters(dynamic_cast<LArHitParameters &>(parameters));
             larCaloHitParameters.m_larTPCVolumeId = larTPCVolumeId;
             larCaloHitParameters.m_daughterVolumeId = daughterVolumeId;
 
