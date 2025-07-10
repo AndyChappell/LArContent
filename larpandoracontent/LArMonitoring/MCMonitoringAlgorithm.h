@@ -37,6 +37,7 @@ private:
     std::string m_caloHitListName; ///< Name of the CaloHit list to be used
     std::string m_mcListName; ///< Name of the MC particle list to be used
     bool m_visualise{false}; ///< Flag to indicate whether to visualise the results
+    bool m_colourByProcess{false}; ///< Flag to indicate whether to colour hits by process
     MCHitsMap m_mcHitsMap; ///< Map of MC particles to their associated hits
 };
 

@@ -8,6 +8,7 @@
 
 #include "Pandora/AlgorithmHeaders.h"
 
+#include "larpandoracontent/LArObjects/LArMCParticle.h"
 #include "larpandoracontent/LArMonitoring/MCMonitoringAlgorithm.h"
 
 #include <sstream>
@@ -20,7 +21,8 @@ namespace lar_content
 MCMonitoringAlgorithm::MCMonitoringAlgorithm() :
     m_caloHitListName(""),
     m_mcListName("Input"),
-    m_visualise(true)
+    m_visualise(false),
+    m_colourByProcess(false)
 {
 }
 
@@ -82,6 +84,17 @@ StatusCode MCMonitoringAlgorithm::BuildMCHitMap()
         }
     }
 
+    std::map<MCProcess, Color> processColorMap{
+        {MC_PROC_UNKNOWN, GRAY},
+        {MC_PROC_PRIMARY, BLACK},
+        {MC_PROC_COMPT,GREEN},
+        {MC_PROC_PHOT,CYAN},
+        {MC_PROC_E_IONI,ORANGE},
+        {MC_PROC_CONV,MAGENTA},
+        {MC_PROC_MU_IONI,ORANGE},
+        {MC_PROC_HAD_IONI,ORANGE},
+        {MC_PROC_PI_PLUS_INELASTIC,YELLOW}
+    };
     for (const auto &[pMC, hits] : m_mcHitsMap)
     {
         const MCParticleList &parentList{pMC->GetParentList()};
@@ -95,12 +108,43 @@ StatusCode MCMonitoringAlgorithm::BuildMCHitMap()
             {
                 std::cout << "MCParticle: PDG " << pMC->GetParticleId() << " with parent PDG 111 has " << hits.size() << " hits." << std::endl;
             }
+            else if (std::abs(parentList.front()->GetParticleId()) == MU_MINUS)
+            {
+                if (std::abs(pMC->GetParticleId()) == E_MINUS)
+                {
+                    const LArMCParticle *const pLArMC{dynamic_cast<const LArMCParticle *>(pMC)};
+                    const MCProcess process{pLArMC ? pLArMC->GetProcess() : MC_PROC_UNKNOWN};
+                    if (process == MC_PROC_DECAY)
+                    {
+                        std::cout << "Found electron from muon with process: " << process << std::endl;
+                        desc += " Decay";
+                    }
+                }
+            }
         }
         desc += std::to_string(pMC->GetParticleId());
 
         if (!hits.empty())
         {
-            PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &hits, desc, AUTOITER));
+            if (m_colourByProcess)
+            {
+                const LArMCParticle *const pLArMC{dynamic_cast<const LArMCParticle *>(pMC)};
+                const MCProcess process{pLArMC ? pLArMC->GetProcess() : MC_PROC_UNKNOWN};
+                Color color{processColorMap.count(process) ? processColorMap.at(process) : GRAY};
+                if (process == MC_PROC_COMPT)
+                {
+                    if (!pLArMC->GetDaughterList().empty())
+                    {
+                        color = RED;
+                    }
+                }
+
+                PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &hits, desc, color));
+            }
+            else
+            {
+                PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &hits, desc, AUTOITER));
+            }
         }
     }
 
@@ -113,6 +157,7 @@ StatusCode MCMonitoringAlgorithm::ReadSettings(const TiXmlHandle xmlHandle)
 {
     PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadValue(xmlHandle, "CaloHitListName", m_caloHitListName));
     PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "Visualise", m_visualise));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "ColourByProcess", m_colourByProcess));
     PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "MCListName", m_mcListName));
 
     return STATUS_CODE_SUCCESS;
