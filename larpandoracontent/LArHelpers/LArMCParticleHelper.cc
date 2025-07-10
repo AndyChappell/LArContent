@@ -490,6 +490,24 @@ const MCParticle *LArMCParticleHelper::GetLeadingMCParticle(const MCParticle *co
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
+const MCParticle *LArMCParticleHelper::GetLeadingEMParticle(const MCParticle *const pMC)
+{
+    int pdg{std::abs(pMC->GetParticleId())};
+    const MCParticle *pLeadingEM{pdg == PHOTON || pdg == E_MINUS ? pMC : nullptr};
+    const MCParticle *pParentMC{pMC};
+
+    while (!pParentMC->GetParentList().empty())
+    {
+        pParentMC = pParentMC->GetParentList().front();
+        pdg = std::abs(pParentMC->GetParticleId());
+        if (pdg == PHOTON || pdg == E_MINUS)
+            pLeadingEM = pParentMC;
+    }
+
+    return pLeadingEM;
+}
+//------------------------------------------------------------------------------------------------------------------------------------------
+
 void LArMCParticleHelper::GetMCPrimaryMap(const MCParticleList *const pMCParticleList, MCRelationMap &mcPrimaryMap)
 {
     for (const MCParticle *const pMCParticle : *pMCParticleList)

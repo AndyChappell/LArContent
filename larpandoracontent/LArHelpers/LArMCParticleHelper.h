@@ -215,6 +215,15 @@ public:
     static const pandora::MCParticle *GetLeadingMCParticle(const pandora::MCParticle *const pMCParticle, const int hierarchyTierLimit = 1);
 
     /**
+     *  @brief  Get the leading electronmagnetic particle in the hierarchy
+     *
+     *  @param  pMCParticle the input mc particle
+     *
+     *  @return address of the leading EM particle, if it exists, nullptr otherwise
+     */
+    static const pandora::MCParticle *GetLeadingEMParticle(const pandora::MCParticle *const pMCParticle);
+
+    /**
      *  @brief  Get vector of primary MC particles from an input list of MC particles
      *
      *  @param  pMCParticleList the input mc particle list
