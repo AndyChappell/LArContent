@@ -105,6 +105,7 @@ public:
     pandora::InputInt m_mode; //</ The interaction mode of the event
     pandora::InputInt m_nuanceCode; ///< The nuance code
     pandora::InputInt m_process;    ///< The process creating the particle
+    pandora::InputFloat m_visibleEnergy;    ///< The visible energy deposited by the particle (GeV)
 };
 
 //------------------------------------------------------------------------------------------------------------------------------------------
@@ -144,6 +145,13 @@ public:
     int GetNuanceCode() const;
 
     /**
+     *  @brief  Get the visible energy of the particle
+     *
+     *  @return the visible energy
+     */
+    float GetVisibleEnergy() const;
+
+    /**
      *  @brief  Fill the parameters associated with this MC particle
      *
      *  @param  parameters the output parameters
@@ -162,6 +170,7 @@ private:
     int m_mode; ///< The interaction mode
     int m_nuanceCode; ///< The nuance code
     int m_process;    ///< The process that created the particle
+    float m_visibleEnergy;  ///< The visible energy deposited by the particle (GeV)
 };
 
 //------------------------------------------------------------------------------------------------------------------------------------------
@@ -222,7 +231,8 @@ inline LArMCParticle::LArMCParticle(const LArMCParticleParameters &parameters) :
     m_isCC(parameters.m_isCC.Get()),
     m_mode(parameters.m_mode.Get()),
     m_nuanceCode(parameters.m_nuanceCode.Get()),
-    m_process(parameters.m_process.Get())
+    m_process(parameters.m_process.Get()),
+    m_visibleEnergy(parameters.m_visibleEnergy.Get())
 {
 }
 
@@ -249,6 +259,13 @@ inline int LArMCParticle::GetNuanceCode() const
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
+inline float LArMCParticle::GetVisibleEnergy() const
+{
+    return m_visibleEnergy;
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
 inline void LArMCParticle::FillParameters(LArMCParticleParameters &parameters) const
 {
     parameters.m_isCC = this->IsCC();
@@ -256,6 +273,7 @@ inline void LArMCParticle::FillParameters(LArMCParticleParameters &parameters) c
     parameters.m_nuanceCode = this->GetNuanceCode();
     parameters.m_process = this->GetProcess();
     parameters.m_energy = this->GetEnergy();
+    parameters.m_visibleEnergy = this->GetVisibleEnergy();
     parameters.m_momentum = this->GetMomentum();
     parameters.m_vertex = this->GetVertex();
     parameters.m_endpoint = this->GetEndpoint();
@@ -306,6 +324,7 @@ inline pandora::StatusCode LArMCParticleFactory::Read(Parameters &parameters, pa
     int mode(0);
     int nuanceCode(0);
     int process(0);
+    float visibleEnergy(0.f);
 
     if (pandora::BINARY == fileReader.GetFileType())
     {
@@ -318,6 +337,7 @@ inline pandora::StatusCode LArMCParticleFactory::Read(Parameters &parameters, pa
         {
             PANDORA_RETURN_RESULT_IF(pandora::STATUS_CODE_SUCCESS, !=, binaryFileReader.ReadVariable(isCC));
             PANDORA_RETURN_RESULT_IF(pandora::STATUS_CODE_SUCCESS, !=, binaryFileReader.ReadVariable(mode));
+            PANDORA_RETURN_RESULT_IF(pandora::STATUS_CODE_SUCCESS, !=, binaryFileReader.ReadVariable(visibleEnergy));
         }
     }
     else if (pandora::XML == fileReader.GetFileType())
@@ -331,6 +351,7 @@ inline pandora::StatusCode LArMCParticleFactory::Read(Parameters &parameters, pa
         {
             PANDORA_RETURN_RESULT_IF(pandora::STATUS_CODE_SUCCESS, !=, xmlFileReader.ReadVariable("IsCC", isCC));
             PANDORA_RETURN_RESULT_IF(pandora::STATUS_CODE_SUCCESS, !=, xmlFileReader.ReadVariable("InteractionMode", mode));
+            PANDORA_RETURN_RESULT_IF(pandora::STATUS_CODE_SUCCESS, !=, xmlFileReader.ReadVariable("VisibleEnergy", visibleEnergy));
         }
     }
     else
@@ -343,6 +364,7 @@ inline pandora::StatusCode LArMCParticleFactory::Read(Parameters &parameters, pa
     larMCParticleParameters.m_mode = mode;
     larMCParticleParameters.m_nuanceCode = nuanceCode;
     larMCParticleParameters.m_process = process;
+    larMCParticleParameters.m_visibleEnergy = visibleEnergy;
 
     return pandora::STATUS_CODE_SUCCESS;
 }
@@ -369,6 +391,7 @@ inline pandora::StatusCode LArMCParticleFactory::Write(const Object *const pObje
         {
             PANDORA_RETURN_RESULT_IF(pandora::STATUS_CODE_SUCCESS, !=, binaryFileWriter.WriteVariable(static_cast<int>(pLArMCParticle->IsCC())));
             PANDORA_RETURN_RESULT_IF(pandora::STATUS_CODE_SUCCESS, !=, binaryFileWriter.WriteVariable(static_cast<int>(pLArMCParticle->GetInteractionMode())));
+            PANDORA_RETURN_RESULT_IF(pandora::STATUS_CODE_SUCCESS, !=, binaryFileWriter.WriteVariable(static_cast<int>(pLArMCParticle->GetVisibleEnergy())));
         }
     }
     else if (pandora::XML == fileWriter.GetFileType())
@@ -383,6 +406,7 @@ inline pandora::StatusCode LArMCParticleFactory::Write(const Object *const pObje
         {
             PANDORA_RETURN_RESULT_IF(pandora::STATUS_CODE_SUCCESS, !=, xmlFileWriter.WriteVariable("IsCC", static_cast<int>(pLArMCParticle->IsCC())));
             PANDORA_RETURN_RESULT_IF(pandora::STATUS_CODE_SUCCESS, !=, xmlFileWriter.WriteVariable("InteractionMode", static_cast<int>(pLArMCParticle->GetInteractionMode())));
+            PANDORA_RETURN_RESULT_IF(pandora::STATUS_CODE_SUCCESS, !=, xmlFileWriter.WriteVariable("VisibleEnergy", static_cast<int>(pLArMCParticle->GetVisibleEnergy())));
         }
     }
     else
