@@ -35,6 +35,7 @@ private:
 
     enum Category
     {
+        UNINITIALISED = 0,
         MIP = 1,
         HIP = 2,
         SHOWER = 3,
@@ -125,6 +126,9 @@ private:
 
     std::string m_caloHitListName; ///< Name of input calo hit list
     bool m_trainingMode; ///< Training mode
+    float m_adcNormalization; ///< ADC normalization factor - value representing peak of ADC distribution for all hits
+    std::string m_rootFileName; ///< Name of the ROOT file to save the training sample
+    std::string m_rootTreeName; ///< Name of the ROOT tree to save the training sample
 };
 
 } // namespace lar_dl_content

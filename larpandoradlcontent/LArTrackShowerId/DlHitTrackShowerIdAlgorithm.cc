@@ -26,7 +26,8 @@ namespace lar_dl_content
 
 DlHitTrackShowerIdAlgorithm::DlHitTrackShowerIdAlgorithm() :
     m_caloHitListName(""),
-    m_trainingMode(false)
+    m_trainingMode(false),
+    m_adcNormalization(1.f / 123.f)
 {
 }
 
@@ -34,6 +35,17 @@ DlHitTrackShowerIdAlgorithm::DlHitTrackShowerIdAlgorithm() :
 
 DlHitTrackShowerIdAlgorithm::~DlHitTrackShowerIdAlgorithm()
 {
+    if (m_trainingMode)
+    {
+        try
+        {
+            PANDORA_MONITORING_API(SaveTree(this->GetPandora(), m_rootTreeName, m_rootFileName, "RECREATE"));
+        }
+        catch (StatusCodeException e)
+        {
+            std::cout << "DlHitTrackShowerIdAlgorithm: Unable to write to ROOT tree" << std::endl;
+        }
+    }
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
@@ -50,20 +62,35 @@ StatusCode DlHitTrackShowerIdAlgorithm::Run()
 
 StatusCode DlHitTrackShowerIdAlgorithm::PrepareTrainingSample()
 {
-    PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), false, DETECTOR_VIEW_XZ, -1, 1, 1));
+    static int event{-1};
+    ++event;
+    //PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), false, DETECTOR_VIEW_XZ, -1, 1, 1));
     const CaloHitList *pCaloHitList(nullptr);
     PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetList(*this, m_caloHitListName, pCaloHitList));
 
     LArMCParticleHelper::MCContributionMap mcToHitsMap;
     LArMCParticleHelper::GetMCToHitsMap(*pCaloHitList, mcToHitsMap, false);
     std::unordered_map<const MCParticle *, const MCParticle *> mcFoldingMap;
+    float xMin{std::numeric_limits<float>::max()}, xMax{std::numeric_limits<float>::lowest()};
+    float zMin{std::numeric_limits<float>::max()}, zMax{std::numeric_limits<float>::lowest()};
     for (const auto &[pMC, caloHitList] : mcToHitsMap)
     {
         const MCParticle *const pLeading{LArMCParticleHelper::GetLeadingEMParticle(pMC)};
         mcFoldingMap[pMC] = pLeading ? pLeading : pMC;
+        for (const CaloHit *const pCaloHit : caloHitList)
+        {
+            const CartesianVector &pos{pCaloHit->GetPositionVector()};
+            xMin = std::min(pos.GetX(), xMin);
+            xMax = std::max(pos.GetX(), xMax);
+            zMin = std::min(pos.GetZ(), zMin);
+            zMax = std::max(pos.GetZ(), zMax);
+        }
     }
+    const float xRange{xMax - xMin > 0 ? xMax - xMin : 1.f};
+    const float zRange{zMax - zMin > 0 ? zMax - zMin : 1.f};
 
-    std::map<Category, CaloHitList> categoryToHitsMap;
+    std::unordered_map<Category, CaloHitList> categoryToHitsMap;
+    std::unordered_map<const CaloHit *, std::vector<Category>> hitToCategoriesMap;
     for (const auto &[pMC, caloHitList] : mcToHitsMap)
     {
         const LArMCParticle *const pLArMC{dynamic_cast<const LArMCParticle *>(pMC)};
@@ -72,22 +99,32 @@ StatusCode DlHitTrackShowerIdAlgorithm::PrepareTrainingSample()
             if (this->IsDiffuse(pLArMC))
             {
                 categoryToHitsMap[DIFFUSE].insert(categoryToHitsMap[DIFFUSE].end(), caloHitList.begin(), caloHitList.end());
+                for (const CaloHit *const pCaloHit : caloHitList)
+                    hitToCategoriesMap[pCaloHit].emplace_back(DIFFUSE);
             }
             if (this->IsHip(pLArMC))
             {
                 categoryToHitsMap[HIP].insert(categoryToHitsMap[HIP].end(), caloHitList.begin(), caloHitList.end());
+                for (const CaloHit *const pCaloHit : caloHitList)
+                    hitToCategoriesMap[pCaloHit].emplace_back(HIP);
             }
             if (this->IsMip(pLArMC))
             {
                 categoryToHitsMap[MIP].insert(categoryToHitsMap[MIP].end(), caloHitList.begin(), caloHitList.end());
+                for (const CaloHit *const pCaloHit : caloHitList)
+                    hitToCategoriesMap[pCaloHit].emplace_back(MIP);
             }
             if (this->IsMichel(pLArMC))
             {
                 categoryToHitsMap[LOW_E].insert(categoryToHitsMap[LOW_E].end(), caloHitList.begin(), caloHitList.end());
+                for (const CaloHit *const pCaloHit : caloHitList)
+                    hitToCategoriesMap[pCaloHit].emplace_back(LOW_E);
             }
             if (this->IsShower(pLArMC))
             {
                 categoryToHitsMap[SHOWER].insert(categoryToHitsMap[SHOWER].end(), caloHitList.begin(), caloHitList.end());
+                for (const CaloHit *const pCaloHit : caloHitList)
+                    hitToCategoriesMap[pCaloHit].emplace_back(SHOWER);
             }
             if (this->IsDelta(dynamic_cast<const LArMCParticle *>(mcFoldingMap.at(pLArMC))))
             {
@@ -95,40 +132,135 @@ StatusCode DlHitTrackShowerIdAlgorithm::PrepareTrainingSample()
                 const LArMCParticle *const pParent{dynamic_cast<const LArMCParticle *>(this->AllocateHitOwner(pLArMC, mcFoldingMap, mcToHitsMap,
                     particleOwnedHits, parentOwnedHits))};
                 if (!particleOwnedHits.empty())
+                {
                     categoryToHitsMap[LOW_E].insert(categoryToHitsMap[LOW_E].end(), particleOwnedHits.begin(), particleOwnedHits.end());
+                    for (const CaloHit *const pCaloHit : particleOwnedHits)
+                        hitToCategoriesMap[pCaloHit].emplace_back(LOW_E);
+                }
                 if (!parentOwnedHits.empty())
                 {
                     if (this->IsMip(pParent))
+                    {
                         categoryToHitsMap[MIP].insert(categoryToHitsMap[MIP].end(), parentOwnedHits.begin(), parentOwnedHits.end());
+                        for (const CaloHit *const pCaloHit : parentOwnedHits)
+                            hitToCategoriesMap[pCaloHit].emplace_back(MIP);
+                    }
                     else
+                    {
                         categoryToHitsMap[HIP].insert(categoryToHitsMap[HIP].end(), parentOwnedHits.begin(), parentOwnedHits.end());
+                        for (const CaloHit *const pCaloHit : parentOwnedHits)
+                            hitToCategoriesMap[pCaloHit].emplace_back(HIP);
+                    }
                 }
             }
         }
     }
-
     if (!categoryToHitsMap[DIFFUSE].empty())
     {
-        PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &categoryToHitsMap[DIFFUSE], "diffuse", CYAN));
+//        PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &categoryToHitsMap[DIFFUSE], "diffuse", CYAN));
     }
     if (!categoryToHitsMap[HIP].empty())
     {
-        PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &categoryToHitsMap[HIP], "hip", BLACK));
+//        PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &categoryToHitsMap[HIP], "hip", BLACK));
     }
     if (!categoryToHitsMap[MIP].empty())
     {
-        PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &categoryToHitsMap[MIP], "mip", GRAY));
+//        PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &categoryToHitsMap[MIP], "mip", GRAY));
     }
     if (!categoryToHitsMap[LOW_E].empty())
     {
-        PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &categoryToHitsMap[LOW_E], "low_e", BLUE));
+//        PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &categoryToHitsMap[LOW_E], "low_e", BLUE));
     }
     if (!categoryToHitsMap[SHOWER].empty())
     {
-        PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &categoryToHitsMap[SHOWER], "shower", RED));
+//        PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &categoryToHitsMap[SHOWER], "shower", RED));
     }
 
-    PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
+//    PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
+    categoryToHitsMap.clear();
+
+    // Collect hits and respective categories into feature vectors for training
+    FloatVector xx(hitToCategoriesMap.size(), 0), zz(hitToCategoriesMap.size(), 0);
+    FloatVector adc(hitToCategoriesMap.size(), 0), width(hitToCategoriesMap.size(), 0);
+    IntVector label(hitToCategoriesMap.size(), UNINITIALISED);
+    size_t i{0};
+    for (const auto &[pCaloHit, categories] : hitToCategoriesMap)
+    {
+        xx[i] = (pCaloHit->GetPositionVector().GetX() - xMin) / xRange;
+        zz[i] = (pCaloHit->GetPositionVector().GetZ() - zMin) / zRange;
+        adc[i] = pCaloHit->GetInputEnergy() * m_adcNormalization;
+        width[i] = pCaloHit->GetCellSize1() / xRange;
+        for (const auto &category : categories)
+        {
+            // ATTN: This assumes that the categories are ordered such that MIP < HIP < SHOWER < LOW_E < DIFFUSE
+            if (label[i] == UNINITIALISED)
+            {
+                label[i] = static_cast<int>(category);
+            }
+            else
+            {
+                switch (category)
+                {
+                    case DIFFUSE:
+                        // Allow diffuse to override shower tags
+                        if (label[i] == SHOWER)
+                            label[i] = DIFFUSE;
+                        break;
+                    case HIP:
+                    case MIP:
+                        // HIP and MIP override everything
+                        label[i] = category;
+                        break;
+                    case LOW_E:
+                        // Allow low energy to override shower and diffuse tags
+                        if (label[i] > static_cast<int>(HIP))
+                            label[i] = LOW_E;
+                        break;
+                    case SHOWER:
+                        // Only tag a hit as shower if it is not initialised
+                        break;
+                    default:
+                        break;
+                }
+            }
+        }
+        categoryToHitsMap[Category(label[i])].emplace_back(pCaloHit);
+        ++i;
+    }
+
+    if (!categoryToHitsMap[DIFFUSE].empty())
+    {
+//        PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &categoryToHitsMap[DIFFUSE], "diffuse", CYAN));
+    }
+    if (!categoryToHitsMap[HIP].empty())
+    {
+//        PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &categoryToHitsMap[HIP], "hip", BLACK));
+    }
+    if (!categoryToHitsMap[MIP].empty())
+    {
+//        PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &categoryToHitsMap[MIP], "mip", GRAY));
+    }
+    if (!categoryToHitsMap[LOW_E].empty())
+    {
+//        PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &categoryToHitsMap[LOW_E], "low_e", BLUE));
+    }
+    if (!categoryToHitsMap[SHOWER].empty())
+    {
+//        PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &categoryToHitsMap[SHOWER], "shower", RED));
+    }
+
+//    PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
+
+    if (!xx.empty())
+    {
+        PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "event", event));
+        PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "xx", &xx));
+        PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "zz", &zz));
+        PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "adc", &adc));
+        PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "width", &width));
+        PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "label", &label));
+        PANDORA_MONITORING_API(FillTree(this->GetPandora(), m_rootTreeName));
+    }
 
     return STATUS_CODE_SUCCESS;
 }
@@ -245,6 +377,11 @@ const LArMCParticle *DlHitTrackShowerIdAlgorithm::AllocateHitOwner(const pandora
     const LArMCParticleHelper::MCContributionMap &mcHitMap, CaloHitList &particleOwnedHits, CaloHitList &parentOwnedHits) const
 {
     const MCParticleList &parentList{mcFoldingMap.at(pParticle)->GetParentList()};
+    if (parentList.empty() || mcFoldingMap.find(parentList.front()) == mcFoldingMap.end())
+    {
+        particleOwnedHits = mcHitMap.at(pParticle);
+        return nullptr;
+    }
     const LArMCParticle *pParent{parentList.empty() ? nullptr : dynamic_cast<const LArMCParticle *>(mcFoldingMap.at(parentList.front()))};
     if (pParent == pParticle)
     {
@@ -339,6 +476,12 @@ StatusCode DlHitTrackShowerIdAlgorithm::ReadSettings(const TiXmlHandle xmlHandle
 {
     PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "TrainingMode", m_trainingMode));
     PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "CaloHitListName", m_caloHitListName));
+    if (m_trainingMode)
+    {
+        PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadValue(xmlHandle, "RootFileName", m_rootFileName));
+        PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadValue(xmlHandle, "RootTreeName", m_rootTreeName));
+    }
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "AdcNormalization", m_adcNormalization));
 
     return STATUS_CODE_SUCCESS;
 }
