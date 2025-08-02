@@ -126,9 +126,12 @@ private:
 
     std::string m_caloHitListName; ///< Name of input calo hit list
     bool m_trainingMode; ///< Training mode
+    bool m_vertexRelative; ///< Whether to make hit positions relative to the reconstructed vertex position
+    bool m_polarCoords; ///< Whether to use polar coordinates for the hit positions
     float m_adcNormalization; ///< ADC normalization factor - value representing peak of ADC distribution for all hits
     std::string m_rootFileName; ///< Name of the ROOT file to save the training sample
     std::string m_rootTreeName; ///< Name of the ROOT tree to save the training sample
+    std::string m_vertexListName; ///< Name of the vertex list to use for vertex-relative coordinates
 };
 
 } // namespace lar_dl_content
