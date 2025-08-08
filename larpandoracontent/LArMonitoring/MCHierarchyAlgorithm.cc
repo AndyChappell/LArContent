@@ -223,6 +223,7 @@ StatusCode MCHierarchyAlgorithm::Run()
         PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_mcTreeName, "is_beam_induced", isBeamInduced));
         PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_mcTreeName, "pdg", pMC->GetParticleId()));
         PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_mcTreeName, "energy", pMC->GetEnergy()));
+        PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_mcTreeName, "visible_energy", m_mcToVisibleEnergyMap.at(pMC)));
         PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_mcTreeName, "mom_vec", &momVec));
         PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_mcTreeName, "parent_id", parentId));
         PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_mcTreeName, "child_id_vec", &childIdVector));
@@ -311,7 +312,7 @@ StatusCode MCHierarchyAlgorithm::Run()
     const int isNumu{std::abs(pLArMC->GetParticleId()) == 14};
     const int isNutau{std::abs(pLArMC->GetParticleId()) == 16};
     const int isTestbeam(LArMCParticleHelper::IsTriggeredBeamParticle(pRoot) ? 1 : 0);
-    int decaysHadronically{0};
+    int decaysHadronically{1};
     if (isCC && isNutau)
     {
         for (const MCParticle *const pChild : pLArMC->GetDaughterList())
@@ -319,10 +320,14 @@ StatusCode MCHierarchyAlgorithm::Run()
             const int pdg{std::abs(pChild->GetParticleId())};
             if (pdg == E_MINUS || pdg == MU_MINUS)
             {
-                decaysHadronically = 1;
+                decaysHadronically = 0;
                 break;
             }
         }
+    }
+    else
+    {
+        decaysHadronically = 0;
     }
 
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_eventTreeName, "event_id", event));
