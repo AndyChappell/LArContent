@@ -29,6 +29,7 @@ public:
     ~MCHierarchyAlgorithm();
 
 private:
+    typedef std::map<const pandora::MCParticle *, float> MCEnergyMap;
     pandora::StatusCode Run();
 
     void Make3DHits(const pandora::CaloHitList &hits2D, pandora::CaloHitList &hits3D, pandora::CaloHitList &remainingHits) const;
@@ -49,6 +50,7 @@ private:
     float m_correctionZ; ///< Truth correction to apply in z
     bool m_visualize; // Whether to visualize the event
     LArMCParticleHelper::MCContributionMap m_mcToHitsMap;
+    MCEnergyMap m_mcToVisibleEnergyMap;
 
     typedef std::tuple<int, int, int, float> CandidateHit;
 };

@@ -53,6 +53,7 @@ MCHierarchyAlgorithm::~MCHierarchyAlgorithm()
 StatusCode MCHierarchyAlgorithm::Run()
 {
     m_mcToHitsMap.clear();
+    m_mcToVisibleEnergyMap.clear();
     const CartesianVector geoCorrection(m_correctionX, m_correctionY, m_correctionZ);
     if (m_visualize)
     {
@@ -84,10 +85,13 @@ StatusCode MCHierarchyAlgorithm::Run()
             if (pdg == E_MINUS || pdg == PHOTON)
                 pLeadingEM = pParent;
         }
-        if (pLeadingEM)
-            mcToLeadingMap[pMC] = pLeadingEM;
+        const MCParticle *const pTargetMC{pLeadingEM ? pLeadingEM : pMC};
+        mcToLeadingMap[pMC] = pTargetMC;
+        const LArMCParticle *const pLArMC{dynamic_cast<const LArMCParticle *>(pMC)};
+        if (pLArMC)
+            m_mcToVisibleEnergyMap[pTargetMC] += pLArMC->GetVisibleEnergy();
         else
-            mcToLeadingMap[pMC] = pMC;
+            m_mcToVisibleEnergyMap.try_emplace(pTargetMC, 0.f);
     }
 
     if (!pRoot)
