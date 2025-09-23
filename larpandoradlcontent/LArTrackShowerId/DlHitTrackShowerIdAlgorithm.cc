@@ -17,6 +17,7 @@
 #include "larpandoracontent/LArHelpers/LArPcaHelper.h"
 
 #include <chrono>
+#include <cmath>
 
 using namespace pandora;
 using namespace lar_content;
@@ -27,7 +28,11 @@ namespace lar_dl_content
 DlHitTrackShowerIdAlgorithm::DlHitTrackShowerIdAlgorithm() :
     m_caloHitListName(""),
     m_trainingMode(false),
-    m_adcNormalization(1.f / 123.f)
+    m_vertexRelative(false),
+    m_polarCoords(false),
+    m_adcPeak(123.f),
+    m_maxAdcFactor(10.f),
+    m_maxSeqLen(4096)
 {
 }
 
@@ -102,6 +107,7 @@ StatusCode DlHitTrackShowerIdAlgorithm::PrepareTrainingSample()
     LArMCParticleHelper::MCContributionMap mcToHitsMap;
     LArMCParticleHelper::GetMCToHitsMap(*pCaloHitList, mcToHitsMap, false);
     std::unordered_map<const MCParticle *, const MCParticle *> mcFoldingMap;
+    std::unordered_map<const MCParticle *, int> leadingToInstanceMap;
     float xMin{std::numeric_limits<float>::max()}, xMax{std::numeric_limits<float>::lowest()};
     float zMin{std::numeric_limits<float>::max()}, zMax{std::numeric_limits<float>::lowest()};
     float rMax{0};
@@ -109,6 +115,7 @@ StatusCode DlHitTrackShowerIdAlgorithm::PrepareTrainingSample()
     {
         const MCParticle *const pLeading{LArMCParticleHelper::GetLeadingEMParticle(pMC)};
         mcFoldingMap[pMC] = pLeading ? pLeading : pMC;
+        leadingToInstanceMap[mcFoldingMap.at(pMC)] = 0;
         for (const CaloHit *const pCaloHit : caloHitList)
         {
             const CartesianVector &pos{pCaloHit->GetPositionVector()};
@@ -125,16 +132,25 @@ StatusCode DlHitTrackShowerIdAlgorithm::PrepareTrainingSample()
             }
         }
     }
+    int inst{1};
+    for (const auto &[pLeading, dummy] : leadingToInstanceMap)
+    {
+        leadingToInstanceMap[pLeading] = inst;
+        ++inst;
+    }
     const float xRange{xMax - xMin > 0 ? xMax - xMin : 1.f};
     const float zRange{zMax - zMin > 0 ? zMax - zMin : 1.f};
 
     std::unordered_map<Category, CaloHitList> categoryToHitsMap;
     std::unordered_map<const CaloHit *, std::vector<Category>> hitToCategoriesMap;
+    std::unordered_map<const CaloHit *, int> hitToInstanceMap;
     for (const auto &[pMC, caloHitList] : mcToHitsMap)
     {
         const LArMCParticle *const pLArMC{dynamic_cast<const LArMCParticle *>(pMC)};
         if (pLArMC)
         {
+            for (const CaloHit *const pCaloHit : caloHitList)
+                hitToInstanceMap[pCaloHit] = leadingToInstanceMap.at(mcFoldingMap.at(pMC));
             if (this->IsDiffuse(pLArMC))
             {
                 categoryToHitsMap[DIFFUSE].insert(categoryToHitsMap[DIFFUSE].end(), caloHitList.begin(), caloHitList.end());
@@ -215,12 +231,24 @@ StatusCode DlHitTrackShowerIdAlgorithm::PrepareTrainingSample()
 //        PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &categoryToHitsMap[SHOWER], "shower", RED));
     }
 
-//    PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
+/*    std::unordered_map<int, CaloHitList> hitInstances;
+    for (const auto &[pMC, caloHitList] : mcToHitsMap)
+    {
+        for (const CaloHit *const pCaloHit : caloHitList)
+            hitInstances[hitToInstanceMap.at(pCaloHit)].emplace_back(pCaloHit);
+    }
+    for (const auto &[key, hits] : hitInstances)
+    {
+        PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &hits, "instance_" + std::to_string(key), AUTOITER));
+    }*/
+
+    //PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
     categoryToHitsMap.clear();
 
     // Collect hits and respective categories into feature vectors for training
     FloatVector xx, zz;
     FloatVector rr, cosTheta, sinTheta;
+    FloatVector vv;
     if (!m_polarCoords)
     {
         xx.resize(hitToCategoriesMap.size(), 0);
@@ -232,14 +260,31 @@ StatusCode DlHitTrackShowerIdAlgorithm::PrepareTrainingSample()
         cosTheta.resize(hitToCategoriesMap.size(), 0);
         sinTheta.resize(hitToCategoriesMap.size(), 0);
     }
+    vv.resize(hitToCategoriesMap.size(), 0);
     FloatVector adc(hitToCategoriesMap.size(), 0), width(hitToCategoriesMap.size(), 0);
-    IntVector label(hitToCategoriesMap.size(), UNINITIALISED);
+    IntVector semanticLabel(hitToCategoriesMap.size(), UNINITIALISED);
+    IntVector instanceLabel(hitToCategoriesMap.size(), UNINITIALISED);
 
     size_t i{0};
     for (const auto &[pCaloHit, categories] : hitToCategoriesMap)
     {
         const float x{pCaloHit->GetPositionVector().GetX()};
         const float z{pCaloHit->GetPositionVector().GetZ()};
+        const HitType view{pCaloHit->GetHitType()};
+        switch (view)
+        {
+            case TPC_VIEW_U:
+                vv[i] = 1 / 3.f;
+                break;
+            case TPC_VIEW_V:
+                vv[i] = 2 / 3.f;
+                break;
+            case TPC_VIEW_W:
+                vv[i] = 3 / 3.f;
+                break;
+            default:
+                return STATUS_CODE_NOT_FOUND;
+        }
         if (!m_polarCoords)
         {
             xx[i] = (x - xMin) / xRange;
@@ -253,24 +298,26 @@ StatusCode DlHitTrackShowerIdAlgorithm::PrepareTrainingSample()
             if (r > 0.f)
             {
                 rr[i] = r / rMax;
-                cosTheta[i] = dx / r;
-                sinTheta[i] = dz / r;
+                // Scale to [0,1] to aid training
+                cosTheta[i] = 0.5f * (1.f + dx / r);
+                sinTheta[i] = 0.5f * (1.f + dz / r);
             }
             else
             {
                 rr[i] = 0.f;
-                cosTheta[i] = 1.f;
-                sinTheta[i] = 0.f;
+                // Scale to [0,1] to aid training
+                cosTheta[i] = 0.5f * (1.f + 1.f);
+                sinTheta[i] = 0.5f * (1.f + 0.f);
             }
         }
-        adc[i] = pCaloHit->GetInputEnergy() * m_adcNormalization;
+        adc[i] = std::log(1.f + std::min(pCaloHit->GetInputEnergy(), m_adcPeak * m_maxAdcFactor)) / std::log(1.f + m_adcPeak * m_maxAdcFactor);
         width[i] = pCaloHit->GetCellSize1() / xRange;
         for (const auto &category : categories)
         {
             // ATTN: This assumes that the categories are ordered such that MIP < HIP < SHOWER < LOW_E < DIFFUSE
-            if (label[i] == UNINITIALISED)
+            if (semanticLabel[i] == UNINITIALISED)
             {
-                label[i] = static_cast<int>(category);
+                semanticLabel[i] = static_cast<int>(category);
             }
             else
             {
@@ -278,18 +325,18 @@ StatusCode DlHitTrackShowerIdAlgorithm::PrepareTrainingSample()
                 {
                     case DIFFUSE:
                         // Allow diffuse to override shower tags
-                        if (label[i] == SHOWER)
-                            label[i] = DIFFUSE;
+                        if (semanticLabel[i] == SHOWER)
+                            semanticLabel[i] = DIFFUSE;
                         break;
                     case HIP:
                     case MIP:
                         // HIP and MIP override everything
-                        label[i] = category;
+                        semanticLabel[i] = category;
                         break;
                     case LOW_E:
                         // Allow low energy to override shower and diffuse tags
-                        if (label[i] > static_cast<int>(HIP))
-                            label[i] = LOW_E;
+                        if (semanticLabel[i] > static_cast<int>(HIP))
+                            semanticLabel[i] = LOW_E;
                         break;
                     case SHOWER:
                         // Only tag a hit as shower if it is not initialised
@@ -299,7 +346,8 @@ StatusCode DlHitTrackShowerIdAlgorithm::PrepareTrainingSample()
                 }
             }
         }
-        categoryToHitsMap[Category(label[i])].emplace_back(pCaloHit);
+        categoryToHitsMap[Category(semanticLabel[i])].emplace_back(pCaloHit);
+        instanceLabel[i] = hitToInstanceMap.at(pCaloHit);
         ++i;
     }
 
@@ -331,8 +379,14 @@ StatusCode DlHitTrackShowerIdAlgorithm::PrepareTrainingSample()
         PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "event", event));
         if (!m_polarCoords)
         {
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "view", &vv));
             PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "x", &xx));
             PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "z", &zz));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "adc", &adc));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "width", &width));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "semantic_label", &semanticLabel));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "instance_label", &instanceLabel));
+            PANDORA_MONITORING_API(FillTree(this->GetPandora(), m_rootTreeName));
         }
         else
         {
@@ -350,21 +404,39 @@ StatusCode DlHitTrackShowerIdAlgorithm::PrepareTrainingSample()
                 vec.swap(sorted);
             };
 
+            reorder(vv);
             reorder(rr);
             reorder(cosTheta);
             reorder(sinTheta);
             reorder(adc);
             reorder(width);
-            reorder(label);
+            reorder(semanticLabel);
+            reorder(instanceLabel);
 
-            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "r", &rr));
-            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "cosTheta", &cosTheta));
-            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "sinTheta", &sinTheta));
+            size_t totalSize{rr.size()};
+            for (size_t s = 0; s < totalSize; s += m_maxSeqLen)
+            {
+                size_t end{std::min(s + m_maxSeqLen, totalSize)};
+                FloatVector vvChunk(vv.begin() + s, vv.begin() + end);
+                FloatVector rrChunk(rr.begin() + s, rr.begin() + end);
+                FloatVector cosThetaChunk(cosTheta.begin() + s, cosTheta.begin() + end);
+                FloatVector sinThetaChunk(sinTheta.begin() + s, sinTheta.begin() + end);
+                FloatVector adcChunk(adc.begin() + s, adc.begin() + end);
+                FloatVector widthChunk(width.begin() + s, width.begin() + end);
+                IntVector semanticLabelChunk(semanticLabel.begin() + s, semanticLabel.begin() + end);
+                IntVector instanceLabelChunk(instanceLabel.begin() + s, instanceLabel.begin() + end);
+
+                PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "view", &vvChunk));
+                PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "r", &rrChunk));
+                PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "cosTheta", &cosThetaChunk));
+                PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "sinTheta", &sinThetaChunk));
+                PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "adc", &adcChunk));
+                PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "width", &widthChunk));
+                PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "semantic_label", &semanticLabelChunk));
+                PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "instance_label", &instanceLabelChunk));
+                PANDORA_MONITORING_API(FillTree(this->GetPandora(), m_rootTreeName));
+            }
         }
-        PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "adc", &adc));
-        PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "width", &width));
-        PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "label", &label));
-        PANDORA_MONITORING_API(FillTree(this->GetPandora(), m_rootTreeName));
     }
 
     return STATUS_CODE_SUCCESS;
@@ -586,13 +658,18 @@ StatusCode DlHitTrackShowerIdAlgorithm::ReadSettings(const TiXmlHandle xmlHandle
     {
         PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadValue(xmlHandle, "VertexListName", m_vertexListName));
         PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "PolarCoords", m_polarCoords));
+        if (m_polarCoords)
+        {
+            PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "MaxSeqLen", m_maxSeqLen));
+        }
     }
     if (m_trainingMode)
     {
         PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadValue(xmlHandle, "RootFileName", m_rootFileName));
         PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadValue(xmlHandle, "RootTreeName", m_rootTreeName));
     }
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "AdcNormalization", m_adcNormalization));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "AdcPeak", m_adcPeak));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "MaxAdcFactor", m_maxAdcFactor));
 
     return STATUS_CODE_SUCCESS;
 }
