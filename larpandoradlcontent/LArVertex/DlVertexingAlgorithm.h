@@ -8,7 +8,7 @@
 #ifndef LAR_DL_VERTEXING_ALGORITHM_H
 #define LAR_DL_VERTEXING_ALGORITHM_H 1
 
-#include "Objects/Event.h"
+#include "Objects/EventContext.h"
 
 #include "Pandora/Algorithm.h"
 #include "Pandora/AlgorithmHeaders.h"
@@ -106,7 +106,7 @@ private:
     std::mt19937 m_rng;         ///< The random number generator
 };
 
-class VertexObject : public pandora::EventObject
+class VertexObject : public pandora::EventContextObject
 {
 public:
     VertexObject(const int value);
