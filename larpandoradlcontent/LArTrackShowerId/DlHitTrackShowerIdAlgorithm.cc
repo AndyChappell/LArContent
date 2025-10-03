@@ -106,8 +106,7 @@ StatusCode DlHitTrackShowerIdAlgorithm::PrepareTrainingSample()
 
     LArMCParticleHelper::MCContributionMap mcToHitsMap;
     LArMCParticleHelper::GetMCToHitsMap(*pCaloHitList, mcToHitsMap, false);
-    std::unordered_map<const MCParticle *, const MCParticle *> mcFoldingMap;
-    std::unordered_map<const MCParticle *, int> leadingToInstanceMap;
+    MCFoldingMap mcFoldingMap;
     float xMin{std::numeric_limits<float>::max()}, xMax{std::numeric_limits<float>::lowest()};
     float zMin{std::numeric_limits<float>::max()}, zMax{std::numeric_limits<float>::lowest()};
     float rMax{0};
@@ -115,7 +114,6 @@ StatusCode DlHitTrackShowerIdAlgorithm::PrepareTrainingSample()
     {
         const MCParticle *const pLeading{LArMCParticleHelper::GetLeadingEMParticle(pMC)};
         mcFoldingMap[pMC] = pLeading ? pLeading : pMC;
-        leadingToInstanceMap[mcFoldingMap.at(pMC)] = 0;
         for (const CaloHit *const pCaloHit : caloHitList)
         {
             const CartesianVector &pos{pCaloHit->GetPositionVector()};
@@ -132,10 +130,17 @@ StatusCode DlHitTrackShowerIdAlgorithm::PrepareTrainingSample()
             }
         }
     }
+
+    lar_content::LArMCParticleHelper::MCContributionMap leadingToHitsMap;
+    this->FoldToLeading(mcToHitsMap, mcFoldingMap, leadingToHitsMap);
+    lar_content::LArMCParticleHelper::MCContributionMap instanceToHitsMap;
+    this->ConsolidateInstances(leadingToHitsMap, instanceToHitsMap);
+
     int inst{1};
-    for (const auto &[pLeading, dummy] : leadingToInstanceMap)
+    std::unordered_map<const MCParticle *, int> mcToInstanceMap;
+    for (const auto &[pMC, dummy] : instanceToHitsMap)
     {
-        leadingToInstanceMap[pLeading] = inst;
+        mcToInstanceMap[pMC] = inst;
         ++inst;
     }
     const float xRange{xMax - xMin > 0 ? xMax - xMin : 1.f};
@@ -144,105 +149,106 @@ StatusCode DlHitTrackShowerIdAlgorithm::PrepareTrainingSample()
     std::unordered_map<Category, CaloHitList> categoryToHitsMap;
     std::unordered_map<const CaloHit *, std::vector<Category>> hitToCategoriesMap;
     std::unordered_map<const CaloHit *, int> hitToInstanceMap;
-    for (const auto &[pMC, caloHitList] : mcToHitsMap)
+    for (const auto &[pMC, caloHitList] : instanceToHitsMap)
     {
         const LArMCParticle *const pLArMC{dynamic_cast<const LArMCParticle *>(pMC)};
         if (pLArMC)
         {
             for (const CaloHit *const pCaloHit : caloHitList)
-                hitToInstanceMap[pCaloHit] = leadingToInstanceMap.at(mcFoldingMap.at(pMC));
-            if (this->IsDiffuse(pLArMC))
-            {
-                categoryToHitsMap[DIFFUSE].insert(categoryToHitsMap[DIFFUSE].end(), caloHitList.begin(), caloHitList.end());
-                for (const CaloHit *const pCaloHit : caloHitList)
-                    hitToCategoriesMap[pCaloHit].emplace_back(DIFFUSE);
-            }
+                hitToInstanceMap[pCaloHit] = mcToInstanceMap.at(pMC);
             if (this->IsHip(pLArMC))
             {
                 categoryToHitsMap[HIP].insert(categoryToHitsMap[HIP].end(), caloHitList.begin(), caloHitList.end());
                 for (const CaloHit *const pCaloHit : caloHitList)
                     hitToCategoriesMap[pCaloHit].emplace_back(HIP);
             }
-            if (this->IsMip(pLArMC))
+            else if (this->IsMip(pLArMC))
             {
                 categoryToHitsMap[MIP].insert(categoryToHitsMap[MIP].end(), caloHitList.begin(), caloHitList.end());
                 for (const CaloHit *const pCaloHit : caloHitList)
                     hitToCategoriesMap[pCaloHit].emplace_back(MIP);
             }
-            if (this->IsMichel(pLArMC))
+            else if (this->IsDelta(pLArMC))
             {
                 categoryToHitsMap[LOW_E].insert(categoryToHitsMap[LOW_E].end(), caloHitList.begin(), caloHitList.end());
                 for (const CaloHit *const pCaloHit : caloHitList)
                     hitToCategoriesMap[pCaloHit].emplace_back(LOW_E);
             }
-            if (this->IsShower(pLArMC))
+            else if (this->IsShower(pLArMC))
             {
                 categoryToHitsMap[SHOWER].insert(categoryToHitsMap[SHOWER].end(), caloHitList.begin(), caloHitList.end());
                 for (const CaloHit *const pCaloHit : caloHitList)
                     hitToCategoriesMap[pCaloHit].emplace_back(SHOWER);
             }
-            if (this->IsDelta(dynamic_cast<const LArMCParticle *>(mcFoldingMap.at(pLArMC))))
+            else if (this->IsMichel(pLArMC))
             {
-                CaloHitList particleOwnedHits, parentOwnedHits;
-                const LArMCParticle *const pParent{dynamic_cast<const LArMCParticle *>(this->AllocateHitOwner(pLArMC, mcFoldingMap, mcToHitsMap,
-                    particleOwnedHits, parentOwnedHits))};
-                if (!particleOwnedHits.empty())
-                {
-                    categoryToHitsMap[LOW_E].insert(categoryToHitsMap[LOW_E].end(), particleOwnedHits.begin(), particleOwnedHits.end());
-                    for (const CaloHit *const pCaloHit : particleOwnedHits)
-                        hitToCategoriesMap[pCaloHit].emplace_back(LOW_E);
-                }
-                if (!parentOwnedHits.empty())
-                {
-                    if (this->IsMip(pParent))
-                    {
-                        categoryToHitsMap[MIP].insert(categoryToHitsMap[MIP].end(), parentOwnedHits.begin(), parentOwnedHits.end());
-                        for (const CaloHit *const pCaloHit : parentOwnedHits)
-                            hitToCategoriesMap[pCaloHit].emplace_back(MIP);
-                    }
-                    else
-                    {
-                        categoryToHitsMap[HIP].insert(categoryToHitsMap[HIP].end(), parentOwnedHits.begin(), parentOwnedHits.end());
-                        for (const CaloHit *const pCaloHit : parentOwnedHits)
-                            hitToCategoriesMap[pCaloHit].emplace_back(HIP);
-                    }
-                }
+                categoryToHitsMap[LOW_E].insert(categoryToHitsMap[LOW_E].end(), caloHitList.begin(), caloHitList.end());
+                for (const CaloHit *const pCaloHit : caloHitList)
+                    hitToCategoriesMap[pCaloHit].emplace_back(LOW_E);
+            }
+            else if (this->IsDiffuse(pLArMC))
+            {
+                // Don't believe we'll ever get here in the folded scenario, but class diffuse as shower-like just in case
+                categoryToHitsMap[SHOWER].insert(categoryToHitsMap[SHOWER].end(), caloHitList.begin(), caloHitList.end());
+                for (const CaloHit *const pCaloHit : caloHitList)
+                    hitToCategoriesMap[pCaloHit].emplace_back(SHOWER);
+            }
+            else
+            {
+                std::cout << "Warning: Found unclassifiable particle, default to MIP" << std::endl;
+                std::cout << "  " << pLArMC->GetParticleId() << " " << pLArMC->GetProcess() << ": " << caloHitList.size() << " hits" << std::endl;
+                std::cout << "  Parent PDG code: " << (pLArMC->GetParentList().empty() ? 0 : pLArMC->GetParentList().front()->GetParticleId()) << std::endl;
+                categoryToHitsMap[MIP].insert(categoryToHitsMap[MIP].end(), caloHitList.begin(), caloHitList.end());
+                for (const CaloHit *const pCaloHit : caloHitList)
+                    hitToCategoriesMap[pCaloHit].emplace_back(MIP);
             }
         }
     }
-    if (!categoryToHitsMap[DIFFUSE].empty())
+
+    for (const auto &[key, hits] : categoryToHitsMap)
     {
-//        PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &categoryToHitsMap[DIFFUSE], "diffuse", CYAN));
-    }
-    if (!categoryToHitsMap[HIP].empty())
-    {
-//        PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &categoryToHitsMap[HIP], "hip", BLACK));
-    }
-    if (!categoryToHitsMap[MIP].empty())
-    {
-//        PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &categoryToHitsMap[MIP], "mip", GRAY));
-    }
-    if (!categoryToHitsMap[LOW_E].empty())
-    {
-//        PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &categoryToHitsMap[LOW_E], "low_e", BLUE));
-    }
-    if (!categoryToHitsMap[SHOWER].empty())
-    {
-//        PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &categoryToHitsMap[SHOWER], "shower", RED));
+        std::string categoryName;
+        switch (key)
+        {
+            case MIP:
+                categoryName = "MIP";
+                break;
+            case HIP:
+                categoryName = "HIP";
+                break;
+            case SHOWER:
+                categoryName = "SHOWER";
+                break;
+            case LOW_E:
+                categoryName = "LOW_E";
+                break;
+            case DIFFUSE:
+                categoryName = "DIFFUSE";
+                break;
+            default:
+                categoryName = "UNINITIALISED";
+                break;
+        }
+        std::cout << categoryName << ": " << hits.size() << " hits" << std::endl;
     }
 
-/*    std::unordered_map<int, CaloHitList> hitInstances;
-    for (const auto &[pMC, caloHitList] : mcToHitsMap)
+    /*
+    for (const auto &[cat, caloHitList] : categoryToHitsMap)
     {
-        for (const CaloHit *const pCaloHit : caloHitList)
-            hitInstances[hitToInstanceMap.at(pCaloHit)].emplace_back(pCaloHit);
+        PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &caloHitList, std::to_string(cat), AUTOITER));
     }
-    for (const auto &[key, hits] : hitInstances)
-    {
-        PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &hits, "instance_" + std::to_string(key), AUTOITER));
-    }*/
 
-    //PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
+    PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
+
+    for (const auto &[pMC, caloHitList] : instanceToHitsMap)
+    {
+        const MCParticleList &parentList{pMC->GetParentList()};
+        const std::string str{parentList.empty() ? "" : std::to_string(std::abs(parentList.front()->GetParticleId())) + " -> "};
+        PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &caloHitList, str + std::to_string(pMC->GetParticleId()), AUTOITER));
+    }
+
+    PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
+    */
     categoryToHitsMap.clear();
 
     // Collect hits and respective categories into feature vectors for training
@@ -313,66 +319,10 @@ StatusCode DlHitTrackShowerIdAlgorithm::PrepareTrainingSample()
         adc[i] = std::log(1.f + std::min(pCaloHit->GetInputEnergy(), m_adcPeak * m_maxAdcFactor)) / std::log(1.f + m_adcPeak * m_maxAdcFactor);
         width[i] = pCaloHit->GetCellSize1() / xRange;
         for (const auto &category : categories)
-        {
-            // ATTN: This assumes that the categories are ordered such that MIP < HIP < SHOWER < LOW_E < DIFFUSE
-            if (semanticLabel[i] == UNINITIALISED)
-            {
-                semanticLabel[i] = static_cast<int>(category);
-            }
-            else
-            {
-                switch (category)
-                {
-                    case DIFFUSE:
-                        // Allow diffuse to override shower tags
-                        if (semanticLabel[i] == SHOWER)
-                            semanticLabel[i] = DIFFUSE;
-                        break;
-                    case HIP:
-                    case MIP:
-                        // HIP and MIP override everything
-                        semanticLabel[i] = category;
-                        break;
-                    case LOW_E:
-                        // Allow low energy to override shower and diffuse tags
-                        if (semanticLabel[i] > static_cast<int>(HIP))
-                            semanticLabel[i] = LOW_E;
-                        break;
-                    case SHOWER:
-                        // Only tag a hit as shower if it is not initialised
-                        break;
-                    default:
-                        break;
-                }
-            }
-        }
-        categoryToHitsMap[Category(semanticLabel[i])].emplace_back(pCaloHit);
+            semanticLabel[i] = static_cast<int>(category);
         instanceLabel[i] = hitToInstanceMap.at(pCaloHit);
         ++i;
     }
-
-    if (!categoryToHitsMap[DIFFUSE].empty())
-    {
-//        PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &categoryToHitsMap[DIFFUSE], "diffuse", CYAN));
-    }
-    if (!categoryToHitsMap[HIP].empty())
-    {
-//        PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &categoryToHitsMap[HIP], "hip", BLACK));
-    }
-    if (!categoryToHitsMap[MIP].empty())
-    {
-//        PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &categoryToHitsMap[MIP], "mip", GRAY));
-    }
-    if (!categoryToHitsMap[LOW_E].empty())
-    {
-//        PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &categoryToHitsMap[LOW_E], "low_e", BLUE));
-    }
-    if (!categoryToHitsMap[SHOWER].empty())
-    {
-//        PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &categoryToHitsMap[SHOWER], "shower", RED));
-    }
-
-//    PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
 
     if (!adc.empty())
     {
@@ -447,6 +397,51 @@ StatusCode DlHitTrackShowerIdAlgorithm::PrepareTrainingSample()
 StatusCode DlHitTrackShowerIdAlgorithm::Infer()
 {
     return STATUS_CODE_SUCCESS;
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+void DlHitTrackShowerIdAlgorithm::FoldToLeading(const lar_content::LArMCParticleHelper::MCContributionMap &mcHitMap, const MCFoldingMap &mcFoldingMap,
+    lar_content::LArMCParticleHelper::MCContributionMap &leadingHitMap) const
+{
+    leadingHitMap.clear();
+    for (const auto &[pMC, caloHitList] : mcHitMap)
+    {
+        const MCParticle *const pLeading{mcFoldingMap.at(pMC)};
+        leadingHitMap[pLeading].insert(leadingHitMap[pLeading].end(), caloHitList.begin(), caloHitList.end());
+    }
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+void DlHitTrackShowerIdAlgorithm::ConsolidateInstances(const lar_content::LArMCParticleHelper::MCContributionMap &leadingHitMap, 
+    lar_content::LArMCParticleHelper::MCContributionMap &instanceHitMap) const
+{
+    instanceHitMap.clear();
+    for (const auto &[pMC, caloHitList] : leadingHitMap)
+    {
+        const LArMCParticle *const pLArMC{dynamic_cast<const LArMCParticle *>(pMC)};
+        if (pLArMC)
+        {
+            // Ensure delta ray hits along (colinear) muon/pion tracks are assigned to the parent particle
+            const int pdg{std::abs(pLArMC->GetParticleId())};
+            if (pdg == E_MINUS || pdg == PHOTON)
+            {
+                CaloHitList particleOwnedHits, parentOwnedHits;
+                const LArMCParticle *const pParent{dynamic_cast<const LArMCParticle *>(this->AllocateHitOwner(pLArMC, leadingHitMap,
+                    particleOwnedHits, parentOwnedHits))};
+                if (!parentOwnedHits.empty())
+                    instanceHitMap[pParent].insert(instanceHitMap[pParent].end(), parentOwnedHits.begin(), parentOwnedHits.end());
+                if (!particleOwnedHits.empty())
+                    instanceHitMap[pLArMC].insert(instanceHitMap[pLArMC].end(), particleOwnedHits.begin(), particleOwnedHits.end());
+            }
+            else
+            {
+                if (!caloHitList.empty())
+                    instanceHitMap[pLArMC].insert(instanceHitMap[pLArMC].end(), caloHitList.begin(), caloHitList.end());
+            }
+        }
+    }
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
@@ -532,8 +527,8 @@ bool DlHitTrackShowerIdAlgorithm::IsMichel(const LArMCParticle *const pLArMC) co
         return false;
     const int parentPdg{std::abs(parentList.front()->GetParticleId())};
 
-    // Here we will consider Michel electrons to be those that come from muon decays or pion decays, given the topological similarity
-    return (parentPdg == MU_MINUS || parentPdg == PI_PLUS);
+    // Here we will consider Michel electrons to be those that come from muon decays, pion or kaon decays, given the topological similarity
+    return (parentPdg == MU_MINUS || parentPdg == PI_PLUS || parentPdg == K_PLUS);
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
@@ -545,6 +540,16 @@ bool DlHitTrackShowerIdAlgorithm::IsShower(const LArMCParticle *const pLArMC) co
 
     const MCProcess process{pLArMC->GetProcess()};
     const int pdg{std::abs(pLArMC->GetParticleId())};
+
+    // Account for the rare(ish) pi zero and K0 long decays involving electrons
+    const MCParticleList &parentList{pLArMC->GetParentList()};
+    if (!parentList.empty())
+    {
+        const int parentPdg{std::abs(parentList.front()->GetParticleId())};
+        if (((parentPdg == PI_ZERO) || (parentPdg == K_LONG)) && pdg == E_MINUS && process == MC_PROC_DECAY)
+            return true;
+    }
+
     return ((pdg == E_MINUS && process != MC_PROC_DECAY) || (pdg == PHOTON && process != MC_PROC_COMPT));
 }
 
@@ -574,6 +579,103 @@ const LArMCParticle *DlHitTrackShowerIdAlgorithm::AllocateHitOwner(const pandora
     if (!(this->IsHip(dynamic_cast<const LArMCParticle *>(pParent)) || this->IsMip(dynamic_cast<const LArMCParticle *>(pParent))))
         return nullptr;
     const CaloHitList &particleHits{mcHitMap.at(pParticle)};
+    CaloHitList parentHits(mcHitMap.at(pParent).begin(), mcHitMap.at(pParent).end());
+    CartesianVector centroid(0, 0, 0);
+    LArPcaHelper::EigenValues eigenValues(0, 0, 0);
+    LArPcaHelper::EigenVectors eigenVectors;
+    LArPcaHelper::RunPca(parentHits, centroid, eigenValues, eigenVectors);
+    FloatVector projections;
+    for (const CaloHit *const pCaloHit : parentHits)
+    {
+        const CartesianVector dir{pCaloHit->GetPositionVector() - centroid};
+        projections.emplace_back(dir.GetDotProduct(eigenVectors[0]));
+    }
+    std::vector<size_t> indices(projections.size());
+    std::iota(indices.begin(), indices.end(), 0);
+    std::sort(indices.begin(), indices.end(), [&projections](size_t i, size_t j) { return projections[i] < projections[j]; });
+
+    CaloHitVector parentHitsVector(parentHits.begin(), parentHits.end());
+    std::vector<std::pair<size_t, const CaloHit *>> paired;
+    for (size_t i = 0; i < indices.size(); ++i)
+        paired.emplace_back(indices[i], parentHitsVector[i]);
+    std::sort(paired.begin(), paired.end(), [](const std::pair<size_t, const CaloHit *> &a, const std::pair<size_t, const CaloHit *> &b)
+    {
+        return a.first > b.first;
+    });
+
+    for (const CaloHit *const pCaloHit : particleHits)
+    {
+        const CartesianVector &pos{pCaloHit->GetPositionVector()};
+        const double xmin{pos.GetX() - 0.5 * pCaloHit->GetCellSize1()}, xmax{pos.GetX() + 0.5 * pCaloHit->GetCellSize1()};
+        const double zmin{pos.GetZ() - 0.5 * pCaloHit->GetCellSize0()}, zmax{pos.GetZ() + 0.5 * pCaloHit->GetCellSize0()};
+        bool hasInterveningHit{false};
+        for (size_t i = 0; i < paired.size() - 1; ++i)
+        {
+            const CaloHit *const pParentHit1{paired[i].second};
+            const CartesianVector &pos1{pParentHit1->GetPositionVector()};
+            const CaloHit *const pParentHit2{paired[i + 1].second};
+            const CartesianVector &pos2{pParentHit2->GetPositionVector()};
+            if (pCaloHit == pParentHit1 || pCaloHit == pParentHit2)
+                continue;
+
+            double entry{0.}, exit{1.};
+            auto check_axis = [&](double p1, double p2, double minB, double maxB)
+            {
+                double t1{(minB - p1) / (p2 - p1)};
+                double t2{(maxB - p1) / (p2 - p1)};
+
+                if (t1 > t2)
+                    std::swap(t1, t2);
+
+                entry = std::max(entry, t1);
+                exit = std::min(exit, t2);
+
+                return entry <= exit;
+            };
+
+            if (check_axis(pos1.GetX(), pos2.GetX(), xmin, xmax) && check_axis(pos1.GetZ(), pos2.GetZ(), zmin, zmax))
+            {
+                hasInterveningHit = true;
+                break;
+            }
+        }
+        if (!hasInterveningHit)
+        {
+            particleOwnedHits.emplace_back(pCaloHit);
+        }
+        else
+        {
+            parentOwnedHits.emplace_back(pCaloHit);
+        }
+    }
+
+    return pParent;
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+const LArMCParticle *DlHitTrackShowerIdAlgorithm::AllocateHitOwner(const pandora::MCParticle *const pParticle,
+    const LArMCParticleHelper::MCContributionMap &mcHitMap, CaloHitList &particleOwnedHits, CaloHitList &parentOwnedHits) const
+{
+    const MCParticleList &parentList{pParticle->GetParentList()};
+    if (parentList.empty())
+    {
+        particleOwnedHits = mcHitMap.at(pParticle);
+        return nullptr;
+    }
+    const LArMCParticle *pParent{dynamic_cast<const LArMCParticle *>(parentList.front())};
+    if (!(this->IsHip(pParent) || this->IsMip(pParent)))
+    {
+        particleOwnedHits = mcHitMap.at(pParticle);
+        return nullptr;
+    }
+    const CaloHitList &particleHits{mcHitMap.at(pParticle)};
+    // Not guaranteed that a parent particle has hits, and so may not be in the hit map
+    if (mcHitMap.find(pParent) == mcHitMap.end())
+    {
+        particleOwnedHits = mcHitMap.at(pParticle);
+        return nullptr;
+    }
     CaloHitList parentHits(mcHitMap.at(pParent).begin(), mcHitMap.at(pParent).end());
     CartesianVector centroid(0, 0, 0);
     LArPcaHelper::EigenValues eigenValues(0, 0, 0);
