@@ -60,6 +60,27 @@ private:
     pandora::StatusCode Infer();
 
     /**
+     *  @brief  Fold EM showers to their leading particle.
+     *
+     *  @param mcHitMap The map of MC particles to their hits
+     *  @param mcFoldingMap The map of MC particles to their hits
+     *  @param leadingHitMap The map of leading MC particles to their consolidated hits
+     */
+    void FoldToLeading(const lar_content::LArMCParticleHelper::MCContributionMap &mcHitMap, const MCFoldingMap &mcFoldingMap,
+        lar_content::LArMCParticleHelper::MCContributionMap &leadingHitMap) const;
+
+    /**
+     *  @brief  Consolidate instances of hits from MC particles where folding is appropriate.
+     *          Delta rays often own hits along muon or pion tracks, and these should be
+     *          owned by the parent particle instead.
+     *
+     *  @param mcHitMap The map of MC particles to their hits
+     *  @param instanceHitMap The map of MC particles to their consolidated hits
+     */
+    void ConsolidateInstances(const lar_content::LArMCParticleHelper::MCContributionMap &mcHitMap,
+        lar_content::LArMCParticleHelper::MCContributionMap &instanceHitMap) const;
+
+    /**
      *  @brief  Determine if an MC particle is a delta ray
      *
      *  @param pLArMC The MC particle to check
@@ -119,6 +140,20 @@ private:
      *  @return The parent MC particle if there is allocation to a parent, nullptr otherwise
      */
     const lar_content::LArMCParticle *AllocateHitOwner(const pandora::MCParticle *const pMC, const MCFoldingMap &mcFoldingMap,
+        const lar_content::LArMCParticleHelper::MCContributionMap &mcHitMap, pandora::CaloHitList &particleOwnedHits,
+        pandora::CaloHitList &parentOwnedHits) const;
+
+    /**
+     *  @brief  Choose the owner of a child MC particle based on its parent and the folding map
+     *
+     *  @param pMC The MC particle
+     *  @param mcHitMap The map of MC particles to their hits
+     *  @param particleOwnedHits The list of hits owned by the particle
+     *  @param parentOwnedHits The list of hits owned by the parent particle
+     *
+     *  @return The parent MC particle if there is allocation to a parent, nullptr otherwise
+     */
+    const lar_content::LArMCParticle *AllocateHitOwner(const pandora::MCParticle *const pMC,
         const lar_content::LArMCParticleHelper::MCContributionMap &mcHitMap, pandora::CaloHitList &particleOwnedHits,
         pandora::CaloHitList &parentOwnedHits) const;
 
