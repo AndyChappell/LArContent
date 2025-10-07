@@ -113,7 +113,7 @@ public:
 
     int GetAnswer() const;
 
-    void Clear() override;
+    void ResetForNextEvent() override;
 
 private:
     int m_theAnswer;

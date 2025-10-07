@@ -54,9 +54,9 @@ DlVertexingAlgorithm::~DlVertexingAlgorithm()
 
 StatusCode DlVertexingAlgorithm::Run()
 {
-    EventContext *pEventContext(this->GetPandora().GetEventContext());
+    EventContext *pEventContext(PandoraContentApi::GetEventContext(*this));
     std::cout << "Event Object exists? " << pEventContext << std::endl;
-    if (pEventContext->Exists("pass1"))
+    if (pEventContext->DoesKeyExist("pass1"))
     {
         const VertexObject *pObj{dynamic_cast<const VertexObject *>(pEventContext->GetEventContextObject("pass1"))};
         if (pObj)
@@ -66,7 +66,7 @@ StatusCode DlVertexingAlgorithm::Run()
     {
         std::cout << "No Pass 1 answer exists on alg start" << std::endl;
     }
-    if (pEventContext->Exists("pass2"))
+    if (pEventContext->DoesKeyExist("pass2"))
     {
         const VertexObject *pObj{dynamic_cast<const VertexObject *>(pEventContext->GetEventContextObject("pass2"))};
         if (pObj)
@@ -79,7 +79,7 @@ StatusCode DlVertexingAlgorithm::Run()
 
     if (m_pass == 1)
     {
-        if (!pEventContext->Exists("pass1"))
+        if (!pEventContext->DoesKeyExist("pass1"))
             pEventContext->AddEventContextObject("pass1", *new VertexObject(42));
         else
             std::cout << "Pass 1 answer already exists" << std::endl;
@@ -87,7 +87,7 @@ StatusCode DlVertexingAlgorithm::Run()
     else if (m_pass == 2)
     {
         pEventContext->AddEventContextObject("pass2", *new VertexObject(7));
-        if (pEventContext->Exists("pass1"))
+        if (pEventContext->DoesKeyExist("pass1"))
         {
             const VertexObject *pObj1{dynamic_cast<const VertexObject *>(pEventContext->GetEventContextObject("pass1"))};
             if (pObj1)
@@ -621,7 +621,7 @@ int VertexObject::GetAnswer() const
 
 //-----------------------------------------------------------------------------------------------------------------------------------------
 
-void VertexObject::Clear()
+void VertexObject::ResetForNextEvent()
 {
 }
 
