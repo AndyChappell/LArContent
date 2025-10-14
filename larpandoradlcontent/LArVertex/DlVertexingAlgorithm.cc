@@ -54,50 +54,52 @@ DlVertexingAlgorithm::~DlVertexingAlgorithm()
 
 StatusCode DlVertexingAlgorithm::Run()
 {
-    EventContext *pEventContext(PandoraContentApi::GetEventContext(*this));
-    std::cout << "Event Object exists? " << pEventContext << std::endl;
-    if (pEventContext->DoesKeyExist("pass1"))
+    try
     {
-        const VertexObject *pObj{dynamic_cast<const VertexObject *>(pEventContext->GetEventContextObject("pass1"))};
+        const VertexObject *pObj{dynamic_cast<const VertexObject *>(PandoraContentApi::GetEventContextObject(*this, "pass1"))};
         if (pObj)
             std::cout << "Confirm pass 1 exist on alg start: " << pObj->GetAnswer() << std::endl;
     }
-    else
+    catch (StatusCodeException &)
     {
         std::cout << "No Pass 1 answer exists on alg start" << std::endl;
     }
-    if (pEventContext->DoesKeyExist("pass2"))
+    try
     {
-        const VertexObject *pObj{dynamic_cast<const VertexObject *>(pEventContext->GetEventContextObject("pass2"))};
+        const VertexObject *pObj{dynamic_cast<const VertexObject *>(PandoraContentApi::GetEventContextObject(*this, "pass2"))};
         if (pObj)
             std::cout << "Confirm pass 2 exist on alg start: " << pObj->GetAnswer() << std::endl;
     }
-    else
+    catch (StatusCodeException &)
     {
         std::cout << "No Pass 2 answer exists on alg start" << std::endl;
     }
 
     if (m_pass == 1)
     {
-        if (!pEventContext->DoesKeyExist("pass1"))
-            pEventContext->AddEventContextObject("pass1", *new VertexObject(42));
-        else
+        try
+        {
+            PandoraContentApi::AddEventContextObject(*this, "pass1", new VertexObject(42));
+        }
+        catch (StatusCodeException &)
+        {
             std::cout << "Pass 1 answer already exists" << std::endl;
+        }
     }
     else if (m_pass == 2)
     {
-        pEventContext->AddEventContextObject("pass2", *new VertexObject(7));
-        if (pEventContext->DoesKeyExist("pass1"))
+        PandoraContentApi::AddEventContextObject(*this, "pass2", new VertexObject(7));
+        try
         {
-            const VertexObject *pObj1{dynamic_cast<const VertexObject *>(pEventContext->GetEventContextObject("pass1"))};
+            const VertexObject *pObj1{dynamic_cast<const VertexObject *>(PandoraContentApi::GetEventContextObject(*this, "pass1"))};
             if (pObj1)
                 std::cout << "Confirm pass 1 exists: " << pObj1->GetAnswer() << std::endl;
         }
-        else
+        catch (StatusCodeException &)
         {
             std::cout << "Pass 2 could not find pass1 answer" << std::endl;
         }
-        const VertexObject *pObj2{dynamic_cast<const VertexObject *>(pEventContext->GetEventContextObject("pass2"))};
+        const VertexObject *pObj2{dynamic_cast<const VertexObject *>(PandoraContentApi::GetEventContextObject(*this, "pass2"))};
         if (pObj2)
             std::cout << "Confirm pass 2 exists: " << pObj2->GetAnswer() << std::endl;
     }
@@ -617,12 +619,6 @@ VertexObject::VertexObject(int value) :
 int VertexObject::GetAnswer() const
 {
     return m_theAnswer;
-}
-
-//-----------------------------------------------------------------------------------------------------------------------------------------
-
-void VertexObject::ResetForNextEvent()
-{
 }
 
 } // namespace lar_dl_content
