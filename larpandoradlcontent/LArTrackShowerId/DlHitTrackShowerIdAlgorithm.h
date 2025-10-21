@@ -43,6 +43,17 @@ private:
         DIFFUSE = 5 // Compton scattered photons not in showers
     };
 
+    struct Bounds
+    {
+        float xMin = std::numeric_limits<float>::max();
+        float xMax = std::numeric_limits<float>::lowest();
+        float zMin = std::numeric_limits<float>::max();
+        float zMax = std::numeric_limits<float>::lowest();
+        float rMax = 0;
+        float xRange = 1.f;
+        float zRange = 1.f;
+    };
+
     pandora::StatusCode Run();
 
     /**
@@ -157,6 +168,48 @@ private:
         const lar_content::LArMCParticleHelper::MCContributionMap &mcHitMap, pandora::CaloHitList &particleOwnedHits,
         pandora::CaloHitList &parentOwnedHits) const;
 
+    /**
+     *  @brief  Get planar coordinates of vertex in given view
+     *
+     *  @param  view The view into which the vertex should be projected
+     *  @param  vx The x position of the vertex
+     *  @param  vz The z position of the vertex
+     *
+     *  @return The status code
+     */
+    pandora::StatusCode GetVertexPlanarCoordinates(pandora::HitType view, float &vx, float &vz) const;
+
+    /**
+     *  @brief  Get extrema of hit coordinates in the specified hit list
+     *
+     *  @param  caloHitList The list from which extrema should be extracted
+     *  @param  vx The x position of the vertex
+     *  @param  vz The z position of the vertex
+     *  @param  bounds The output structure of extremal coordinate information
+     */
+    void GetCoordinateExtrema(const pandora::CaloHitList &caloHitList, [[maybe_unused]]const float vx, [[maybe_unused]]const float vz,
+        Bounds &bounds) const;
+
+    /**
+     *  @brief  Populate input vectors for the deep learning network from the specified hit list
+     *
+     *  @param  caloHitList The list from which to populate the input vectors
+     *  @param  bounds The coordinate bounds structure
+     *  @param  vx The x position of the vertex
+     *  @param  vz The z position of the vertex
+     *  @param  xx The x coordinate vector
+     *  @param  zz The z coordinate vector
+     *  @param  rr The radial coordinate vector
+     *  @param  cosTheta The cosine of the theta angle vector
+     *  @param  sinTheta The sine of the theta angle vector
+     *  @param  vv The value vector
+     *  @param  adc The ADC value vector
+     *  @param  width The width vector
+     */
+    void PopulateInputVectors(const pandora::CaloHitList &caloHitList, const Bounds &bounds, const float vx, const float vz, pandora::FloatVector &xx,
+        pandora::FloatVector &zz, pandora::FloatVector &rr, pandora::FloatVector &cosTheta, pandora::FloatVector &sinTheta, pandora::FloatVector &vv,
+        pandora::FloatVector &adc, pandora::FloatVector &width) const;
+
     pandora::StatusCode ReadSettings(const pandora::TiXmlHandle xmlHandle);
 
     std::string m_caloHitListName; ///< Name of input calo hit list
@@ -169,6 +222,7 @@ private:
     std::string m_rootFileName; ///< Name of the ROOT file to save the training sample
     std::string m_rootTreeName; ///< Name of the ROOT tree to save the training sample
     std::string m_vertexListName; ///< Name of the vertex list to use for vertex-relative coordinates
+    LArDLHelper::TorchModel m_model; ///< The model
 };
 
 } // namespace lar_dl_content

@@ -18,6 +18,8 @@
 
 #include <chrono>
 #include <cmath>
+#include <fstream>
+#include <unistd.h>
 
 using namespace pandora;
 using namespace lar_content;
@@ -74,61 +76,22 @@ StatusCode DlHitTrackShowerIdAlgorithm::PrepareTrainingSample()
     PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetList(*this, m_caloHitListName, pCaloHitList));
     if (!pCaloHitList || pCaloHitList->empty())
         return STATUS_CODE_SUCCESS;
-    const VertexList *pVertexList(nullptr);
     float vx{0.f};
     float vz{0.f};
     if (m_vertexRelative)
     {
-        PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetList(*this, m_vertexListName, pVertexList));
-        if (pVertexList->empty())
-        {
-            std::cout << "DlHitTrackShowerIdAlgorithm: No vertices found in the vertex list" << std::endl;
-            return STATUS_CODE_NOT_FOUND;
-        }
-        const CartesianVector &vertex{m_vertexRelative ? pVertexList->front()->GetPosition() : CartesianVector(0.f, 0.f, 0.f)};
-        vx = vertex.GetX();
-        const LArTransformationPlugin *transform{this->GetPandora().GetPlugins()->GetLArTransformationPlugin()};
-        switch (pCaloHitList->front()->GetHitType())
-        {
-            case TPC_VIEW_U:
-                vz = transform->YZtoU(vertex.GetY(), vertex.GetZ());
-                break;
-            case TPC_VIEW_V:
-                vz = transform->YZtoV(vertex.GetY(), vertex.GetZ());
-                break;
-            case TPC_VIEW_W:
-                vz = transform->YZtoW(vertex.GetY(), vertex.GetZ());
-                break;
-            default:
-                throw StatusCodeException(STATUS_CODE_INVALID_PARAMETER);
-        }
+        PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, != , this->GetVertexPlanarCoordinates(pCaloHitList->front()->GetHitType(), vx, vz));
     }
 
     LArMCParticleHelper::MCContributionMap mcToHitsMap;
     LArMCParticleHelper::GetMCToHitsMap(*pCaloHitList, mcToHitsMap, false);
     MCFoldingMap mcFoldingMap;
-    float xMin{std::numeric_limits<float>::max()}, xMax{std::numeric_limits<float>::lowest()};
-    float zMin{std::numeric_limits<float>::max()}, zMax{std::numeric_limits<float>::lowest()};
-    float rMax{0};
+    Bounds bounds;
     for (const auto &[pMC, caloHitList] : mcToHitsMap)
     {
         const MCParticle *const pLeading{LArMCParticleHelper::GetLeadingEMParticle(pMC)};
         mcFoldingMap[pMC] = pLeading ? pLeading : pMC;
-        for (const CaloHit *const pCaloHit : caloHitList)
-        {
-            const CartesianVector &pos{pCaloHit->GetPositionVector()};
-            xMin = std::min(pos.GetX(), xMin);
-            xMax = std::max(pos.GetX(), xMax);
-            zMin = std::min(pos.GetZ(), zMin);
-            zMax = std::max(pos.GetZ(), zMax);
-            if (m_vertexRelative)
-            {
-                const float x{pos.GetX() - vx};
-                const float z{pos.GetZ() - vz};
-                const float r{std::sqrt(x * x + z * z)};
-                rMax = std::max(r, rMax);
-            }
-        }
+        this->GetCoordinateExtrema(caloHitList, vx, vz, bounds);
     }
 
     lar_content::LArMCParticleHelper::MCContributionMap leadingToHitsMap;
@@ -143,8 +106,6 @@ StatusCode DlHitTrackShowerIdAlgorithm::PrepareTrainingSample()
         mcToInstanceMap[pMC] = inst;
         ++inst;
     }
-    const float xRange{xMax - xMin > 0 ? xMax - xMin : 1.f};
-    const float zRange{zMax - zMin > 0 ? zMax - zMin : 1.f};
 
     std::unordered_map<Category, CaloHitList> categoryToHitsMap;
     std::unordered_map<const CaloHit *, std::vector<Category>> hitToCategoriesMap;
@@ -293,8 +254,8 @@ StatusCode DlHitTrackShowerIdAlgorithm::PrepareTrainingSample()
         }
         if (!m_polarCoords)
         {
-            xx[i] = (x - xMin) / xRange;
-            zz[i] = (z - zMin) / zRange;
+            xx[i] = (x - bounds.xMin) / bounds.xRange;
+            zz[i] = (z - bounds.zMin) / bounds.zRange;
         }
         else
         {
@@ -303,7 +264,7 @@ StatusCode DlHitTrackShowerIdAlgorithm::PrepareTrainingSample()
             const float r{std::sqrt(dx * dx + dz * dz)};
             if (r > 0.f)
             {
-                rr[i] = r / rMax;
+                rr[i] = r / bounds.rMax;
                 // Scale to [0,1] to aid training
                 cosTheta[i] = 0.5f * (1.f + dx / r);
                 sinTheta[i] = 0.5f * (1.f + dz / r);
@@ -317,7 +278,7 @@ StatusCode DlHitTrackShowerIdAlgorithm::PrepareTrainingSample()
             }
         }
         adc[i] = std::log(1.f + std::min(pCaloHit->GetInputEnergy(), m_adcPeak * m_maxAdcFactor)) / std::log(1.f + m_adcPeak * m_maxAdcFactor);
-        width[i] = pCaloHit->GetCellSize1() / xRange;
+        width[i] = pCaloHit->GetCellSize1() / bounds.xRange;
         for (const auto &category : categories)
             semanticLabel[i] = static_cast<int>(category);
         instanceLabel[i] = hitToInstanceMap.at(pCaloHit);
@@ -396,6 +357,83 @@ StatusCode DlHitTrackShowerIdAlgorithm::PrepareTrainingSample()
 
 StatusCode DlHitTrackShowerIdAlgorithm::Infer()
 {
+    const CaloHitList *pCaloHitList(nullptr);
+    PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetList(*this, m_caloHitListName, pCaloHitList));
+    if (!pCaloHitList || pCaloHitList->empty())
+        return STATUS_CODE_SUCCESS;
+
+    // Get projected vertex coordinates if needed
+    float vx{0.f};
+    float vz{0.f};
+    if (m_vertexRelative)
+    {
+        PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, != , this->GetVertexPlanarCoordinates(pCaloHitList->front()->GetHitType(), vx, vz));
+    }
+
+    // Get coordinate minima and maxima
+    Bounds bounds;
+    this->GetCoordinateExtrema(*pCaloHitList, vx, vz, bounds);
+
+    // Prepare input feature vectors
+    FloatVector xx, zz , rr, cosTheta, sinTheta, vv, adc, width;
+    this->PopulateInputVectors(*pCaloHitList, bounds, vx, vz, xx, zz, rr, cosTheta, sinTheta, vv, adc, width);
+
+    // Ensure each run conforms to the maximum sequence length
+    size_t totalSize{rr.size()};
+    for (size_t s = 0; s < totalSize; s += m_maxSeqLen)
+    {
+        size_t end{std::min(s + m_maxSeqLen, totalSize)};
+        FloatVector vvBatch(vv.begin() + s, vv.begin() + end);
+        FloatVector rrBatch(rr.begin() + s, rr.begin() + end);
+        FloatVector cosBatch(cosTheta.begin() + s, cosTheta.begin() + end);
+        FloatVector sinBatch(sinTheta.begin() + s, sinTheta.begin() + end);
+        FloatVector adcBatch(adc.begin() + s, adc.begin() + end);
+        FloatVector widthBatch(width.begin() + s, width.begin() + end);
+
+//        vvBatch.resize(m_maxSeqLen, 0.f);
+//        rrBatch.resize(m_maxSeqLen, 0.f);
+//        cosBatch.resize(m_maxSeqLen, 0.f);
+//        sinBatch.resize(m_maxSeqLen, 0.f);
+//        adcBatch.resize(m_maxSeqLen, 0.f);
+//        widthBatch.resize(m_maxSeqLen, 0.f);
+
+        long batchSize = static_cast<long>(rrBatch.size());
+        std::vector<LArDLHelper::TorchInput> tensors{
+            torch::from_blob(vvBatch.data(), {batchSize}),
+            torch::from_blob(rrBatch.data(), {batchSize}),
+            torch::from_blob(cosBatch.data(), {batchSize}),
+            torch::from_blob(sinBatch.data(), {batchSize}),
+            torch::from_blob(widthBatch.data(), {batchSize}),
+            torch::from_blob(adcBatch.data(), {batchSize})
+        };
+
+        // Run the input through the trained model
+        LArDLHelper::TorchInputVector inputs;
+        LArDLHelper::TorchInput input{torch::stack(tensors, 1)};
+        input = input.unsqueeze(0); // Add batch dimension
+        std::cout << "Input size: " << input.sizes() << std::endl;
+        inputs.push_back(input);
+        LArDLHelper::TorchDict output{LArDLHelper::CreateOutputDict()};
+
+        auto mem_func = []()
+        {
+            std::ifstream statm("/proc/self/statm");
+            size_t size, resident;
+            statm >> size >> resident;
+            return resident * sysconf(_SC_PAGESIZE) / (1024 * 1024);
+        };
+        size_t before{mem_func()};
+        auto t0{std::chrono::high_resolution_clock::now()};
+        LArDLHelper::Forward(m_model, inputs, output);
+        auto t1{std::chrono::high_resolution_clock::now()};
+        size_t after{mem_func()};
+        std::cout << "Memory usage: " << (after - before) << " MB with peak: " << after << " MB" << std::endl;
+        double duration{std::chrono::duration<double, std::milli>(t1 - t0).count()};
+        std::cout << "DL inference time: " << duration << " ms for " << batchSize << " hits" << std::endl;
+
+        // Convert to dictionary and process output
+    }
+
     return STATUS_CODE_SUCCESS;
 }
 
@@ -751,9 +789,163 @@ const LArMCParticle *DlHitTrackShowerIdAlgorithm::AllocateHitOwner(const pandora
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
+StatusCode DlHitTrackShowerIdAlgorithm::GetVertexPlanarCoordinates(const HitType view, float &vx, float &vz) const
+{
+    const VertexList *pVertexList(nullptr);
+    PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetList(*this, m_vertexListName, pVertexList));
+    if (pVertexList->empty())
+    {
+        std::cout << "DlHitTrackShowerIdAlgorithm: No vertices found in the vertex list" << std::endl;
+        return STATUS_CODE_NOT_FOUND;
+    }
+    const CartesianVector &vertex{m_vertexRelative ? pVertexList->front()->GetPosition() : CartesianVector(0.f, 0.f, 0.f)};
+    vx = vertex.GetX();
+    const LArTransformationPlugin *transform{this->GetPandora().GetPlugins()->GetLArTransformationPlugin()};
+    switch (view)
+    {
+        case TPC_VIEW_U:
+            vz = transform->YZtoU(vertex.GetY(), vertex.GetZ());
+            break;
+        case TPC_VIEW_V:
+            vz = transform->YZtoV(vertex.GetY(), vertex.GetZ());
+            break;
+        case TPC_VIEW_W:
+            vz = transform->YZtoW(vertex.GetY(), vertex.GetZ());
+            break;
+        default:
+            throw StatusCodeException(STATUS_CODE_INVALID_PARAMETER);
+    }
+
+    return STATUS_CODE_SUCCESS;
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+void DlHitTrackShowerIdAlgorithm::GetCoordinateExtrema(const CaloHitList &caloHitList, const float vx, const float vz, Bounds &bounds) const
+{
+    for (const CaloHit *const pCaloHit : caloHitList)
+    {
+        const CartesianVector &pos{pCaloHit->GetPositionVector()};
+        bounds.xMin = std::min(pos.GetX(), bounds.xMin);
+        bounds.xMax = std::max(pos.GetX(), bounds.xMax);
+        bounds.zMin = std::min(pos.GetZ(), bounds.zMin);
+        bounds.zMax = std::max(pos.GetZ(), bounds.zMax);
+        if (m_vertexRelative)
+        {
+            const float x{pos.GetX() - vx};
+            const float z{pos.GetZ() - vz};
+            const float r{std::sqrt(x * x + z * z)};
+            bounds.rMax = std::max(r, bounds.rMax);
+        }
+    }
+    bounds.xRange = bounds.xMax - bounds.xMin > 0 ? bounds.xMax - bounds.xMin : 1.f;
+    bounds.zRange = bounds.zMax - bounds.zMin > 0 ? bounds.zMax - bounds.zMin : 1.f;
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+void DlHitTrackShowerIdAlgorithm::PopulateInputVectors(const CaloHitList &caloHitList, const Bounds &bounds, const float vx, const float vz,
+    FloatVector &xx, FloatVector &zz, FloatVector &rr, FloatVector &cosTheta, FloatVector &sinTheta, FloatVector &vv, FloatVector &adc,
+    FloatVector &width) const
+{
+    if (caloHitList.empty())
+        return;
+    const size_t nHits{caloHitList.size()};
+    if (!m_polarCoords)
+    {
+        xx.resize(nHits, 0);
+        zz.resize(nHits, 0);
+    }
+    else
+    {
+        rr.resize(nHits, 0);
+        cosTheta.resize(nHits, 0);
+        sinTheta.resize(nHits, 0);
+    }
+    vv.resize(nHits, 0);
+    adc.resize(nHits, 0);
+    width.resize(nHits, 0);
+
+    size_t i{0};
+    for (const CaloHit *const pCaloHit : caloHitList)
+    {
+        const float x{pCaloHit->GetPositionVector().GetX()};
+        const float z{pCaloHit->GetPositionVector().GetZ()};
+        const HitType view{pCaloHit->GetHitType()};
+        switch (view)
+        {
+            case TPC_VIEW_U:
+                vv[i] = 1 / 3.f;
+                break;
+            case TPC_VIEW_V:
+                vv[i] = 2 / 3.f;
+                break;
+            case TPC_VIEW_W:
+                vv[i] = 3 / 3.f;
+                break;
+            default:
+                throw StatusCodeException(STATUS_CODE_NOT_FOUND);
+        }
+        if (!m_polarCoords)
+        {
+            xx[i] = (x - bounds.xMin) / bounds.xRange;
+            zz[i] = (z - bounds.zMin) / bounds.zRange;
+        }
+        else
+        {
+            const float dx{x - vx};
+            const float dz{z - vz};
+            const float r{std::sqrt(dx * dx + dz * dz)};
+            if (r > 0.f)
+            {
+                rr[i] = r / bounds.rMax;
+                // Scale to [0,1]
+                cosTheta[i] = 0.5f * (1.f + dx / r);
+                sinTheta[i] = 0.5f * (1.f + dz / r);
+            }
+            else
+            {
+                rr[i] = 0.f;
+                // Scale to [0,1]
+                cosTheta[i] = 0.5f * (1.f + 1.f);
+                sinTheta[i] = 0.5f * (1.f + 0.f);
+            }
+        }
+        adc[i] = std::log(1.f + std::min(pCaloHit->GetInputEnergy(), m_adcPeak * m_maxAdcFactor)) / std::log(1.f + m_adcPeak * m_maxAdcFactor);
+        width[i] = pCaloHit->GetCellSize1() / bounds.xRange;
+        ++i;
+    }
+
+    if (m_polarCoords)
+    {
+        // Sort the vectors by r
+        std::vector<size_t> indices(adc.size());
+        std::iota(indices.begin(), indices.end(), 0);
+        std::sort(indices.begin(), indices.end(), [&rr](size_t a, size_t b) { return rr[a] < rr[b]; });
+
+        auto reorder = [&](auto &vec)
+        {
+            using VecType = std::decay_t<decltype(vec)>;
+            VecType sorted(vec.size());
+            for (size_t a = 0; a < indices.size(); ++a)
+                sorted[a] = vec[indices[a]];
+            vec.swap(sorted);
+        };
+
+        reorder(vv);
+        reorder(rr);
+        reorder(cosTheta);
+        reorder(sinTheta);
+        reorder(adc);
+        reorder(width);
+    }
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
 StatusCode DlHitTrackShowerIdAlgorithm::ReadSettings(const TiXmlHandle xmlHandle)
 {
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "TrainingMode", m_trainingMode));
+    PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadValue(xmlHandle, "TrainingMode", m_trainingMode));
     PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "CaloHitListName", m_caloHitListName));
     PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "VertexRelative", m_vertexRelative));
     if (m_vertexRelative)
@@ -769,6 +961,13 @@ StatusCode DlHitTrackShowerIdAlgorithm::ReadSettings(const TiXmlHandle xmlHandle
     {
         PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadValue(xmlHandle, "RootFileName", m_rootFileName));
         PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadValue(xmlHandle, "RootTreeName", m_rootTreeName));
+    }
+    else
+    {
+        std::string modelName;
+        PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadValue(xmlHandle, "ModelFileName", modelName));
+        modelName = LArFileHelper::FindFileInPath(modelName, "FW_SEARCH_PATH");
+        LArDLHelper::LoadModel(modelName, m_model);
     }
     PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "AdcPeak", m_adcPeak));
     PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "MaxAdcFactor", m_maxAdcFactor));
