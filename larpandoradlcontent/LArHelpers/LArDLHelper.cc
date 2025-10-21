@@ -38,9 +38,41 @@ void LArDLHelper::InitialiseInput(const at::IntArrayRef dimensions, TorchInput &
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
+LArDLHelper::TorchDict LArDLHelper::CreateOutputDict()
+{
+    return c10::impl::GenericDict(c10::StringType::get(), c10::TensorType::get());
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
 void LArDLHelper::Forward(TorchModel &model, const TorchInputVector &input, TorchOutput &output)
 {
-    output = model.forward(input).toTensor();
+    torch::NoGradGuard no_grad;
+    try
+    {
+        output = model.forward(input).toTensor();
+    }
+    catch (const std::exception &e)
+    {
+        std::cout << "Error during model forward pass:\n" << e.what() << std::endl;
+        throw StatusCodeException(STATUS_CODE_FAILURE);
+    }
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+void LArDLHelper::Forward(TorchModel &model, const TorchInputVector &input, TorchDict &output)
+{
+    torch::NoGradGuard no_grad;
+    try
+    {
+        output = model.forward(input).toGenericDict();
+    }
+    catch (const std::exception &e)
+    {
+        std::cout << "Error during model forward pass:\n" << e.what() << std::endl;
+        throw StatusCodeException(STATUS_CODE_FAILURE);
+    }
 }
 
 } // namespace lar_dl_content
