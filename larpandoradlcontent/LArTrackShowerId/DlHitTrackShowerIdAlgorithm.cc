@@ -431,7 +431,36 @@ StatusCode DlHitTrackShowerIdAlgorithm::Infer()
         double duration{std::chrono::duration<double, std::milli>(t1 - t0).count()};
         std::cout << "DL inference time: " << duration << " ms for " << batchSize << " hits" << std::endl;
 
-        // Convert to dictionary and process output
+        // Get the outputs as tensors - we're assuming batch size of 1, hence squeeze(0) for convenience
+        LArDLHelper::TorchOutput betaLogits{output.at("beta").toTensor().squeeze(0)}; // [N, 1]
+        LArDLHelper::TorchOutput embed{output.at("embed").toTensor().squeeze(0)}; // [N, D]
+        LArDLHelper::TorchOutput classLogits{output.at("class_logits").toTensor().squeeze(0)}; // [N, num_classes]
+        std::cout << "Output beta size: " << betaLogits.sizes() << std::endl;
+
+        // Find the condensation points
+        LArDLHelper::TorchOutput beta{torch::sigmoid(betaLogits)}; // [N, 1]
+        LArDLHelper::TorchOutput cpMask{(beta > 0.5).squeeze(1)}; // [N]
+        LArDLHelper::TorchOutput cpIndices{torch::nonzero(cpMask).squeeze(1)}; // [num_cps]
+        std::cout << "Condensation point indices size: " << cpIndices.sizes() << std::endl;
+
+        // Extract the CP embeddings and the corresponding classes
+        LArDLHelper::TorchOutput cpEmbeds{embed.index_select(0, cpIndices)}; // [num_cps, D]
+        LArDLHelper::TorchOutput cpClassLogits{classLogits.index_select(0, cpIndices)}; // [num_cps, num_classes]
+        LArDLHelper::TorchOutput cpClasses{cpClassLogits.argmax(1)}; // [num_cps]
+        std::cout << "CP embeddings size: " << cpEmbeds.sizes() << std::endl;
+
+        // Assign hits to CPs based on embedding distance
+        LArDLHelper::TorchOutput diff{embed.unsqueeze(1) - cpEmbeds.unsqueeze(0)}; // [N, num_cps, D]
+        LArDLHelper::TorchOutput dists{diff.pow(2).sum(-1)}; // [N, num_cps]
+        LArDLHelper::TorchOutput nearestCpIdx{std::get<1>(dists.min(1))}; // [N]
+        std::cout << "Nearest CP indices size: " << nearestCpIdx.sizes() << std::endl;
+
+        // Assign semantic classes to all hits based on their nearest CP
+        LArDLHelper::TorchOutput hitClasses{cpClasses.index_select(0, nearestCpIdx)}; // [N]
+        std::cout << "Hit classes size: " << hitClasses.sizes() << std::endl;
+
+        // Note: Probably want to return the sort indices from the vector population to ensure we can map token-based outputs to our CaloHits
+        std::cout << "Found " << cpIndices.size(0) << " condensation points from " << batchSize << " hits" << std::endl;
     }
 
     return STATUS_CODE_SUCCESS;
