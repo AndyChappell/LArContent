@@ -183,9 +183,6 @@ StatusCode DlHitTrackShowerIdAlgorithm::PrepareTrainingSample()
             case LOW_E:
                 categoryName = "LOW_E";
                 break;
-            case DIFFUSE:
-                categoryName = "DIFFUSE";
-                break;
             default:
                 categoryName = "UNINITIALISED";
                 break;
@@ -375,9 +372,11 @@ StatusCode DlHitTrackShowerIdAlgorithm::Infer()
     this->GetCoordinateExtrema(*pCaloHitList, vx, vz, bounds);
 
     // Prepare input feature vectors
+    CaloHitVector caloHitVector;
     FloatVector xx, zz , rr, cosTheta, sinTheta, vv, adc, width;
-    this->PopulateInputVectors(*pCaloHitList, bounds, vx, vz, xx, zz, rr, cosTheta, sinTheta, vv, adc, width);
+    this->PopulateInputVectors(*pCaloHitList, bounds, vx, vz, xx, zz, rr, cosTheta, sinTheta, vv, adc, width, caloHitVector);
 
+    PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1, 1, 1));
     // Ensure each run conforms to the maximum sequence length
     size_t totalSize{rr.size()};
     for (size_t s = 0; s < totalSize; s += m_maxSeqLen)
@@ -461,6 +460,43 @@ StatusCode DlHitTrackShowerIdAlgorithm::Infer()
 
         // Note: Probably want to return the sort indices from the vector population to ensure we can map token-based outputs to our CaloHits
         std::cout << "Found " << cpIndices.size(0) << " condensation points from " << batchSize << " hits" << std::endl;
+
+        std::map<int, CaloHitList> classHitsMap{{MIP, CaloHitList()}, {HIP, CaloHitList()}, {SHOWER, CaloHitList()},
+            {LOW_E, CaloHitList()}};
+        for (long i = 0; i < hitClasses.size(0); ++i)
+        {
+            const int predictedClass{hitClasses[i].item<int>()};
+            const CaloHit *const pCaloHit{caloHitVector[s + i]};
+            classHitsMap[predictedClass].push_back(pCaloHit);
+        }
+
+        for (const auto &[predictedClass, caloHitList] : classHitsMap)
+        {
+            std::string categoryName;
+            switch (predictedClass + 1)
+            {
+                case MIP:
+                    categoryName = "MIP";
+                    break;
+                case HIP:
+                    categoryName = "HIP";
+                    break;
+                case SHOWER:
+                    categoryName = "SHOWER";
+                    break;
+                case LOW_E:
+                    categoryName = "LOW_E";
+                    break;
+                default:
+                    break;
+            }
+            // Visualise calo hits for class
+            if (!caloHitList.empty())
+            {
+                PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &caloHitList, categoryName, AUTOITER));
+            }
+        }
+        PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
     }
 
     return STATUS_CODE_SUCCESS;
@@ -875,11 +911,13 @@ void DlHitTrackShowerIdAlgorithm::GetCoordinateExtrema(const CaloHitList &caloHi
 
 void DlHitTrackShowerIdAlgorithm::PopulateInputVectors(const CaloHitList &caloHitList, const Bounds &bounds, const float vx, const float vz,
     FloatVector &xx, FloatVector &zz, FloatVector &rr, FloatVector &cosTheta, FloatVector &sinTheta, FloatVector &vv, FloatVector &adc,
-    FloatVector &width) const
+    FloatVector &width, CaloHitVector &sortedCaloHitList) const
 {
     if (caloHitList.empty())
         return;
+
     const size_t nHits{caloHitList.size()};
+
     if (!m_polarCoords)
     {
         xx.resize(nHits, 0);
@@ -948,7 +986,7 @@ void DlHitTrackShowerIdAlgorithm::PopulateInputVectors(const CaloHitList &caloHi
     if (m_polarCoords)
     {
         // Sort the vectors by r
-        std::vector<size_t> indices(adc.size());
+        IndexVector indices(adc.size());
         std::iota(indices.begin(), indices.end(), 0);
         std::sort(indices.begin(), indices.end(), [&rr](size_t a, size_t b) { return rr[a] < rr[b]; });
 
@@ -967,6 +1005,10 @@ void DlHitTrackShowerIdAlgorithm::PopulateInputVectors(const CaloHitList &caloHi
         reorder(sinTheta);
         reorder(adc);
         reorder(width);
+
+        sortedCaloHitList.clear();
+        sortedCaloHitList.insert(sortedCaloHitList.end(), caloHitList.begin(), caloHitList.end());
+        reorder(sortedCaloHitList);
     }
 }
 
