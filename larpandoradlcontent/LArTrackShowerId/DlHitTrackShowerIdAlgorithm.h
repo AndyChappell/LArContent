@@ -32,6 +32,7 @@ public:
 
 private:
     typedef std::unordered_map<const pandora::MCParticle *, const pandora::MCParticle *> MCFoldingMap;
+    typedef std::vector<size_t> IndexVector;
 
     enum Category
     {
@@ -39,8 +40,7 @@ private:
         MIP = 1,
         HIP = 2,
         SHOWER = 3,
-        LOW_E = 4, // Michels and Deltas
-        DIFFUSE = 5 // Compton scattered photons not in showers
+        LOW_E = 4 // Michels and Deltas
     };
 
     struct Bounds
@@ -205,10 +205,11 @@ private:
      *  @param  vv The value vector
      *  @param  adc The ADC value vector
      *  @param  width The width vector
+     *  @param  sortedCaloHitList The output sorted calo hit list
      */
     void PopulateInputVectors(const pandora::CaloHitList &caloHitList, const Bounds &bounds, const float vx, const float vz, pandora::FloatVector &xx,
         pandora::FloatVector &zz, pandora::FloatVector &rr, pandora::FloatVector &cosTheta, pandora::FloatVector &sinTheta, pandora::FloatVector &vv,
-        pandora::FloatVector &adc, pandora::FloatVector &width) const;
+        pandora::FloatVector &adc, pandora::FloatVector &width, pandora::CaloHitVector &sortedCaloHitList) const;
 
     pandora::StatusCode ReadSettings(const pandora::TiXmlHandle xmlHandle);
 
