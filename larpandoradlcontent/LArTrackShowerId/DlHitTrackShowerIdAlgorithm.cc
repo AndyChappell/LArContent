@@ -445,7 +445,25 @@ StatusCode DlHitTrackShowerIdAlgorithm::Infer()
         // Extract the CP embeddings and the corresponding classes
         LArDLHelper::TorchOutput cpEmbeds{embed.index_select(0, cpIndices)}; // [num_cps, D]
         LArDLHelper::TorchOutput cpClassLogits{classLogits.index_select(0, cpIndices)}; // [num_cps, num_classes]
+        // Convert logits to probabilities
+        cpClassLogits = torch::softmax(cpClassLogits, 1);
+        // Combine classes 0 and 1 into a single class, in place, representing track-like hits
+        cpClassLogits.index({torch::indexing::Slice(), 0}) += cpClassLogits.index({torch::indexing::Slice(), 1});
+        cpClassLogits.index({torch::indexing::Slice(), 1}) = 0;
         LArDLHelper::TorchOutput cpClasses{cpClassLogits.argmax(1)}; // [num_cps]
+        // If argmax is 3, then check which is large of 0 and 2, and switch to that
+        for (long i = 0; i < cpClasses.size(0); ++i)
+        {
+            if (cpClasses[i].item<int>() == 3)
+            {
+                const float trackProb{cpClassLogits[i][0].item<float>()};
+                const float showerProb{cpClassLogits[i][2].item<float>()};
+                if (trackProb > showerProb)
+                    cpClasses[i] = 0;
+                else
+                    cpClasses[i] = 2;
+            }
+        }
         std::cout << "CP embeddings size: " << cpEmbeds.sizes() << std::endl;
 
         // Assign hits to CPs based on embedding distance
