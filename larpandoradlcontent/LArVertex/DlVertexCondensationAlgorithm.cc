@@ -73,18 +73,15 @@ StatusCode DlVertexCondensationAlgorithm::PrepareTrainingSample()
 
         LArMCParticleHelper::MCContributionMap mcToHitsMap;
         LArMCParticleHelper::GetMCToHitsMap(*pCaloHitList, mcToHitsMap, true);
-        CartesianPointVector vertices;
-        this->GetProjectedTrueVertices(mcToHitsMap, view, vertices);
-        if (vertices.empty())
+        MCVertexMap mcToVertexMap;
+        for (const auto &[pMC, _] : mcToHitsMap)
+            this->GetProjectedTrueVertices(pMC, view, mcToVertexMap);
+        if (mcToVertexMap.empty())
             continue;
 
         // Find the closest hit to each vertex, along with the distance between the hit and the vertex
-        Eigen::MatrixXf hitMat(pCaloHitList->size(), 2), vertMat(vertices.size(), 2);
-        LArEigenHelper::Vectorize(*pCaloHitList, hitMat);
-        LArEigenHelper::Vectorize(vertices, vertMat);
-        IntVector closestHitIndices;
-        FloatVector closestHitDistances;
-        this->MatchHitToVertex(hitMat, vertMat, closestHitIndices, closestHitDistances);
+        MCVertexMap mcToMatchedVertexMap;
+        this->MatchHitToVertex(mcToHitsMap, mcToVertexMap, mcToMatchedVertexMap);
 
         if (m_visualize)
         {
@@ -93,16 +90,11 @@ StatusCode DlVertexCondensationAlgorithm::PrepareTrainingSample()
 
             for (const auto &[pMC, caloHitList] : mcToHitsMap)
             {
+                const CartesianVector matchedVertex{mcToMatchedVertexMap.at(pMC)};
+                PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &matchedVertex, "MatchedHit", RED, 1));
+                const CartesianVector mcVertex{mcToVertexMap.at(pMC)};
+                PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &mcVertex, "Vertex", BLUE, 3));
                 PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &caloHitList, std::to_string(std::abs(pMC->GetParticleId())), AUTOITER));
-            }
-            for (const CartesianVector &vertex : vertices)
-            {
-                PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &vertex, "Vertex", BLUE, 3));
-            }
-            for (int index : closestHitIndices)
-            {
-                const CartesianVector &hitPos{hitVector[index]->GetPositionVector()};
-                PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &hitPos, "MatchedHit", RED, 1));
             }
 
             PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
@@ -116,73 +108,68 @@ StatusCode DlVertexCondensationAlgorithm::PrepareTrainingSample()
 
 //-----------------------------------------------------------------------------------------------------------------------------------------
 
-void DlVertexCondensationAlgorithm::GetProjectedTrueVertices(const LArMCParticleHelper::MCContributionMap &mcToHitsMap, const HitType view,
-    CartesianPointVector &vertices) const
+void DlVertexCondensationAlgorithm::GetProjectedTrueVertices(const MCParticle *const pMC, const HitType view, MCVertexMap &mcVertexMap) const
 {
     const LArTransformationPlugin *pTransform{this->GetPandora().GetPlugins()->GetLArTransformationPlugin()};
-    for (const auto &[pMC, caloHitList] : mcToHitsMap)
+    const CartesianVector mcVertex{pMC->GetParticleId() == PHOTON ? pMC->GetEndpoint() : pMC->GetVertex()};
+    CartesianVector viewVertex(0, 0, 0);
+    switch (view)
     {
-        const CartesianVector mcVertex{pMC->GetParticleId() == PHOTON ? pMC->GetEndpoint() : pMC->GetVertex()};
-        CartesianVector viewVertex(0, 0, 0);
-        switch (view)
-        {
-            case TPC_VIEW_U:
-                viewVertex.SetValues(mcVertex.GetX(), 0, pTransform->YZtoU(mcVertex.GetY(), mcVertex.GetZ()));
-                break;
-            case TPC_VIEW_V:
-                viewVertex.SetValues(mcVertex.GetX(), 0, pTransform->YZtoV(mcVertex.GetY(), mcVertex.GetZ()));
-                break;
-            case TPC_VIEW_W:
-                viewVertex.SetValues(mcVertex.GetX(), 0, pTransform->YZtoW(mcVertex.GetY(), mcVertex.GetZ()));
-                break;
-            default:
-                break;
-        }
-        vertices.emplace_back(viewVertex);
+        case TPC_VIEW_U:
+            viewVertex.SetValues(mcVertex.GetX(), 0, pTransform->YZtoU(mcVertex.GetY(), mcVertex.GetZ()));
+            break;
+        case TPC_VIEW_V:
+            viewVertex.SetValues(mcVertex.GetX(), 0, pTransform->YZtoV(mcVertex.GetY(), mcVertex.GetZ()));
+            break;
+        case TPC_VIEW_W:
+            viewVertex.SetValues(mcVertex.GetX(), 0, pTransform->YZtoW(mcVertex.GetY(), mcVertex.GetZ()));
+            break;
+        default:
+            break;
     }
+    // Emplace avoids issues with the lack of a default constructor for CartesianVector
+    mcVertexMap.emplace(pMC, viewVertex);
 }
 
 //-----------------------------------------------------------------------------------------------------------------------------------------
 
-void DlVertexCondensationAlgorithm::MatchHitToVertex(const Eigen::MatrixXf &hitMat, const Eigen::MatrixXf &vertMat,
-    IntVector &closestHitIndices, FloatVector &closestHitDistances) const
+void DlVertexCondensationAlgorithm::MatchHitToVertex(const LArMCParticleHelper::MCContributionMap &mcToHitsMap, const MCVertexMap &mcVertexMap,
+    MCVertexMap &mcToMatchedVertexMap) const
 {
-    const size_t nVerts = static_cast<size_t>(vertMat.rows());
-
-    // Ensure shapes make sense
-    if (hitMat.cols() != vertMat.cols()) throw std::runtime_error("hit/vert dims mismatch");
-
-    // Use VectorXf (column vector) for squared norms
-    Eigen::VectorXf hitSq  = hitMat.rowwise().squaredNorm();   // (N_h x 1)
-    Eigen::VectorXf vertSq = vertMat.rowwise().squaredNorm();  // (N_v x 1)
-
-    // Compute all pairwise squared distances:
-    // D2(i,j) = |h_i|^2 + |v_j|^2 - 2 * h_i.dot(v_j)
-    Eigen::MatrixXf dot = hitMat * vertMat.transpose();        // (N_h x N_v)
-    Eigen::MatrixXf d2 = (-2.0f * dot).colwise() + hitSq;      // add hit norms per column
-    d2 = d2.rowwise() + vertSq.transpose();                    // add vertex norms per row
-
-    // Resize outputs
-    closestHitIndices.resize(nVerts);
-    closestHitDistances.resize(nVerts);
-
-    // Visualize the MC particles and their true vertices here, then visualize the hit-based vertices
-
-    // For each vertex (column j in d2), find index i with minimal d2(i,j)
-    for (size_t j = 0; j < nVerts; ++j)
+    for (const auto &[pMC, caloHitList] : mcToHitsMap)
     {
-        Eigen::VectorXf col = d2.col(static_cast<int>(j)); // N_h x 1
+        CaloHitVector caloHitVector(caloHitList.begin(), caloHitList.end());
+        const CartesianPointVector vertices(1, mcVertexMap.at(pMC));
+        Eigen::MatrixXf hitMat(caloHitList.size(), 2), vertMat(1, 2);
+        LArEigenHelper::Vectorize(caloHitList, hitMat);
+        LArEigenHelper::Vectorize({vertices}, vertMat);
+
+        // Ensure shapes make sense
+        if (hitMat.cols() != vertMat.cols())
+            throw StatusCodeException(STATUS_CODE_INVALID_PARAMETER);
+
+        // Use VectorXf (column vector) for squared norms
+        Eigen::VectorXf hitSq  = hitMat.rowwise().squaredNorm();   // (N_h x 1)
+        Eigen::VectorXf vertSq = vertMat.rowwise().squaredNorm();  // (N_v x 1)
+
+        // Compute all pairwise squared distances:
+        // D2(i,j) = |h_i|^2 + |v_j|^2 - 2 * h_i.dot(v_j)
+        Eigen::MatrixXf dot = hitMat * vertMat.transpose();        // (N_h x N_v)
+        Eigen::MatrixXf d2 = (-2.0f * dot).colwise() + hitSq;      // add hit norms per column
+        d2 = d2.rowwise() + vertSq.transpose();                    // add vertex norms per row
+
+        // Find index i with minimal d2(i,j)
+        Eigen::VectorXf col = d2.col(0); // N_h x 1
         Eigen::Index idx;
         float minD2 = col.minCoeff(&idx);
 
-        closestHitIndices[j] = static_cast<int>(idx);
-        closestHitDistances[j] = std::sqrt(std::max(minD2, 0.0f)); // guard tiny negatives
+        const int index{static_cast<int>(idx)};
+        const float distance{std::sqrt(std::max(minD2, 0.0f))}; // guard tiny negatives
+        // Emplace avoids issues with the lack of a default constructor for CartesianVector
+        mcToMatchedVertexMap.emplace(pMC, caloHitVector[index]->GetPositionVector());
 
-        std::cout << "Vertex " << j
-                  << " (" << vertMat(int(j), 0) << ", " << vertMat(int(j), 1) << ") "
-                  << "matched to hit " << idx
-                  << " (" << hitMat(int(idx), 0) << ", " << hitMat(int(idx), 1) << ") "
-                  << "distance " << closestHitDistances[j] << "\n";
+        std::cout << "Vertex (" << vertMat(0, 0) << ", " << vertMat(0, 1) << ") matched to hit " << idx
+                  << " (" << hitMat(index, 0) << ", " << hitMat(index, 1) << ") distance " << distance << "\n";
     }
 }
 
