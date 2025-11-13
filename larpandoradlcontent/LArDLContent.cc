@@ -24,6 +24,7 @@
 #include "larpandoradlcontent/LArTrackShowerId/DlPfoCharacterisationAlgorithm.h"
 #include "larpandoradlcontent/LArTwoDReco/DlTrackShowerStreamSelectionAlgorithm.h"
 #include "larpandoradlcontent/LArVertex/DlSecondaryVertexingAlgorithm.h"
+#include "larpandoradlcontent/LArVertex/DlVertexCondensationAlgorithm.h"
 #include "larpandoradlcontent/LArVertex/DlVertexingAlgorithm.h"
 
 #include "larpandoradlcontent/LArDLContent.h"
@@ -39,6 +40,7 @@
     d("LArDLSecondaryVertexing",         DlSecondaryVertexingAlgorithm)                               \
     d("LArDLSNSignal",                   DlSNSignalAlgorithm)                                         \
     d("LArDLTrackShowerStreamSelection", DlTrackShowerStreamSelectionAlgorithm)                       \
+    d("LArDLVertexCondensation", 		 DlVertexCondensationAlgorithm)                       		  \
     d("LArDLVertexing",                  DlVertexingAlgorithm)
 
 #define LAR_DL_ALGORITHM_TOOL_LIST(d)                                                                                                     \
