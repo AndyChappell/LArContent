@@ -137,32 +137,25 @@ void DlVertexCondensationAlgorithm::MatchHitToVertex(const LArMCParticleHelper::
         LArEigenHelper::Vectorize(caloHitList, hitMat);
         LArEigenHelper::Vectorize({vertices}, vertMat);
 
-        // Ensure shapes make sense
         if (hitMat.cols() != vertMat.cols())
             throw StatusCodeException(STATUS_CODE_INVALID_PARAMETER);
 
-        // Use VectorXf (column vector) for squared norms
-        Eigen::VectorXf hitSq  = hitMat.rowwise().squaredNorm();   // (N_h x 1)
-        Eigen::VectorXf vertSq = vertMat.rowwise().squaredNorm();  // (N_v x 1)
+        Eigen::VectorXf hitSq{hitMat.rowwise().squaredNorm()};
+        Eigen::VectorXf vertSq{vertMat.rowwise().squaredNorm()};
 
         // Compute all pairwise squared distances:
         // D2(i,j) = |h_i|^2 + |v_j|^2 - 2 * h_i.dot(v_j)
-        Eigen::MatrixXf dot = hitMat * vertMat.transpose();        // (N_h x N_v)
-        Eigen::MatrixXf d2 = (-2.0f * dot).colwise() + hitSq;      // add hit norms per column
-        d2 = d2.rowwise() + vertSq.transpose();                    // add vertex norms per row
+        Eigen::MatrixXf dot{hitMat * vertMat.transpose()};
+        Eigen::MatrixXf d2{(-2.0f * dot).colwise() + hitSq}; // add hit norms per column
+        d2 = d2.rowwise() + vertSq.transpose();              // add vertex norms per row
 
-        // Find index i with minimal d2(i,j)
-        Eigen::VectorXf col = d2.col(0); // N_h x 1
-        Eigen::Index idx;
-        float minD2 = col.minCoeff(&idx);
+        Eigen::VectorXf col{d2.col(0)};
+        Eigen::Index idx{0};
+        col.minCoeff(&idx);
 
         const int index{static_cast<int>(idx)};
-        const float distance{std::sqrt(std::max(minD2, 0.0f))}; // guard tiny negatives
         // Emplace avoids issues with the lack of a default constructor for CartesianVector
         mcToMatchedVertexMap.emplace(pMC, caloHitVector[index]->GetPositionVector());
-
-        std::cout << "Vertex (" << vertMat(0, 0) << ", " << vertMat(0, 1) << ") matched to hit " << idx
-                  << " (" << hitMat(index, 0) << ", " << hitMat(index, 1) << ") distance " << distance << std::endl;
     }
 }
 
@@ -174,12 +167,9 @@ void DlVertexCondensationAlgorithm::ConsolidateVertices(const MCVertexMap &mcToM
     {
         if (vertexHitsMap.find(vertex) == vertexHitsMap.end())
             vertexHitsMap[vertex] = CaloHitList();
-        else
-            std::cout << "Duplicate vertex found at (" << vertex.GetX() << ", " << vertex.GetZ() << ")" << std::endl;
         const CaloHitList &caloHitList{mcToHitsMap.at(pMC)};
         vertexHitsMap[vertex].insert(vertexHitsMap[vertex].end(), caloHitList.begin(), caloHitList.end());
     }
-    std::cout << "Size of map after consolidation: " << vertexHitsMap.size() << std::endl;
 }
 
 //-----------------------------------------------------------------------------------------------------------------------------------------
