@@ -39,6 +39,21 @@ public:
 private:
     typedef std::map<const pandora::MCParticle*, pandora::CartesianVector> MCVertexMap;
 
+    /**
+     *  @brief  Comparator for CartesianVector to be used in std::map
+     */
+    struct VertexComparator
+    {
+        bool operator()(const pandora::CartesianVector &a, const pandora::CartesianVector &b) const
+        {
+            if (a.GetX() != b.GetX())
+                return a.GetX() < b.GetX();
+            else
+                return a.GetZ() < b.GetZ();
+        }
+    };
+    typedef std::map<const pandora::CartesianVector, pandora::CaloHitList, VertexComparator> VertexHitsMap;
+
     pandora::StatusCode Run();
     pandora::StatusCode ReadSettings(const pandora::TiXmlHandle xmlHandle);
     pandora::StatusCode PrepareTrainingSample();
@@ -61,6 +76,31 @@ private:
      *  @param  mcToMatchedVertexMap the output mapping between MC particles and their matched vertex positions
      */
     void MatchHitToVertex(const LArMCParticleHelper::MCContributionMap &mcToHitsMap, const MCVertexMap &mcVertexMap, MCVertexMap &mcToMatchedVertexMap) const;
+
+    /**
+     *  @brief  Consolidate any duplicate vertices and associate the relevant hits to the consolidated vertex
+     *
+     *  @param  mcToMatchedVertexMap the mapping between MC particles and their matched vertex positions
+     *  @param  mcToHitsMap the mapping between MC particles and their contributed hits
+     *  @param  vertexHitsMap the output mapping between consolidated vertex positions and their associated hits
+     */
+    void ConsolidateVertices(const MCVertexMap &mcToMatchedVertexMap, const LArMCParticleHelper::MCContributionMap &mcToHitsMap, VertexHitsMap &vertexHitsMap) const;
+
+    /**
+     *  @brief  Visualize the hits and vertices for each MC particle
+     *
+     *  @param  mcToHitsMap the mapping between MC particles and their contributed hits
+     *  @param  mcVertexMap the mapping between MC particles and their projected true vertex positions
+     *  @param  mcToMatchedVertexMap the output mapping between MC particles and their matched vertex positions
+     */
+    void VisualizeByMC(const LArMCParticleHelper::MCContributionMap &mcToHitsMap, const MCVertexMap &mcVertexMap, const MCVertexMap &mcToMatchedVertexMap) const;
+
+    /**
+     *  @brief  Visualize the consolidated vertices and their associated hits
+     *
+     *  @param  vertexHitsMap the mapping between consolidated vertex positions and their associated hits
+     */
+    void VisualizeByVertex(const VertexHitsMap &vertexHitsMap) const;
 
     bool m_trainingMode;   ///< Whether or not the algorithm is in training mode
     bool m_visualize;           ///< Whether or not to visualize the candidate vertices

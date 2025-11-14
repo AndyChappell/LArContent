@@ -84,21 +84,14 @@ StatusCode DlVertexCondensationAlgorithm::PrepareTrainingSample()
         this->MatchHitToVertex(mcToHitsMap, mcToVertexMap, mcToMatchedVertexMap);
 
         if (m_visualize)
-        {
-            CaloHitVector hitVector(pCaloHitList->begin(), pCaloHitList->end());
-            PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), false, DETECTOR_VIEW_XZ, -1, 1, 1));
+            this->VisualizeByMC(mcToHitsMap, mcToVertexMap, mcToMatchedVertexMap);
 
-            for (const auto &[pMC, caloHitList] : mcToHitsMap)
-            {
-                const CartesianVector matchedVertex{mcToMatchedVertexMap.at(pMC)};
-                PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &matchedVertex, "MatchedHit", RED, 1));
-                const CartesianVector mcVertex{mcToVertexMap.at(pMC)};
-                PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &mcVertex, "Vertex", BLUE, 3));
-                PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &caloHitList, std::to_string(std::abs(pMC->GetParticleId())), AUTOITER));
-            }
+        // Now consolidate any duplicate vertices and associate the relevant hits to the consolidated vertex
+        VertexHitsMap vertexHitsMap;
+        this->ConsolidateVertices(mcToMatchedVertexMap, mcToHitsMap, vertexHitsMap);
 
-            PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
-        }
+        if (m_visualize)
+            this->VisualizeByVertex(vertexHitsMap);
 
         // Need to construct training file
     }
@@ -169,8 +162,57 @@ void DlVertexCondensationAlgorithm::MatchHitToVertex(const LArMCParticleHelper::
         mcToMatchedVertexMap.emplace(pMC, caloHitVector[index]->GetPositionVector());
 
         std::cout << "Vertex (" << vertMat(0, 0) << ", " << vertMat(0, 1) << ") matched to hit " << idx
-                  << " (" << hitMat(index, 0) << ", " << hitMat(index, 1) << ") distance " << distance << "\n";
+                  << " (" << hitMat(index, 0) << ", " << hitMat(index, 1) << ") distance " << distance << std::endl;
     }
+}
+
+//-----------------------------------------------------------------------------------------------------------------------------------------
+
+void DlVertexCondensationAlgorithm::ConsolidateVertices(const MCVertexMap &mcToMatchedVertexMap, const LArMCParticleHelper::MCContributionMap &mcToHitsMap, VertexHitsMap &vertexHitsMap) const
+{
+    for (const auto &[pMC, vertex] : mcToMatchedVertexMap)
+    {
+        if (vertexHitsMap.find(vertex) == vertexHitsMap.end())
+            vertexHitsMap[vertex] = CaloHitList();
+        else
+            std::cout << "Duplicate vertex found at (" << vertex.GetX() << ", " << vertex.GetZ() << ")" << std::endl;
+        const CaloHitList &caloHitList{mcToHitsMap.at(pMC)};
+        vertexHitsMap[vertex].insert(vertexHitsMap[vertex].end(), caloHitList.begin(), caloHitList.end());
+    }
+    std::cout << "Size of map after consolidation: " << vertexHitsMap.size() << std::endl;
+}
+
+//-----------------------------------------------------------------------------------------------------------------------------------------
+
+void DlVertexCondensationAlgorithm::VisualizeByMC(const LArMCParticleHelper::MCContributionMap &mcToHitsMap, const MCVertexMap &mcToVertexMap,
+    const MCVertexMap &mcToMatchedVertexMap) const
+{
+    PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), false, DETECTOR_VIEW_XZ, -1, 1, 1));
+
+    for (const auto &[pMC, caloHitList] : mcToHitsMap)
+    {
+        const CartesianVector matchedVertex{mcToMatchedVertexMap.at(pMC)};
+        PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &matchedVertex, "MatchedHit", RED, 1));
+        const CartesianVector mcVertex{mcToVertexMap.at(pMC)};
+        PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &mcVertex, "Vertex", BLUE, 3));
+        PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &caloHitList, std::to_string(std::abs(pMC->GetParticleId())), AUTOITER));
+    }
+
+    PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
+}
+
+//-----------------------------------------------------------------------------------------------------------------------------------------
+
+void DlVertexCondensationAlgorithm::VisualizeByVertex(const VertexHitsMap &vertexHitsMap) const
+{
+    PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), false, DETECTOR_VIEW_XZ, -1, 1, 1));
+    for (const auto &[vertex, caloHitList] : vertexHitsMap)
+    {
+        PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &vertex, "ConsolidatedVertex", GREEN, 1));
+        PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &caloHitList, "Hits", AUTOITER));
+    }
+
+    PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
 }
 
 //-----------------------------------------------------------------------------------------------------------------------------------------
