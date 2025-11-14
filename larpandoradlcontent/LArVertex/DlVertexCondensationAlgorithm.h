@@ -87,6 +87,13 @@ private:
     void ConsolidateVertices(const MCVertexMap &mcToMatchedVertexMap, const LArMCParticleHelper::MCContributionMap &mcToHitsMap, VertexHitsMap &vertexHitsMap) const;
 
     /**
+     *  @brief  Filter out particles that are neutron-induced
+     *
+     *  @param  mcToHitsMap the mapping between MC particles and their contributed hits
+     */
+    void FilterNeutronInducedParticles(LArMCParticleHelper::MCContributionMap &mcToHitsMap) const;
+
+    /**
      *  @brief  Visualize the hits and vertices for each MC particle
      *
      *  @param  mcToHitsMap the mapping between MC particles and their contributed hits

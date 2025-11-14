@@ -73,6 +73,8 @@ StatusCode DlVertexCondensationAlgorithm::PrepareTrainingSample()
 
         LArMCParticleHelper::MCContributionMap mcToHitsMap;
         LArMCParticleHelper::GetMCToHitsMap(*pCaloHitList, mcToHitsMap, true);
+        // Remove photon MC particles with neutron parents to clean up noise
+        this->FilterNeutronInducedParticles(mcToHitsMap);
         MCVertexMap mcToVertexMap;
         for (const auto &[pMC, _] : mcToHitsMap)
             this->GetProjectedTrueVertices(pMC, view, mcToVertexMap);
@@ -94,6 +96,9 @@ StatusCode DlVertexCondensationAlgorithm::PrepareTrainingSample()
             this->VisualizeByVertex(vertexHitsMap);
 
         // Need to construct training file
+        // When allocating hits to condensation points, any hit without a corresponding particle in the
+        // mcToHitsMap should be labelled as background - note, we'll need to find those in the full hit list
+        // because currently they will just be absent from the relevant maps
     }
 
     return STATUS_CODE_SUCCESS;
@@ -174,6 +179,33 @@ void DlVertexCondensationAlgorithm::ConsolidateVertices(const MCVertexMap &mcToM
 
 //-----------------------------------------------------------------------------------------------------------------------------------------
 
+void DlVertexCondensationAlgorithm::FilterNeutronInducedParticles(LArMCParticleHelper::MCContributionMap &mcToHitsMap) const
+{
+    for (auto it = mcToHitsMap.begin(); it != mcToHitsMap.end();)
+    {
+        const MCParticle *const pMC{it->first};
+        bool foundNeutronParent{false};
+        if (std::abs(pMC->GetParticleId()) == PHOTON)
+        {
+            const MCParticle *pCurrentMC{pMC};
+            while (!pCurrentMC->GetParentList().empty())
+            {
+                pCurrentMC = pCurrentMC->GetParentList().front();
+                if (std::abs(pCurrentMC->GetParticleId()) == NEUTRON)
+                {
+                    it = mcToHitsMap.erase(it);
+                    foundNeutronParent = true;
+                    break;
+                }
+            }
+        }
+        if (!foundNeutronParent)
+            ++it;
+    }
+}
+
+//-----------------------------------------------------------------------------------------------------------------------------------------
+
 void DlVertexCondensationAlgorithm::VisualizeByMC(const LArMCParticleHelper::MCContributionMap &mcToHitsMap, const MCVertexMap &mcToVertexMap,
     const MCVertexMap &mcToMatchedVertexMap) const
 {
@@ -181,6 +213,16 @@ void DlVertexCondensationAlgorithm::VisualizeByMC(const LArMCParticleHelper::MCC
 
     for (const auto &[pMC, caloHitList] : mcToHitsMap)
     {
+        std::cout << "MC Particle ID: " << pMC->GetParticleId() << " Hits: " << caloHitList.size() << std::endl;
+        const MCParticle *pCurrentMC{pMC};
+        while (!pCurrentMC->GetParentList().empty())
+        {
+            pCurrentMC = pCurrentMC->GetParentList().front();
+            size_t nHits{mcToHitsMap.find(pCurrentMC) != mcToHitsMap.end() ? mcToHitsMap.at(pCurrentMC).size() : 0};
+            std::cout << "  (" << pCurrentMC->GetParticleId() << ": " << nHits << ") -> ";
+        }
+        std::cout << "[]" << std::endl;
+
         const CartesianVector matchedVertex{mcToMatchedVertexMap.at(pMC)};
         PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &matchedVertex, "MatchedHit", RED, 1));
         const CartesianVector mcVertex{mcToVertexMap.at(pMC)};
