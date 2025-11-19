@@ -50,6 +50,11 @@
 
 #include "larpandoracontent/LArHelpers/LArGeometryHelper.h"
 
+#include "larpandoracontent/LArMetrics/ValidationAlgorithm.h"
+#include "larpandoracontent/LArMetrics/EventValidationTool.h"
+#include "larpandoracontent/LArMetrics/TrackValidationTool.h"
+#include "larpandoracontent/LArMetrics/PFPValidationTool.h"
+
 #include "larpandoracontent/LArMonitoring/CosmicRayTaggingMonitoringTool.h"
 #include "larpandoracontent/LArMonitoring/EventClusterValidationAlgorithm.h"
 #include "larpandoracontent/LArMonitoring/HierarchyMonitoringAlgorithm.h"
@@ -236,6 +241,7 @@
 
 // clang-format off
 #define LAR_ALGORITHM_LIST(d)                                                                                                   \
+    d("LArValidation",                          ValidationAlgorithm)                                                            \
     d("LArMuonLeadingEventValidation",          MuonLeadingEventValidationAlgorithm)                                            \
     d("LArElectronInitialRegionRefinement",     ElectronInitialRegionRefinementAlgorithm)                                       \
     d("LArNeutrinoEventValidation",             NeutrinoEventValidationAlgorithm)                                               \
@@ -358,6 +364,9 @@
     d("LArVertexRefinement",                    VertexRefinementAlgorithm)
 
 #define LAR_ALGORITHM_TOOL_LIST(d)                                                                                              \
+    d("LArEventValidationTool",                 EventValidationTool)                                                            \
+    d("LArTrackValidationTool",                 TrackValidationTool)                                                            \
+    d("LArPFPValidationTool",                   PFPValidationTool)                                                              \
     d("LArRandomFigureOfMeritTool",             RandomFigureOfMeritTool)                                                        \
     d("LArCheatedThreeDClusteringTool",         CheatedThreeDClusteringTool)                                                    \
     d("LArSimplePCAThreeDClusteringTool",       SimplePCAThreeDClusteringTool)                                                  \
