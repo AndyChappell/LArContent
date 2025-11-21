@@ -53,6 +53,9 @@ private:
         }
     };
     typedef std::map<const pandora::CartesianVector, pandora::CaloHitList, VertexComparator> VertexHitsMap;
+    typedef std::map<const pandora::CaloHit*, int> CondensationPointMap;
+    typedef std::map<const pandora::CaloHit*, pandora::IntVector> HitVertexLabelMap;
+    typedef std::map<const pandora::CaloHit*, pandora::FloatVector> HitVertexWeightMap;
 
     pandora::StatusCode Run();
     pandora::StatusCode ReadSettings(const pandora::TiXmlHandle xmlHandle);
@@ -92,6 +95,18 @@ private:
      *  @param  mcToHitsMap the mapping between MC particles and their contributed hits
      */
     void FilterNeutronInducedParticles(LArMCParticleHelper::MCContributionMap &mcToHitsMap) const;
+
+    /**
+     *  @brief  Make the training file from the hits and consolidated vertices
+     *
+     *  @param  treeName the name of the ROOT tree
+     *  @param  vertexHitsMap the mapping between consolidated vertex positions and their associated hits
+     *  @param  mcToMatchedVertexMap the mapping between MC particles and their matched vertex positions
+     *  @param  fullCaloHitList the full list of calo hits from which the training sample is drawn
+     *  @param  mcToHitsMap the mapping between MC particles and their contributed hits
+     */
+    void MakeTrainingFile(const std::string &treeName, const VertexHitsMap &vertexHitsMap, const MCVertexMap &mcToMatchedVertexMap,
+        const pandora::CaloHitList &fullCaloHitList, const LArMCParticleHelper::MCContributionMap &mcToHitsMap) const;
 
     /**
      *  @brief  Visualize the hits and vertices for each MC particle

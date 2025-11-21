@@ -92,6 +92,8 @@ StatusCode DlVertexCondensationAlgorithm::PrepareTrainingSample()
         VertexHitsMap vertexHitsMap;
         this->ConsolidateVertices(mcToMatchedVertexMap, mcToHitsMap, vertexHitsMap);
 
+        this->MakeTrainingFile(listname, vertexHitsMap, mcToMatchedVertexMap, *pCaloHitList, mcToHitsMap);
+
         if (m_visualize)
             this->VisualizeByVertex(vertexHitsMap);
 
@@ -203,6 +205,96 @@ void DlVertexCondensationAlgorithm::FilterNeutronInducedParticles(LArMCParticleH
             ++it;
     }
 }
+
+//-----------------------------------------------------------------------------------------------------------------------------------------
+
+void DlVertexCondensationAlgorithm::MakeTrainingFile(const std::string &treeName, const VertexHitsMap &vertexHitsMap,
+    const MCVertexMap &mcToMatchedVertexMap, const CaloHitList &fullCaloHitList, const LArMCParticleHelper::MCContributionMap &mcToHitsMap) const
+{
+    (void)treeName;
+    HitVertexLabelMap hitToVertexLabelMap;
+    HitVertexWeightMap hitToVertexWeightMap;
+    CondensationPointMap hitToCondensationPointMap;
+
+    const int BACKGROUND{-1}, CP{1};
+    // Initialise maps
+    for (const CaloHit *const pCaloHit : fullCaloHitList)
+    {
+        hitToVertexLabelMap[pCaloHit] = IntVector();
+        hitToVertexWeightMap[pCaloHit] = FloatVector();
+        hitToCondensationPointMap[pCaloHit] = BACKGROUND;
+    }
+
+    // Label all hit vertices as condensation points
+    for (const auto &[vertex, caloHitList] : vertexHitsMap)
+    {
+        for (const CaloHit *const pCaloHit : caloHitList)
+        {
+            const CartesianVector &hitPosition{pCaloHit->GetPositionVector()};
+            // The vertex position is identically equal to the corresponding hit position by construction
+            if (hitPosition == vertex)
+                hitToCondensationPointMap[pCaloHit] = CP;
+        }
+    }
+
+    // Associate hits to condensation points
+    for (const CaloHit *const pCaloHit : fullCaloHitList)
+    {
+        const CartesianVector &hitPosition{pCaloHit->GetPositionVector()};
+        // Allow for fuzzy matching of hits to vertices
+        // Get all associated MC particles for the hit
+        const MCParticleWeightMap &mcParticleWeightMap{pCaloHit->GetMCParticleWeightMap()};
+        for (const auto &[pMC, _] : mcParticleWeightMap)
+        {
+            // If an MC particle was filtered out, we want its hits to remain as background and not be associated to a vertex
+            if (mcToHitsMap.find(pMC) == mcToHitsMap.end())
+                continue;
+            if (mcToMatchedVertexMap.find(pMC) != mcToMatchedVertexMap.end())
+            {
+                // Get the associated vertex for the current MC particle of the current hit
+                const CartesianVector &matchedVertex{mcToMatchedVertexMap.at(pMC)};
+                // Get all of the hits associated with the vertex
+                const auto vertexIt{vertexHitsMap.find(matchedVertex)};
+                if (vertexIt != vertexHitsMap.end())
+                {
+                    // If the current hit is associated to the vertex, label it with the vertex index (aligns with the vertexHitsMap order)
+                    const int vertexIndex{static_cast<int>(std::distance(vertexHitsMap.begin(), vertexIt))};
+                    const IntVector &currentLabels(hitToVertexLabelMap.at(pCaloHit));
+                    // Only emplace if not already present (different MC particles can have the same vertex)
+                    if (std::find(currentLabels.begin(), currentLabels.end(), vertexIndex) == currentLabels.end())
+                    {
+                        hitToVertexLabelMap[pCaloHit].emplace_back(vertexIndex);
+                        // Store the distance between the hit and the vertex as weight (to be normalized later)
+                        const float distance{(hitPosition - matchedVertex).GetMagnitude()};
+                        hitToVertexWeightMap[pCaloHit].emplace_back(distance);
+                    }
+                }
+            }
+        }
+    }
+
+    // Print out some info
+    int i{0};
+    for (const auto &[vertex, _] : vertexHitsMap)
+    {
+        std::cout << "Vertex " << i << " at (" << vertex.GetX() << ", " << vertex.GetZ() << ")" << std::endl;
+        ++i;
+    }
+    std::cout << std::endl;
+    for (const auto &[pCaloHit, labels] : hitToVertexLabelMap)
+    {
+        std::cout << "Hit [CP: " << hitToCondensationPointMap.at(pCaloHit) << "] (" << pCaloHit->GetPositionVector().GetX() << ", " <<
+            pCaloHit->GetPositionVector().GetZ() << ") - Labels: ";
+        for (const int label : labels)
+            std::cout << label << " ";
+        std::cout << " Weights: ";
+        const FloatVector &weights{hitToVertexWeightMap.at(pCaloHit)};
+        for (const float weight : weights)
+            std::cout << weight << " ";
+        std::cout << std::endl;
+    }
+}
+
 
 //-----------------------------------------------------------------------------------------------------------------------------------------
 
