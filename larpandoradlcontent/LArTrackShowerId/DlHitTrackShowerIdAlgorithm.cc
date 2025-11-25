@@ -15,6 +15,7 @@
 
 #include "larpandoracontent/LArHelpers/LArFileHelper.h"
 #include "larpandoracontent/LArHelpers/LArPcaHelper.h"
+#include "larpandoracontent/LArObjects/LArCaloHit.h"
 
 #include <chrono>
 #include <cmath>
@@ -463,6 +464,15 @@ StatusCode DlHitTrackShowerIdAlgorithm::Infer()
             const int predictedClass{classes[i].item<int>()};
             const CaloHit *const pCaloHit{caloHitVector[s + i]};
             classHitsMap[predictedClass].push_back(pCaloHit);
+            LArCaloHit *const pLArCaloHit{dynamic_cast<LArCaloHit *>(const_cast<CaloHit *>(pCaloHit))};
+            if (pLArCaloHit)
+            {
+                const float denominator{classProbs[i][0].item<float>() + classProbs[i][2].item<float>()};
+                const float trackProb{denominator > 0.f ? classProbs[i][0].item<float>() / denominator : 1.f};
+                const float showerProb{denominator > 0.f ? classProbs[i][2].item<float>() / denominator : 0.f};
+                pLArCaloHit->SetTrackProbability(trackProb);
+                pLArCaloHit->SetShowerProbability(showerProb);
+            }
         }
 
         for (const auto &[predictedClass, caloHitList] : classHitsMap)
