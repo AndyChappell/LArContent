@@ -447,5 +447,6 @@ void LArMonitoringHelper::FillContingencyTable(
 //------------------------------------------------------------------------------------------------------------------------------------------
 
 template float LArMonitoringHelper::CalcRandIndex(const std::map<const Cluster *const, std::map<const MCParticle *const, int>> &cTable);
+template float LArMonitoringHelper::CalcRandIndex(const std::map<const Cluster *const, std::map<const Cluster *const, int>> &cTable);
 
 } // namespace lar_content
