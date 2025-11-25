@@ -81,7 +81,6 @@ void LArDLHelper::Forward(TorchModel &model, const TorchInputVector &input, Torc
         std::cout << "Error during model forward pass:\n" << e.what() << std::endl;
         throw StatusCodeException(STATUS_CODE_FAILURE);
     }
->>>>>>> 6c30401f (Add support for dictionary-based model output)
 }
 
 } // namespace lar_dl_content
