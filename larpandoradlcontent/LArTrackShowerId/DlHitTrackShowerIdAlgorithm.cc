@@ -376,7 +376,7 @@ StatusCode DlHitTrackShowerIdAlgorithm::Infer()
     FloatVector xx, zz , rr, cosTheta, sinTheta, vv, adc, width;
     this->PopulateInputVectors(*pCaloHitList, bounds, vx, vz, xx, zz, rr, cosTheta, sinTheta, vv, adc, width, caloHitVector);
 
-    PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1, 1, 1));
+    PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), false, DETECTOR_VIEW_XZ, -1, 1, 1));
     // Ensure each run conforms to the maximum sequence length
     size_t totalSize{rr.size()};
     for (size_t s = 0; s < totalSize; s += m_maxSeqLen)
@@ -511,7 +511,8 @@ StatusCode DlHitTrackShowerIdAlgorithm::Infer()
             // Visualise calo hits for class
             if (!caloHitList.empty())
             {
-                PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &caloHitList, categoryName, AUTOITER));
+                PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &caloHitList, categoryName,
+                    predictedClass + 1 == MIP ? BLUE : RED));
             }
         }
         PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
