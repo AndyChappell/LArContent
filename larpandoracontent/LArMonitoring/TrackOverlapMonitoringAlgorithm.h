@@ -82,7 +82,6 @@ private:
     {
         const pandora::CaloHit *pCaloHit;
         int originalCluster;
-        int sequenceIndex;
         double md;
         int suggestedCluster;
     };
