@@ -17,6 +17,7 @@
 #include "larpandoracontent/LArHelpers/LArMvaHelper.h"
 #include "larpandoracontent/LArHelpers/LArVertexHelper.h"
 
+#include "larpandoracontent/LArObjects/LArCaloHit.h"
 #include "larpandoracontent/LArObjects/LArEventTopology.h"
 
 #include "larpandoradlcontent/LArHelpers/LArCanvasHelper.h"
@@ -34,6 +35,7 @@ DlSecondaryVertexingAlgorithm::DlSecondaryVertexingAlgorithm() :
     m_event{-1},
     m_visualise{false},
     m_writeTree{false},
+    m_filterShowerHits{false},
     m_rng(static_cast<std::mt19937::result_type>(std::chrono::high_resolution_clock::now().time_since_epoch().count()))
 {
 }
@@ -157,7 +159,16 @@ StatusCode DlSecondaryVertexingAlgorithm::PrepareTrainingSample()
         featureVector.emplace_back(wireMin[view]);
         featureVector.emplace_back(wireMax[view]);
 
-        for (const CaloHit *pCaloHit : *pCaloHitList)
+        CaloHitList filteredCaloHitList;
+        if (m_filterShowerHits)
+            this->FilterShowerHits(*pCaloHitList2D, filteredCaloHitList);
+        else
+            filteredCaloHitList.insert(filteredCaloHitList.end(), pCaloHitList->begin(), pCaloHitList->end());
+
+        if (filteredCaloHitList.empty())
+            continue;
+
+        for (const CaloHit *pCaloHit : filteredCaloHitList)
         {
             featureVector.emplace_back(static_cast<double>(pCaloHit->GetPositionVector().GetX()));
             featureVector.emplace_back(static_cast<double>(pCaloHit->GetPositionVector().GetZ()));
@@ -209,7 +220,16 @@ StatusCode DlSecondaryVertexingAlgorithm::Infer()
         HitType view{pCaloHitList->front()->GetHitType()};
         LArDLHelper::TorchInput input;
         PixelVector pixelVector;
-        this->MakeNetworkInputFromHits(*pCaloHitList, view, driftMin, driftMax, wireMin[view], wireMax[view], input, pixelVector);
+
+        CaloHitList filteredCaloHitList;
+        if (m_filterShowerHits)
+            this->FilterShowerHits(*pCaloHitList, filteredCaloHitList);
+        else
+            filteredCaloHitList.insert(filteredCaloHitList.end(), pCaloHitList->begin(), pCaloHitList->end());
+        if (filteredCaloHitList.empty())
+            continue;
+
+        this->MakeNetworkInputFromHits(filteredCaloHitList, view, driftMin, driftMax, wireMin[view], wireMax[view], input, pixelVector);
 
         // Run the input through the trained model
         LArDLHelper::TorchInputVector inputs;
@@ -261,6 +281,16 @@ StatusCode DlSecondaryVertexingAlgorithm::Infer()
         {
             if (canvases[view])
                 delete canvases[view];
+        }
+
+        if (m_visualise)
+        {
+            for (const std::string &listname : m_caloHitListNames)
+            {
+                const CaloHitList *pCaloHitList{nullptr};
+                PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetList(*this, listname, pCaloHitList));
+                this->VisualizeVertices(vertexVector, *pCaloHitList);
+            }
         }
 
         return status;
@@ -649,6 +679,78 @@ StatusCode DlSecondaryVertexingAlgorithm::MakeCandidateVertexList(const Cartesia
 
 //-----------------------------------------------------------------------------------------------------------------------------------------
 
+void DlSecondaryVertexingAlgorithm::FilterShowerHits(const CaloHitList &caloHitList, CaloHitList &showerHitList) const
+{
+    for (const CaloHit *pCaloHit : caloHitList)
+    {
+        const LArCaloHit *const pLArCaloHit(dynamic_cast<const LArCaloHit *>(pCaloHit));
+        if (!pLArCaloHit)
+            continue;
+        if (pLArCaloHit->GetTrackProbability() > pLArCaloHit->GetShowerProbability())
+            showerHitList.emplace_back(pCaloHit);
+    }
+}
+
+//-----------------------------------------------------------------------------------------------------------------------------------------
+
+void DlSecondaryVertexingAlgorithm::VisualizeVertices(const CartesianPointVector &vertices, const CaloHitList &caloHitList) const
+{
+    if (caloHitList.empty())
+        return;
+    PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1.f, 1.f, 1.f));
+
+    const MCParticleList *pMCParticleList{nullptr};
+    PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetCurrentList(*this, pMCParticleList));
+    CartesianVector trueVertex3D(0, 0, 0);
+    if (LArMCParticleHelper::GetTrueVertex(pMCParticleList, trueVertex3D))
+    {
+        HitType view{caloHitList.front()->GetHitType()};
+        float x{0.f}, u{0.f}, v{0.f}, w{0.f};
+        const LArTransformationPlugin *transform{this->GetPandora().GetPlugins()->GetLArTransformationPlugin()};
+        LArVertexHelper::GetPositionProjections(trueVertex3D, transform, x, u, v, w);
+        CartesianVector trueVertex(0, 0, 0);
+        switch (view)
+        {
+            case TPC_VIEW_U:
+                trueVertex = CartesianVector(x, 0.f, u);
+                break;
+            case TPC_VIEW_V:
+                trueVertex = CartesianVector(x, 0.f, v);
+                break;
+            case TPC_VIEW_W:
+                trueVertex = CartesianVector(x, 0.f, w);
+                break;
+            default:
+                break;
+        }
+        for (const auto &vertex : vertices)
+        {
+            CartesianVector recoVertex(0, 0, 0);
+            LArVertexHelper::GetPositionProjections(vertex, transform, x, u, v, w);
+            switch (view)
+            {
+                case TPC_VIEW_U:
+                    recoVertex = CartesianVector(x, 0.f, u);
+                    break;
+                case TPC_VIEW_V:
+                    recoVertex = CartesianVector(x, 0.f, v);
+                    break;
+                case TPC_VIEW_W:
+                    recoVertex = CartesianVector(x, 0.f, w);
+                    break;
+                default:
+                    break;
+            }
+            PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &recoVertex, "reco vertex", RED, 2));
+        }
+        PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &trueVertex, "true vertex", BLUE, 2));
+        PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &caloHitList, "hits", BLACK));
+    }
+    PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
+}
+
+//-----------------------------------------------------------------------------------------------------------------------------------------
+
 StatusCode DlSecondaryVertexingAlgorithm::ReadSettings(const TiXmlHandle xmlHandle)
 {
     PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, DlVertexingBaseAlgorithm::ReadSettings(xmlHandle));
@@ -664,6 +766,8 @@ StatusCode DlSecondaryVertexingAlgorithm::ReadSettings(const TiXmlHandle xmlHand
             PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadValue(xmlHandle, "RootFileName", m_rootFileName));
         }
     }
+
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "FilterShowerHits", m_filterShowerHits));
 
     return STATUS_CODE_SUCCESS;
 }

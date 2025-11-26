@@ -126,9 +126,23 @@ private:
      */
     pandora::StatusCode MakeCandidateVertexList(const pandora::CartesianPointVector &positions);
 
+    /**
+     *  @brief  Filter out shower hits from the input calo hit list
+     *
+     *  @param  caloHitList The input calo hit list
+     *  @param  showerHitList The output shower hit list
+     */
+    void FilterShowerHits(const pandora::CaloHitList &caloHitList, pandora::CaloHitList &showerHitList) const;
+
+    /**
+     *  @brief  Visualise the candidate vertices in an event display
+     */
+    void VisualizeVertices(const pandora::CartesianPointVector &vertices, const pandora::CaloHitList &caloHitList) const;
+
     int m_event;                ///< The current event number
     bool m_visualise;           ///< Whether or not to visualise the candidate vertices
     bool m_writeTree;           ///< Whether or not to write validation details to a ROOT tree
+    bool m_filterShowerHits;    ///< Whether or not to filter out shower hits before vertexing
     std::string m_rootTreeName; ///< The ROOT tree name
     std::string m_rootFileName; ///< The ROOT file name
     std::mt19937 m_rng;         ///< The random number generator
