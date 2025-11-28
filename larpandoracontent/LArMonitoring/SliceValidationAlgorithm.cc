@@ -14,6 +14,7 @@
 #include "larpandoracontent/LArHelpers/LArMCParticleHelper.h"
 #include "larpandoracontent/LArHelpers/LArMonitoringHelper.h"
 #include "larpandoracontent/LArHelpers/LArPfoHelper.h"
+#include "larpandoracontent/LArObjects/LArCaloHit.h"
 
 #include "larpandoracontent/LArMonitoring/SliceValidationAlgorithm.h"
 
@@ -53,13 +54,14 @@ StatusCode SliceValidationAlgorithm::Run()
     MCLeadingMap mcToLeadingMap;
     this->CreateMCToLeadingMap(mcToHitsMap, mcToLeadingMap);
 
-    LArMCParticleHelper::MCContributionMap sliceToHitsMap;
+    SliceHitsMap sliceToHitsMap;
     this->CreateSliceToHitsMap(mcToHitsMap, mcToLeadingMap, sliceToHitsMap);
     
-    for (const auto &[pSliceMC, caloHits] : sliceToHitsMap)
+    for (const auto &[pSlice, caloHits] : sliceToHitsMap)
     {
-        std::cout << "Slice MC Particle: PDG=" << std::abs(pSliceMC->GetParticleId()) << " E=" << pSliceMC->GetEnergy()
-                  << " NHits=" << caloHits.size() << std::endl;
+        const auto &[tpcId, pMC] = pSlice;
+        std::cout << "Slice MC Particle: PDG=" << std::abs(pMC->GetParticleId()) << " E=" << pMC->GetEnergy() << " TPC=" << tpcId << " NHits=" <<
+            caloHits.size() << std::endl;
     }
 
     const PfoList *pPfoList{nullptr};
@@ -117,20 +119,42 @@ void SliceValidationAlgorithm::CreateMCToLeadingMap(const LArMCParticleHelper::M
 //------------------------------------------------------------------------------------------------------------------------------------------
 
 void SliceValidationAlgorithm::CreateSliceToHitsMap(const LArMCParticleHelper::MCContributionMap &mcToHitsMap, const MCLeadingMap &mcToLeadingMap,
-    LArMCParticleHelper::MCContributionMap &sliceToHitsMap) const
+    SliceHitsMap &sliceToHitsMap) const
 {
     for (const auto &[pMC, caloHits] : mcToHitsMap)
     {
         const MCParticle *const pLeadingMC{mcToLeadingMap.at(pMC)};
-        if (sliceToHitsMap.find(pLeadingMC) == sliceToHitsMap.end())
-            sliceToHitsMap[pLeadingMC] = CaloHitList();
-        sliceToHitsMap[pLeadingMC].insert(sliceToHitsMap.at(pLeadingMC).end(), caloHits.begin(), caloHits.end());
+        // Find the TPCs with hits for this MCParticle
+        std::set<unsigned int> tpcIdSet;
+        for (const CaloHit *const pCaloHit : caloHits)
+        {
+            const LArCaloHit *const pLArCaloHit{static_cast<const LArCaloHit *>(pCaloHit)};
+            if (pLArCaloHit)
+                tpcIdSet.insert(pLArCaloHit->GetLArTPCVolumeId());
+        }
+        // Initialise the slice entries
+        for (const unsigned int tpcId : tpcIdSet)
+        {
+            const auto key{std::make_pair(tpcId, pLeadingMC)};
+            if (sliceToHitsMap.find(key) == sliceToHitsMap.end())
+                sliceToHitsMap[key] = CaloHitList();
+        }
+        // Populate the slice entries
+        for (const CaloHit *const pCaloHit : caloHits)
+        {
+            const LArCaloHit *const pLArCaloHit{static_cast<const LArCaloHit *>(pCaloHit)};
+            if (pLArCaloHit)
+            {
+                const unsigned int tpcId{pLArCaloHit->GetLArTPCVolumeId()};
+                sliceToHitsMap[{tpcId, pLeadingMC}].emplace_back(pCaloHit);
+            }
+        }
     }
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-void SliceValidationAlgorithm::ValidateSlices(const LArMCParticleHelper::MCContributionMap &mcSlices, const PfoList &recoSlices) const
+void SliceValidationAlgorithm::ValidateSlices(const SliceHitsMap &mcSlices, const PfoList &recoSlices) const
 {
     TrueToRecoSliceMap trueToRecoSliceMap;
     this->MatchRecoToTrueSlices(mcSlices, recoSlices, trueToRecoSliceMap);
@@ -140,8 +164,7 @@ void SliceValidationAlgorithm::ValidateSlices(const LArMCParticleHelper::MCContr
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-void SliceValidationAlgorithm::MatchRecoToTrueSlices(const LArMCParticleHelper::MCContributionMap &mcSlices, const PfoList &recoSlices,
-    TrueToRecoSliceMap &trueToRecoSliceMap) const
+void SliceValidationAlgorithm::MatchRecoToTrueSlices(const SliceHitsMap &mcSlices, const PfoList &recoSlices, TrueToRecoSliceMap &trueToRecoSliceMap) const
 {
     // Loop over the reco slices and find the best matching true slice based on shared calo hits
     for (const Pfo *const pPfo : recoSlices)
@@ -150,14 +173,18 @@ void SliceValidationAlgorithm::MatchRecoToTrueSlices(const LArMCParticleHelper::
         LArPfoHelper::GetAllCaloHits(pPfo, pfoCaloHits);
 
         // Count the number of shared hits between this reco slice and each true slice
-        std::map<const MCParticle *, int> mcHitCountMap;
+        std::map<const SliceIdentifier, int> mcHitCountMap;
         for (const CaloHit *const pCaloHit : pfoCaloHits)
         {
             try
             {
                 const MCParticle *const pMC{MCParticleHelper::GetMainMCParticle(pCaloHit)};
-                if (mcSlices.find(pMC) != mcSlices.end())
-                    mcHitCountMap[pMC]++;
+                const LArCaloHit *const pLArCaloHit{static_cast<const LArCaloHit *>(pCaloHit)};
+                if (!pLArCaloHit)
+                    continue;
+                const auto key{std::make_pair(pLArCaloHit->GetLArTPCVolumeId(), pMC)};
+                if (mcSlices.find(key) != mcSlices.end())
+                    mcHitCountMap[key]++;
             }
             catch (StatusCodeException &)
             {
@@ -166,35 +193,36 @@ void SliceValidationAlgorithm::MatchRecoToTrueSlices(const LArMCParticleHelper::
         }
 
         // Find the true slice with the maximum number of shared hits
-        const MCParticle *pBestMC{nullptr};
+        SliceIdentifier bestSlice{0, nullptr};
         int maxHits{0};
-        for (const auto &[pMC, hitCount] : mcHitCountMap)
+        for (const auto &[slice, hitCount] : mcHitCountMap)
         {
             if (hitCount > maxHits)
             {
                 maxHits = hitCount;
-                pBestMC = pMC;
+                bestSlice = slice;
             }
         }
 
         // Add this reco slice to the map for the best matching true slice
-        if (pBestMC)
+        if (bestSlice.second)
         {
-            if (trueToRecoSliceMap.find(pBestMC) == trueToRecoSliceMap.end())
-                trueToRecoSliceMap[pBestMC] = PfoList();
-            trueToRecoSliceMap[pBestMC].emplace_back(pPfo);
+            if (trueToRecoSliceMap.find(bestSlice) == trueToRecoSliceMap.end())
+                trueToRecoSliceMap[bestSlice] = PfoList();
+            trueToRecoSliceMap[bestSlice].emplace_back(pPfo);
         }
     }
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-void SliceValidationAlgorithm::PopulateRootTree(const TrueToRecoSliceMap &trueToRecoSliceMap, const LArMCParticleHelper::MCContributionMap &mcSlices) const
+void SliceValidationAlgorithm::PopulateRootTree(const TrueToRecoSliceMap &trueToRecoSliceMap, const SliceHitsMap &mcSlices) const
 {
-    ContingencyTable<const MCParticle *const, const Pfo *const> cTable;
+    ContingencyTable<const SliceIdentifier, const Pfo *const> cTable;
     for (const auto &[trueSlice, recoSliceList] : trueToRecoSliceMap)
     {
-        const int pdg{std::abs(trueSlice->GetParticleId())};
+        const MCParticle *pMC{trueSlice.second};
+        const int pdg{std::abs(pMC->GetParticleId())};
         const int isNeutrino{(pdg == NU_E || pdg == NU_MU || pdg == NU_TAU) ? 1 : 0};
 
         const CaloHitList &trueCaloHits{mcSlices.at(trueSlice)};
@@ -234,12 +262,13 @@ void SliceValidationAlgorithm::PopulateRootTree(const TrueToRecoSliceMap &trueTo
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-void SliceValidationAlgorithm::VisualizeSlices(const LArMCParticleHelper::MCContributionMap &mcSlices, const PfoList &recoSlices) const
+void SliceValidationAlgorithm::VisualizeSlices(const SliceHitsMap &mcSlices, const PfoList &recoSlices) const
 {
     PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), false, DETECTOR_VIEW_XZ, -1, 1, 1));
 
-    for (const auto &[pMC, caloHitList] : mcSlices)
+    for (const auto &[slice, caloHitList] : mcSlices)
     {
+        const MCParticle *const pMC{slice.second};
         CaloHitList caloHitsW;
         for (const CaloHit *const pCaloHit : caloHitList)
         {
@@ -268,7 +297,7 @@ void SliceValidationAlgorithm::VisualizeSlices(const LArMCParticleHelper::MCCont
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-void SliceValidationAlgorithm::VisualizeSliceMatches(const TrueToRecoSliceMap &trueToRecoSliceMap, const LArMCParticleHelper::MCContributionMap &mcSlices) const
+void SliceValidationAlgorithm::VisualizeSliceMatches(const TrueToRecoSliceMap &trueToRecoSliceMap, const SliceHitsMap &mcSlices) const
 {
     PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), false, DETECTOR_VIEW_XZ, -1, 1, 1));
 
@@ -319,7 +348,8 @@ void SliceValidationAlgorithm::VisualizeSliceMatches(const TrueToRecoSliceMap &t
                     break;
             }
         }
-        const int pdg{std::abs(trueSlice->GetParticleId())};
+        const MCParticle *const pMC{trueSlice.second};
+        const int pdg{std::abs(pMC->GetParticleId())};
         PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &trueCaloHitsU, "MC(U): " + std::to_string(pdg), BLUE));
         PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &trueCaloHitsV, "MC(V): " + std::to_string(pdg), BLUE));
         PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &trueCaloHitsW, "MC(W): " + std::to_string(pdg), BLUE));
