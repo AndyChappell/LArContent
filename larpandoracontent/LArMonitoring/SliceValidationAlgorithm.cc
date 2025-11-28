@@ -6,9 +6,13 @@
  *  $Log: $
  */
 
+#include <list>
+#include <unordered_set>
+
 #include "Pandora/AlgorithmHeaders.h"
 
 #include "larpandoracontent/LArHelpers/LArMCParticleHelper.h"
+#include "larpandoracontent/LArHelpers/LArMonitoringHelper.h"
 #include "larpandoracontent/LArHelpers/LArPfoHelper.h"
 
 #include "larpandoracontent/LArMonitoring/SliceValidationAlgorithm.h"
@@ -20,6 +24,20 @@ namespace lar_content
 
 SliceValidationAlgorithm::SliceValidationAlgorithm()
 {
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+SliceValidationAlgorithm::~SliceValidationAlgorithm()
+{
+    try
+    {
+        PANDORA_MONITORING_API(SaveTree(this->GetPandora(), m_rootTreeName, m_rootFileName, "RECREATE"));
+    }
+    catch (StatusCodeException e)
+    {
+        std::cout << "SliceValidationAlgorithm: Unable to write to ROOT tree" << std::endl;
+    }
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
@@ -171,6 +189,51 @@ void SliceValidationAlgorithm::MatchRecoToTrueSlices(const LArMCParticleHelper::
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
+void SliceValidationAlgorithm::PopulateRootTree(const TrueToRecoSliceMap &trueToRecoSliceMap, const LArMCParticleHelper::MCContributionMap &mcSlices) const
+{
+    ContingencyTable<const MCParticle *const, const Pfo *const> cTable;
+    for (const auto &[trueSlice, recoSliceList] : trueToRecoSliceMap)
+    {
+        const int pdg{std::abs(trueSlice->GetParticleId())};
+        const int isNeutrino{(pdg == NU_E || pdg == NU_MU || pdg == NU_TAU) ? 1 : 0};
+
+        const CaloHitList &trueCaloHits{mcSlices.at(trueSlice)};
+        const int trueNHits{static_cast<int>(trueCaloHits.size())};
+
+        const int nRecoSlices{static_cast<int>(recoSliceList.size())};
+
+        for (const Pfo *const recoSlice : recoSliceList)
+        {
+            cTable[trueSlice][recoSlice]++;
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "is_true_neutrino", &isNeutrino));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "true_n_hits", &trueNHits));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "n_reco_slices", &nRecoSlices));
+
+            CaloHitList recoCaloHits;
+            LArPfoHelper::GetAllCaloHits(recoSlice, recoCaloHits);
+            const int recoNHits{static_cast<int>(recoCaloHits.size())};
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "reco_n_hits", &recoNHits));
+
+            CaloHitList intersection;
+            this->FindSetIntersection(trueCaloHits, recoCaloHits, intersection);
+            const float purity{(recoNHits > 0) ? static_cast<float>(intersection.size()) / static_cast<float>(recoNHits) : 0.f};
+            const float completeness{(trueNHits > 0) ? static_cast<float>(intersection.size()) / static_cast<float>(trueNHits) : 0.f};
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "reco_slice_purity", &purity));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "reco_slice_completeness", &completeness));
+
+            PANDORA_MONITORING_API(FillTree(this->GetPandora(), m_rootTreeName));
+
+            // Should make allowances for cathode crossing cosmics - here we expect two reco slices to match one true slice
+            // Most likely have a simple conditional that partitions the true slice about x = 0 - this allows for spltting within
+            // a TPC if that still happens, while not penalising for cathode crossing
+        }
+    }
+    const float ari{LArMonitoringHelper::CalcRandIndex(cTable)};
+    std::cout << "Event ARI: " << ari << std::endl;
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
 void SliceValidationAlgorithm::VisualizeSlices(const LArMCParticleHelper::MCContributionMap &mcSlices, const PfoList &recoSlices) const
 {
     PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), false, DETECTOR_VIEW_XZ, -1, 1, 1));
@@ -267,10 +330,24 @@ void SliceValidationAlgorithm::VisualizeSliceMatches(const TrueToRecoSliceMap &t
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
+void SliceValidationAlgorithm::FindSetIntersection(const CaloHitList &caloHitListA, const CaloHitList &caloHitListB, CaloHitList &intersection) const
+{
+    std::unordered_set<const CaloHit *> setB(caloHitListB.begin(), caloHitListB.end());
+    for (const CaloHit *const pCaloHit : caloHitListA)
+	{
+        if (setB.count(pCaloHit))
+            intersection.emplace_back(pCaloHit);
+    }
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
 StatusCode SliceValidationAlgorithm::ReadSettings(const TiXmlHandle xmlHandle)
 {
     PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadValue(xmlHandle, "CaloHitListName", m_caloHitListName));
     PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadValue(xmlHandle, "PfoListName", m_pfoListName));
+    PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadValue(xmlHandle, "RootTreeName", m_rootTreeName));
+    PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadValue(xmlHandle, "RootFileName", m_rootFileName));
 
     return STATUS_CODE_SUCCESS;
 }

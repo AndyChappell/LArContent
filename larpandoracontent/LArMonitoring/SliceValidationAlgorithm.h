@@ -26,8 +26,16 @@ public:
      */
     SliceValidationAlgorithm();
 
+    /**
+     *  @brief  Destructor
+     */
+    ~SliceValidationAlgorithm();
+
 private:
     typedef std::map<const pandora::MCParticle *, const pandora::MCParticle *> MCLeadingMap;
+
+    template <typename Ti, typename Tj>
+    using ContingencyTable = std::map<Ti, std::map<Tj, int>>;
 
     pandora::StatusCode Run();
     pandora::StatusCode ReadSettings(const pandora::TiXmlHandle xmlHandle);
@@ -67,8 +75,25 @@ private:
     void ValidateSlices(const LArMCParticleHelper::MCContributionMap &mcSlices, const pandora::PfoList &recoSlices) const;
 
     typedef std::map<const pandora::MCParticle *, pandora::PfoList> TrueToRecoSliceMap;
+    /**
+     *  @brief  Match reconstructed slices to true slices
+     *
+     *  @param  mcSlices the mc slices
+     *  @param  recoSlices the reconstructed slices
+     *  @param  trueToRecoSliceMap the true to reco slice map to be filled
+     */
     void MatchRecoToTrueSlices(const LArMCParticleHelper::MCContributionMap &mcSlices, const pandora::PfoList &recoSlices,
         TrueToRecoSliceMap &trueToRecoSliceMap) const;
+
+    /**
+     *  @brief  Build a root tree with various slice reconstruction metrics.
+     *          Computes slice efficiency, purity, completeness and ARI, alongside neutrino or cosmic tags and total slice ADC
+     *          to permit weighting of metrics by slice size.
+     *
+     *  @param  trueToRecoSliceMap the true to reco slice map
+     *  @param  mcSlices the mc slices
+     */
+    void PopulateRootTree(const TrueToRecoSliceMap &trueToRecoSliceMap, const LArMCParticleHelper::MCContributionMap &mcSlices) const;
 
     /**
      *  @brief  Visualize the slices
@@ -86,8 +111,20 @@ private:
      */
     void VisualizeSliceMatches(const TrueToRecoSliceMap &trueToRecoSliceMap, const LArMCParticleHelper::MCContributionMap &mcSlices) const;
 
+    /**
+     *  @brief  Find the intersection of two calo hit lists
+     *
+     *  @param  listA the first calo hit list
+     *  @param  listB the second calo hit list
+     *  @param  intersection the calo hit list to be filled with the intersection
+     */
+    void FindSetIntersection(const pandora::CaloHitList &listA, const pandora::CaloHitList &listB,
+        pandora::CaloHitList &intersection) const;
+
     std::string m_caloHitListName; ///< Name of input calo hit list
     std::string m_pfoListName; ///< Name of input pfo list
+    std::string m_rootFileName; ///< Name of output root file
+    std::string m_rootTreeName; ///< Name of output root tree
 };
 
 } // namespace lar_content
