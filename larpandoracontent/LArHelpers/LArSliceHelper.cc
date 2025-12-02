@@ -50,4 +50,30 @@ void LArSliceHelper::GetSliceToHitsMap(const LArMCParticleHelper::MCContribution
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
+void LArSliceHelper::FilterSlices(const int pdg, SliceHitsMap &sliceToHitsMap, CaloHitList &backgroundHits)
+{
+    for (auto it = sliceToHitsMap.begin(); it != sliceToHitsMap.end();)
+    {
+        const MCParticle *const pMC{it->first.second};
+        if (std::abs(pMC->GetParticleId()) == pdg)
+        {
+            const CaloHitList &hitsToRemove{it->second};
+            backgroundHits.insert(backgroundHits.end(), hitsToRemove.begin(), hitsToRemove.end());
+            it = sliceToHitsMap.erase(it);
+        }
+        else
+        {
+            ++it;
+        }
+    }
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+void LArSliceHelper::FilterSlices(const IntVector pdgs, SliceHitsMap &sliceToHitsMap, CaloHitList &backgroundHits)
+{
+    for (const int pdg : pdgs)
+        LArSliceHelper::FilterSlices(pdg, sliceToHitsMap, backgroundHits);
+}
+
 } // namespace lar_content
