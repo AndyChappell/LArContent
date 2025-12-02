@@ -72,19 +72,21 @@ private:
      * *  @brief  Validate the slices
      *
      *  @param  mcSlices the mc slices
+     *  @param  mcToLeadingMap the mc to leading map
      *  @param  recoSlices the reconstructed slices
      */
-    void ValidateSlices(const SliceHitsMap &mcSlices, const pandora::PfoList &recoSlices) const;
+    void ValidateSlices(const SliceHitsMap &mcSlices, const MCLeadingMap &mcToLeadingMap, const pandora::PfoList &recoSlices) const;
 
     typedef std::map<const SliceIdentifier, pandora::PfoList> TrueToRecoSliceMap;
     /**
      *  @brief  Match reconstructed slices to true slices
      *
      *  @param  mcSlices the mc slices
+     *  @param  mcToLeadingMap the mc to leading map
      *  @param  recoSlices the reconstructed slices
      *  @param  trueToRecoSliceMap the true to reco slice map to be filled
      */
-    void MatchRecoToTrueSlices(const SliceHitsMap &mcSlices, const pandora::PfoList &recoSlices,
+    void MatchRecoToTrueSlices(const SliceHitsMap &mcSlices, const MCLeadingMap &mcToLeadingMap, const pandora::PfoList &recoSlices,
         TrueToRecoSliceMap &trueToRecoSliceMap) const;
 
     /**
@@ -127,6 +129,7 @@ private:
     std::string m_pfoListName; ///< Name of input pfo list
     std::string m_rootFileName; ///< Name of output root file
     std::string m_rootTreeName; ///< Name of output root tree
+    bool m_visualize; ///< Whether to visualize slices and matches
 };
 
 } // namespace lar_content
