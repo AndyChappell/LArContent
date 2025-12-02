@@ -50,7 +50,7 @@ StatusCode SliceValidationAlgorithm::Run()
     PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetList(*this, m_caloHitListName, pCaloHitList));
 
     LArMCParticleHelper::MCContributionMap mcToHitsMap;
-    this->CreateMCToHitsMap(*pCaloHitList, mcToHitsMap);
+    LArMCParticleHelper::GetMCToHitsMap(*pCaloHitList, mcToHitsMap, false);
 
     MCLeadingMap mcToLeadingMap;
     this->CreateMCToLeadingMap(mcToHitsMap, mcToLeadingMap);
