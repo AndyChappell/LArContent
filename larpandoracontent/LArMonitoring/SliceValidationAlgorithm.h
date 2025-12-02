@@ -11,6 +11,7 @@
 #include "Pandora/Algorithm.h"
 
 #include "larpandoracontent/LArHelpers/LArMCParticleHelper.h"
+#include "larpandoracontent/LArHelpers/LArSliceHelper.h"
 
 namespace lar_content
 {
@@ -32,24 +33,11 @@ public:
     ~SliceValidationAlgorithm();
 
 private:
-    typedef std::pair<unsigned int, const pandora::MCParticle *> SliceIdentifier;
-    typedef std::map<SliceIdentifier, pandora::CaloHitList> SliceHitsMap;
-
     template <typename Ti, typename Tj>
     using ContingencyTable = std::map<Ti, std::map<Tj, int>>;
 
     pandora::StatusCode Run();
     pandora::StatusCode ReadSettings(const pandora::TiXmlHandle xmlHandle);
-
-    /**
-     *  @brief  Create a map from slices to calo hits
-     *
-     *  @param  mcToHitsMap the mc to hits map
-     *  @param  mcToLeadingMap the mc to leading map
-     *  @param  sliceToHitsMap the slice to hits map to be filled
-     */
-    void CreateSliceToHitsMap(const LArMCParticleHelper::MCContributionMap &mcToHitsMap, const LArMCParticleHelper::MCLeadingMap &mcToLeadingMap,
-        SliceHitsMap &sliceToHitsMap) const;
 
     /**
      * *  @brief  Validate the slices
@@ -58,9 +46,10 @@ private:
      *  @param  mcToLeadingMap the mc to leading map
      *  @param  recoSlices the reconstructed slices
      */
-    void ValidateSlices(const SliceHitsMap &mcSlices, const LArMCParticleHelper::MCLeadingMap &mcToLeadingMap, const pandora::PfoList &recoSlices) const;
+    void ValidateSlices(const LArSliceHelper::SliceHitsMap &mcSlices, const LArMCParticleHelper::MCLeadingMap &mcToLeadingMap,
+        const pandora::PfoList &recoSlices) const;
 
-    typedef std::map<const SliceIdentifier, pandora::PfoList> TrueToRecoSliceMap;
+    typedef std::map<const LArSliceHelper::SliceIdentifier, pandora::PfoList> TrueToRecoSliceMap;
     /**
      *  @brief  Match reconstructed slices to true slices
      *
@@ -69,8 +58,8 @@ private:
      *  @param  recoSlices the reconstructed slices
      *  @param  trueToRecoSliceMap the true to reco slice map to be filled
      */
-    void MatchRecoToTrueSlices(const SliceHitsMap &mcSlices, const LArMCParticleHelper::MCLeadingMap &mcToLeadingMap, const pandora::PfoList &recoSlices,
-        TrueToRecoSliceMap &trueToRecoSliceMap) const;
+    void MatchRecoToTrueSlices(const LArSliceHelper::SliceHitsMap &mcSlices, const LArMCParticleHelper::MCLeadingMap &mcToLeadingMap,
+        const pandora::PfoList &recoSlices, TrueToRecoSliceMap &trueToRecoSliceMap) const;
 
     /**
      *  @brief  Build a root tree with various slice reconstruction metrics.
@@ -80,7 +69,7 @@ private:
      *  @param  trueToRecoSliceMap the true to reco slice map
      *  @param  mcSlices the mc slices
      */
-    void PopulateRootTree(const TrueToRecoSliceMap &trueToRecoSliceMap, const SliceHitsMap &mcSlices) const;
+    void PopulateRootTree(const TrueToRecoSliceMap &trueToRecoSliceMap, const LArSliceHelper::SliceHitsMap &mcSlices) const;
 
     /**
      *  @brief  Visualize the slices
@@ -88,7 +77,7 @@ private:
      *  @param  mcSlices the mc slices
      *  @param  recoSlices the reconstructed slices
      */
-    void VisualizeSlices(const SliceHitsMap &mcSlices, const pandora::PfoList &recoSlices) const;
+    void VisualizeSlices(const LArSliceHelper::SliceHitsMap &mcSlices, const pandora::PfoList &recoSlices) const;
 
     /**
      *  @brief  Visualize the slice matches
@@ -96,7 +85,7 @@ private:
      *  @param  trueToRecoSliceMap the true to reco slice map
      *  @param  mcSlices the mc slices
      */
-    void VisualizeSliceMatches(const TrueToRecoSliceMap &trueToRecoSliceMap, const SliceHitsMap &mcSlices) const;
+    void VisualizeSliceMatches(const TrueToRecoSliceMap &trueToRecoSliceMap, const LArSliceHelper::SliceHitsMap &mcSlices) const;
 
     /**
      *  @brief  Find the intersection of two calo hit lists

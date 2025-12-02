@@ -14,6 +14,7 @@
 #include "larpandoracontent/LArHelpers/LArMCParticleHelper.h"
 #include "larpandoracontent/LArHelpers/LArMonitoringHelper.h"
 #include "larpandoracontent/LArHelpers/LArPfoHelper.h"
+#include "larpandoracontent/LArHelpers/LArSliceHelper.h"
 #include "larpandoracontent/LArObjects/LArCaloHit.h"
 
 #include "larpandoracontent/LArMonitoring/SliceValidationAlgorithm.h"
@@ -55,8 +56,8 @@ StatusCode SliceValidationAlgorithm::Run()
     LArMCParticleHelper::MCLeadingMap mcToLeadingMap;
     LArMCParticleHelper::GetMCToLeadingMap(mcToHitsMap, mcToLeadingMap);
 
-    SliceHitsMap sliceToHitsMap;
-    this->CreateSliceToHitsMap(mcToHitsMap, mcToLeadingMap, sliceToHitsMap);
+    LArSliceHelper::SliceHitsMap sliceToHitsMap;
+    LArSliceHelper::GetSliceToHitsMap(mcToHitsMap, mcToLeadingMap, sliceToHitsMap);
     
     for (const auto &[pSlice, caloHits] : sliceToHitsMap)
     {
@@ -86,43 +87,7 @@ StatusCode SliceValidationAlgorithm::Run()
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-void SliceValidationAlgorithm::CreateSliceToHitsMap(const LArMCParticleHelper::MCContributionMap &mcToHitsMap,
-    const LArMCParticleHelper::MCLeadingMap &mcToLeadingMap, SliceHitsMap &sliceToHitsMap) const
-{
-    for (const auto &[pMC, caloHits] : mcToHitsMap)
-    {
-        const MCParticle *const pLeadingMC{mcToLeadingMap.at(pMC)};
-        // Find the TPCs with hits for this MCParticle
-        std::set<unsigned int> tpcIdSet;
-        for (const CaloHit *const pCaloHit : caloHits)
-        {
-            const LArCaloHit *const pLArCaloHit{static_cast<const LArCaloHit *>(pCaloHit)};
-            if (pLArCaloHit)
-                tpcIdSet.insert(pLArCaloHit->GetLArTPCVolumeId());
-        }
-        // Initialise the slice entries
-        for (const unsigned int tpcId : tpcIdSet)
-        {
-            const auto key{std::make_pair(tpcId, pLeadingMC)};
-            if (sliceToHitsMap.find(key) == sliceToHitsMap.end())
-                sliceToHitsMap[key] = CaloHitList();
-        }
-        // Populate the slice entries
-        for (const CaloHit *const pCaloHit : caloHits)
-        {
-            const LArCaloHit *const pLArCaloHit{static_cast<const LArCaloHit *>(pCaloHit)};
-            if (pLArCaloHit)
-            {
-                const unsigned int tpcId{pLArCaloHit->GetLArTPCVolumeId()};
-                sliceToHitsMap[{tpcId, pLeadingMC}].emplace_back(pCaloHit);
-            }
-        }
-    }
-}
-
-//------------------------------------------------------------------------------------------------------------------------------------------
-
-void SliceValidationAlgorithm::ValidateSlices(const SliceHitsMap &mcSlices, const LArMCParticleHelper::MCLeadingMap &mcToLeadingMap,
+void SliceValidationAlgorithm::ValidateSlices(const LArSliceHelper::SliceHitsMap &mcSlices, const LArMCParticleHelper::MCLeadingMap &mcToLeadingMap,
     const PfoList &recoSlices) const
 {
     TrueToRecoSliceMap trueToRecoSliceMap;
@@ -135,7 +100,7 @@ void SliceValidationAlgorithm::ValidateSlices(const SliceHitsMap &mcSlices, cons
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-void SliceValidationAlgorithm::MatchRecoToTrueSlices(const SliceHitsMap &mcSlices, const LArMCParticleHelper::MCLeadingMap &mcToLeadingMap,
+void SliceValidationAlgorithm::MatchRecoToTrueSlices(const LArSliceHelper::SliceHitsMap &mcSlices, const LArMCParticleHelper::MCLeadingMap &mcToLeadingMap,
     const PfoList &recoSlices, TrueToRecoSliceMap &trueToRecoSliceMap) const
 {
     // Loop over the reco slices and find the best matching true slice based on shared calo hits
@@ -145,7 +110,7 @@ void SliceValidationAlgorithm::MatchRecoToTrueSlices(const SliceHitsMap &mcSlice
         LArPfoHelper::GetAllCaloHits(pPfo, pfoCaloHits);
 
         // Count the number of shared hits between this reco slice and each true slice
-        std::map<const SliceIdentifier, int> mcHitCountMap;
+        std::map<const LArSliceHelper::SliceIdentifier, int> mcHitCountMap;
         for (const CaloHit *const pCaloHit : pfoCaloHits)
         {
             try
@@ -166,7 +131,7 @@ void SliceValidationAlgorithm::MatchRecoToTrueSlices(const SliceHitsMap &mcSlice
         }
 
         // Find the true slice with the maximum number of shared hits
-        SliceIdentifier bestSlice{0, nullptr};
+        LArSliceHelper::SliceIdentifier bestSlice{0, nullptr};
         int maxHits{0};
         for (const auto &[slice, hitCount] : mcHitCountMap)
         {
@@ -189,7 +154,7 @@ void SliceValidationAlgorithm::MatchRecoToTrueSlices(const SliceHitsMap &mcSlice
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-void SliceValidationAlgorithm::PopulateRootTree(const TrueToRecoSliceMap &trueToRecoSliceMap, const SliceHitsMap &mcSlices) const
+void SliceValidationAlgorithm::PopulateRootTree(const TrueToRecoSliceMap &trueToRecoSliceMap, const LArSliceHelper::SliceHitsMap &mcSlices) const
 {
     //ContingencyTable<const SliceIdentifier, const Pfo *const> cTable;
     for (const auto &[trueSlice, recoSliceList] : trueToRecoSliceMap)
@@ -232,7 +197,7 @@ void SliceValidationAlgorithm::PopulateRootTree(const TrueToRecoSliceMap &trueTo
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-void SliceValidationAlgorithm::VisualizeSlices(const SliceHitsMap &mcSlices, const PfoList &recoSlices) const
+void SliceValidationAlgorithm::VisualizeSlices(const LArSliceHelper::SliceHitsMap &mcSlices, const PfoList &recoSlices) const
 {
     PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), false, DETECTOR_VIEW_XZ, -1, 1, 1));
 
@@ -267,7 +232,7 @@ void SliceValidationAlgorithm::VisualizeSlices(const SliceHitsMap &mcSlices, con
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-void SliceValidationAlgorithm::VisualizeSliceMatches(const TrueToRecoSliceMap &trueToRecoSliceMap, const SliceHitsMap &mcSlices) const
+void SliceValidationAlgorithm::VisualizeSliceMatches(const TrueToRecoSliceMap &trueToRecoSliceMap, const LArSliceHelper::SliceHitsMap &mcSlices) const
 {
     PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), false, DETECTOR_VIEW_XZ, -1, 1, 1));
 
