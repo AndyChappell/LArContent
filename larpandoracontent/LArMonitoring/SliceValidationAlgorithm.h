@@ -32,7 +32,6 @@ public:
     ~SliceValidationAlgorithm();
 
 private:
-    typedef std::map<const pandora::MCParticle *, const pandora::MCParticle *> MCLeadingMap;
     typedef std::pair<unsigned int, const pandora::MCParticle *> SliceIdentifier;
     typedef std::map<SliceIdentifier, pandora::CaloHitList> SliceHitsMap;
 
@@ -43,29 +42,13 @@ private:
     pandora::StatusCode ReadSettings(const pandora::TiXmlHandle xmlHandle);
 
     /**
-     *  @brief  Create a map from MCParticles to the calo hits they contribute to
-     *
-     *  @param  caloHitList the calo hit list
-     *  @param  mcToHitsMap the mc to hits map to be filled
-     */
-    void CreateMCToHitsMap(const pandora::CaloHitList &caloHitList, LArMCParticleHelper::MCContributionMap &mcToHitsMap) const;
-
-    /**
-     *  @brief  Create a map from MCParticles to their leading MCParticle ancestor
-     *
-     *  @param  mcToHitsMap the mc to hits map
-     *  @param  mcToLeadingMap the mc to leading map to be filled
-     */
-    void CreateMCToLeadingMap(const LArMCParticleHelper::MCContributionMap &mcToHitsMap, MCLeadingMap &mcToLeadingMap) const;
-
-    /**
      *  @brief  Create a map from slices to calo hits
      *
      *  @param  mcToHitsMap the mc to hits map
      *  @param  mcToLeadingMap the mc to leading map
      *  @param  sliceToHitsMap the slice to hits map to be filled
      */
-    void CreateSliceToHitsMap(const LArMCParticleHelper::MCContributionMap &mcToHitsMap, const MCLeadingMap &mcToLeadingMap,
+    void CreateSliceToHitsMap(const LArMCParticleHelper::MCContributionMap &mcToHitsMap, const LArMCParticleHelper::MCLeadingMap &mcToLeadingMap,
         SliceHitsMap &sliceToHitsMap) const;
 
     /**
@@ -75,7 +58,7 @@ private:
      *  @param  mcToLeadingMap the mc to leading map
      *  @param  recoSlices the reconstructed slices
      */
-    void ValidateSlices(const SliceHitsMap &mcSlices, const MCLeadingMap &mcToLeadingMap, const pandora::PfoList &recoSlices) const;
+    void ValidateSlices(const SliceHitsMap &mcSlices, const LArMCParticleHelper::MCLeadingMap &mcToLeadingMap, const pandora::PfoList &recoSlices) const;
 
     typedef std::map<const SliceIdentifier, pandora::PfoList> TrueToRecoSliceMap;
     /**
@@ -86,7 +69,7 @@ private:
      *  @param  recoSlices the reconstructed slices
      *  @param  trueToRecoSliceMap the true to reco slice map to be filled
      */
-    void MatchRecoToTrueSlices(const SliceHitsMap &mcSlices, const MCLeadingMap &mcToLeadingMap, const pandora::PfoList &recoSlices,
+    void MatchRecoToTrueSlices(const SliceHitsMap &mcSlices, const LArMCParticleHelper::MCLeadingMap &mcToLeadingMap, const pandora::PfoList &recoSlices,
         TrueToRecoSliceMap &trueToRecoSliceMap) const;
 
     /**

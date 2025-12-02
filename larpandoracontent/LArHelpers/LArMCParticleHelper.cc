@@ -540,6 +540,19 @@ void LArMCParticleHelper::GetMCToHitsMap(const CaloHitList *const pCaloHitList2D
         pMCParticleList, pCaloHitList2D, parameters, LArMCParticleHelper::IsBeamNeutrinoFinalState, mcToHitsMap);
 }
 
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+void LArMCParticleHelper::GetMCToLeadingMap(const LArMCParticleHelper::MCContributionMap &mcToHitsMap, MCLeadingMap &mcToLeadingMap)
+{
+    for (const auto &[pMC, _] : mcToHitsMap)
+    {
+        const MCParticle *pParent{pMC};
+        while (!pParent->GetParentList().empty())
+            pParent = pParent->GetParentList().front();
+        mcToLeadingMap[pMC] = pParent;
+    }
+}
+
 //-----------------------------------------------------------------------------------------------------------------------------------------
 
 void LArMCParticleHelper::CompleteMCHierarchy(const LArMCParticleHelper::MCContributionMap &mcToHitsMap, MCParticleList &mcHierarchy)

@@ -35,6 +35,8 @@ public:
     typedef std::unordered_map<const pandora::MCParticle *, pandora::CaloHitList> MCContributionMap;
     typedef std::vector<MCContributionMap> MCContributionMapVector;
 
+    typedef std::map<const pandora::MCParticle *, const pandora::MCParticle *> MCLeadingMap;
+
     typedef std::unordered_map<const pandora::Cluster *, pandora::CaloHitList> ClusterContributionMap;
     typedef std::unordered_map<const pandora::ParticleFlowObject *, pandora::CaloHitList> PfoContributionMap;
     typedef std::unordered_map<const pandora::MCParticle *, PfoContributionMap> MCToPfoMatchingMap;
@@ -310,6 +312,14 @@ public:
      **/
     static void GetMCToHitsMap(const pandora::CaloHitList *const pCaloHitList2S, const pandora::MCParticleList *const pMCParticleList,
         LArMCParticleHelper::MCContributionMap &mcToHitsMap);
+
+    /**
+     *  @brief  Retrieve a map from MCParticles to their leading MCParticle ancestor
+     *
+     *  @param  mcToHitsMap the mc to hits map
+     *  @param  mcToLeadingMap the mc to leading map to be filled
+     */
+    static void GetMCToLeadingMap(const LArMCParticleHelper::MCContributionMap &mcToHitsMap, MCLeadingMap &mcToLeadingMap);
 
     /*
      *  @brief  Construct a list of the MC particles from the MC to calo hits map, completing the interaction hierarchy with the invisible

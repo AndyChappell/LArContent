@@ -52,8 +52,8 @@ StatusCode SliceValidationAlgorithm::Run()
     LArMCParticleHelper::MCContributionMap mcToHitsMap;
     LArMCParticleHelper::GetMCToHitsMap(*pCaloHitList, mcToHitsMap, false);
 
-    MCLeadingMap mcToLeadingMap;
-    this->CreateMCToLeadingMap(mcToHitsMap, mcToLeadingMap);
+    LArMCParticleHelper::MCLeadingMap mcToLeadingMap;
+    LArMCParticleHelper::GetMCToLeadingMap(mcToHitsMap, mcToLeadingMap);
 
     SliceHitsMap sliceToHitsMap;
     this->CreateSliceToHitsMap(mcToHitsMap, mcToLeadingMap, sliceToHitsMap);
@@ -86,41 +86,8 @@ StatusCode SliceValidationAlgorithm::Run()
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-void SliceValidationAlgorithm::CreateMCToHitsMap(const CaloHitList &caloHitList, LArMCParticleHelper::MCContributionMap &mcToHitsMap) const
-{
-    for (const CaloHit *const pCaloHit : caloHitList)
-    {
-        try
-        {
-            const MCParticle *const pMC{MCParticleHelper::GetMainMCParticle(pCaloHit)};
-            if (mcToHitsMap.find(pMC) == mcToHitsMap.end())
-                mcToHitsMap[pMC] = CaloHitList();
-            mcToHitsMap[pMC].emplace_back(pCaloHit);
-        }
-        catch (StatusCodeException &)
-        {
-            continue;
-        }
-    }
-}
-
-//------------------------------------------------------------------------------------------------------------------------------------------
-
-void SliceValidationAlgorithm::CreateMCToLeadingMap(const LArMCParticleHelper::MCContributionMap &mcToHitsMap, MCLeadingMap &mcToLeadingMap) const
-{
-    for (const auto &[pMC, _] : mcToHitsMap)
-    {
-        const MCParticle *pParent{pMC};
-        while (!pParent->GetParentList().empty())
-            pParent = pParent->GetParentList().front();
-        mcToLeadingMap[pMC] = pParent;
-    }
-}
-
-//------------------------------------------------------------------------------------------------------------------------------------------
-
-void SliceValidationAlgorithm::CreateSliceToHitsMap(const LArMCParticleHelper::MCContributionMap &mcToHitsMap, const MCLeadingMap &mcToLeadingMap,
-    SliceHitsMap &sliceToHitsMap) const
+void SliceValidationAlgorithm::CreateSliceToHitsMap(const LArMCParticleHelper::MCContributionMap &mcToHitsMap,
+    const LArMCParticleHelper::MCLeadingMap &mcToLeadingMap, SliceHitsMap &sliceToHitsMap) const
 {
     for (const auto &[pMC, caloHits] : mcToHitsMap)
     {
@@ -155,7 +122,8 @@ void SliceValidationAlgorithm::CreateSliceToHitsMap(const LArMCParticleHelper::M
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-void SliceValidationAlgorithm::ValidateSlices(const SliceHitsMap &mcSlices, const MCLeadingMap &mcToLeadingMap, const PfoList &recoSlices) const
+void SliceValidationAlgorithm::ValidateSlices(const SliceHitsMap &mcSlices, const LArMCParticleHelper::MCLeadingMap &mcToLeadingMap,
+    const PfoList &recoSlices) const
 {
     TrueToRecoSliceMap trueToRecoSliceMap;
     this->MatchRecoToTrueSlices(mcSlices, mcToLeadingMap, recoSlices, trueToRecoSliceMap);
@@ -167,8 +135,8 @@ void SliceValidationAlgorithm::ValidateSlices(const SliceHitsMap &mcSlices, cons
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-void SliceValidationAlgorithm::MatchRecoToTrueSlices(const SliceHitsMap &mcSlices, const MCLeadingMap &mcToLeadingMap, const PfoList &recoSlices,
-    TrueToRecoSliceMap &trueToRecoSliceMap) const
+void SliceValidationAlgorithm::MatchRecoToTrueSlices(const SliceHitsMap &mcSlices, const LArMCParticleHelper::MCLeadingMap &mcToLeadingMap,
+    const PfoList &recoSlices, TrueToRecoSliceMap &trueToRecoSliceMap) const
 {
     // Loop over the reco slices and find the best matching true slice based on shared calo hits
     for (const Pfo *const pPfo : recoSlices)
