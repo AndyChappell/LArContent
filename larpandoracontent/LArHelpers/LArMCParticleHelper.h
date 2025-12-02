@@ -321,6 +321,13 @@ public:
      */
     static void GetMCToLeadingMap(const LArMCParticleHelper::MCContributionMap &mcToHitsMap, MCLeadingMap &mcToLeadingMap);
 
+    /**
+     *  @brief  Filter out particles with the given (absolute) PDG code, and their children
+     *
+     *  @param  mcToHitsMap the mapping between MC particles and their contributed hits
+     */
+    static void FilterParticles(const int pdg, LArMCParticleHelper::MCContributionMap &mcToHitsMap);
+
     /*
      *  @brief  Construct a list of the MC particles from the MC to calo hits map, completing the interaction hierarchy with the invisible
      *          upstream particles.

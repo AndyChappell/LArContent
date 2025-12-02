@@ -555,6 +555,38 @@ void LArMCParticleHelper::GetMCToLeadingMap(const LArMCParticleHelper::MCContrib
 
 //-----------------------------------------------------------------------------------------------------------------------------------------
 
+void LArMCParticleHelper::FilterParticles(const int pdg, LArMCParticleHelper::MCContributionMap &mcToHitsMap)
+{
+    for (auto it = mcToHitsMap.begin(); it != mcToHitsMap.end();)
+    {
+        const MCParticle *const pMC{it->first};
+        bool foundTargetParent{false};
+        if (std::abs(pMC->GetParticleId()) == pdg)
+        {
+            it = mcToHitsMap.erase(it);
+            foundTargetParent = true;
+        }
+        else
+        {
+            const MCParticle *pCurrentMC{pMC};
+            while (!pCurrentMC->GetParentList().empty())
+            {
+                pCurrentMC = pCurrentMC->GetParentList().front();
+                if (std::abs(pCurrentMC->GetParticleId()) == pdg)
+                {
+                    it = mcToHitsMap.erase(it);
+                    foundTargetParent = true;
+                    break;
+                }
+            }
+        }
+        if (!foundTargetParent)
+            ++it;
+    }
+}
+
+//-----------------------------------------------------------------------------------------------------------------------------------------
+
 void LArMCParticleHelper::CompleteMCHierarchy(const LArMCParticleHelper::MCContributionMap &mcToHitsMap, MCParticleList &mcHierarchy)
 {
     try
