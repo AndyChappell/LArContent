@@ -11,9 +11,8 @@
 #include "Pandora/Algorithm.h"
 #include "Pandora/AlgorithmHeaders.h"
 
-#include "larpandoracontent/LArMetrics/EventValidationTool.h"
-#include "larpandoracontent/LArMetrics/PFPValidationTool.h"
-#include "larpandoracontent/LArMetrics/TrackValidationTool.h"
+#include "larpandoracontent/LArHelpers/LArHierarchyHelper.h"
+#include "larpandoracontent/LArMetrics/BaseValidationTool.h"
 
 namespace lar_content
 {
@@ -35,8 +34,12 @@ public:
     std::string GetTreeName() const;
 
 private:
+    typedef std::vector<BaseValidationTool *> ValidationToolVector;
+
     pandora::StatusCode Run();
     pandora::StatusCode ReadSettings(const pandora::TiXmlHandle xmlHandle);
+
+    bool IsReconstructable(const LArHierarchyHelper::MCHierarchy::Node *pMCNode);
 
     std::string m_caloHitListName;
     std::string m_mcParticleListName;
@@ -51,10 +54,7 @@ private:
     bool m_removeRecoNeutrons;         ///< Whether to remove reconstructed neutrons and their downstream particles
     bool m_selectRecoHits;             ///< Whether to select reco hits that overlap with the MC particle hits
 
-    EventValidationTool* m_pEventValidationTool;
-    TrackValidationTool* m_pTrackValidationTool;
-    PFPValidationTool* m_pPFPValidationTool;
-    ShowerValidationTool* m_pShowerValidationTool;
+    ValidationToolVector m_validationToolVector;
 };
 
 //------------------------------------------------------------------------------------------------------------------------------------------

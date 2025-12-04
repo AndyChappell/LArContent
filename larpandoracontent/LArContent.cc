@@ -52,6 +52,8 @@
 
 #include "larpandoracontent/LArMetrics/ValidationAlgorithm.h"
 #include "larpandoracontent/LArMetrics/EventValidationTool.h"
+#include "larpandoracontent/LArMetrics/HierarchyValidationTool.h"
+#include "larpandoracontent/LArMetrics/ShowerValidationTool.h"
 #include "larpandoracontent/LArMetrics/TrackValidationTool.h"
 #include "larpandoracontent/LArMetrics/PFPValidationTool.h"
 
@@ -365,6 +367,8 @@
 
 #define LAR_ALGORITHM_TOOL_LIST(d)                                                                                              \
     d("LArEventValidationTool",                 EventValidationTool)                                                            \
+    d("LArHierarchyValidationTool",             HierarchyValidationTool)                                                        \
+    d("LArShowerValidationTool",                ShowerValidationTool)                                                           \
     d("LArTrackValidationTool",                 TrackValidationTool)                                                            \
     d("LArPFPValidationTool",                   PFPValidationTool)                                                              \
     d("LArRandomFigureOfMeritTool",             RandomFigureOfMeritTool)                                                        \

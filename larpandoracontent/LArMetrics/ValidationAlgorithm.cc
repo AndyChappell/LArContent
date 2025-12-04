@@ -24,8 +24,8 @@ ValidationAlgorithm::ValidationAlgorithm() :
     m_pfoListNames({"TrackParticles3D", "ShowerParticles3D", "NeutrinoParticles3D"}),
     m_fileName("Validation.root"),
     m_treeName("tree"),
-    m_minPurity(0.8f),
-    m_minCompleteness(0.65f),
+    m_minPurity(0.5f),
+    m_minCompleteness(0.1f),
     m_minRecoHits(30),
     m_minRecoHitsPerView(10),
     m_minRecoGoodViews(2),
@@ -38,26 +38,24 @@ ValidationAlgorithm::ValidationAlgorithm() :
 
 ValidationAlgorithm::~ValidationAlgorithm()
 {
+    PANDORA_MONITORING_API(SaveTree(this->GetPandora(), "AlgTree", m_fileName.c_str(), "UPDATE"));
     PANDORA_MONITORING_API(SaveTree(this->GetPandora(), "EventTree", m_fileName.c_str(), "UPDATE"));
+    PANDORA_MONITORING_API(SaveTree(this->GetPandora(), "HierarchyTree", m_fileName.c_str(), "UPDATE"));
     PANDORA_MONITORING_API(SaveTree(this->GetPandora(), "PFPTree", m_fileName.c_str(), "UPDATE"));
     PANDORA_MONITORING_API(SaveTree(this->GetPandora(), "TrackTree", m_fileName.c_str(), "UPDATE"));
+    PANDORA_MONITORING_API(SaveTree(this->GetPandora(), "ShowerTree", m_fileName.c_str(), "UPDATE"));
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
 StatusCode ValidationAlgorithm::Run()
 {
-    std::cout << this->GetPandora().GetRun() << std::endl;
-    std::cout << this->GetPandora().GetSubrun() << std::endl;
-    std::cout << this->GetPandora().GetEvent() << std::endl;
-
-
+    // Get Lists
     const CaloHitList *pCaloHitList(nullptr);
     PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetList(*this, m_caloHitListName, pCaloHitList));
     const MCParticleList *pMCParticleList(nullptr);
     PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetList(*this, m_mcParticleListName, pMCParticleList));
     PfoList pfoList;
-
     for (const std::string &pfoListName : m_pfoListNames)
     {
         const PfoList *pPfoList(nullptr);
@@ -67,15 +65,17 @@ StatusCode ValidationAlgorithm::Run()
 
         pfoList.insert(pfoList.begin(), pPfoList->begin(), pPfoList->end());
     }
-
     if (pfoList.empty())
         return STATUS_CODE_SUCCESS;
 
-    // Do matching
+    // Folding options - want to fold showers
     LArHierarchyHelper::FoldingParameters foldParameters;
     foldParameters.m_foldToLeadingShowers = true;
-    const LArHierarchyHelper::MCHierarchy::ReconstructabilityCriteria recoCriteria(
-        m_minRecoHits, m_minRecoHitsPerView, m_minRecoGoodViews, m_removeRecoNeutrons);
+
+    // RecoCriteria - want to catch reconstructed 'non-targets'
+    const LArHierarchyHelper::MCHierarchy::ReconstructabilityCriteria recoCriteria(1, 1, 1, m_removeRecoNeutrons);
+
+    // Matching
     LArHierarchyHelper::MCHierarchy mcHierarchy(recoCriteria);
     LArHierarchyHelper::FillMCHierarchy(*pMCParticleList, *pCaloHitList, foldParameters, mcHierarchy);
     LArHierarchyHelper::RecoHierarchy recoHierarchy;
@@ -84,28 +84,34 @@ StatusCode ValidationAlgorithm::Run()
     LArHierarchyHelper::MatchInfo matchInfo(mcHierarchy, recoHierarchy, quality);
     LArHierarchyHelper::MatchHierarchies(matchInfo);
 
-    // Get target MC and BestMatch
+    // Get hierarchy parents
     MCParticleList nuParticles;
     mcHierarchy.GetRootMCParticles(nuParticles);
     MCParticleVector nuParticlesVec;
     nuParticlesVec.insert(nuParticlesVec.begin(), nuParticles.begin(), nuParticles.end());
     std::sort(nuParticlesVec.begin(), nuParticlesVec.end(), LArMCParticleHelper::SortByMomentum);
 
-    // Input entry for each neutrino hierarchy
+    // Input entry for each hierarchy
     for (unsigned int i = 0; i < nuParticlesVec.size(); ++i)
     {
-        MCParticleVector targetMC; PfoVector bestRecoMatch;
-
         // ATTN: I am pretty certain this vector is sorted, check with Andy
+        MCParticleVector targetMC; PfoVector bestRecoMatch; IntVector isTarget;
         LArHierarchyHelper::MCMatchesVector mcMatchesVec(matchInfo.GetMatches(nuParticlesVec.at(i)));
-
         for (const LArHierarchyHelper::MCMatches &mcMatches : mcMatchesVec)
         {
-            targetMC.push_back(mcMatches.GetMC()->GetMCParticles().front());
+            // Is MCParticle a target?
+            const LArHierarchyHelper::MCHierarchy::Node *pMCNode(mcMatches.GetMC());
+            const bool thisIsTarget(this->IsReconstructable(pMCNode));
 
-            // Get matches
+            // ATTN: consider in metrics if target OR if reconstructed
             const int nMatches(mcMatches.GetRecoMatches().size());
+            if (!thisIsTarget && !mcMatches.IsQuality(quality))
+                continue;
 
+            isTarget.push_back(thisIsTarget);
+            targetMC.push_back(pMCNode->GetMCParticles().front());
+
+            // Determine best match pfo (if it exists)
             if ((nMatches == 0) || (!mcMatches.IsQuality(quality)))
             {
                 bestRecoMatch.push_back(nullptr);
@@ -116,16 +122,55 @@ StatusCode ValidationAlgorithm::Run()
             }
         }
 
+        // Ignore if no targets
+        if (targetMC.empty())
+            continue;
+
         // Run tools
-        m_pEventValidationTool->Run(this, nuParticlesVec.at(i), targetMC);
-        m_pPFPValidationTool->Run(this, nuParticlesVec.at(i), targetMC, bestRecoMatch);
-        m_pTrackValidationTool->Run(this, targetMC, bestRecoMatch);
-        m_pShowerValidationTool->Run(this, targetMC, bestRecoMatch);
+        for (BaseValidationTool *const pValidationTool : m_validationToolVector)
+            pValidationTool->Run(this, nuParticlesVec.at(i), mcMatchesVec, targetMC, bestRecoMatch);
+
+        PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "AlgTree", "IsTarget", &isTarget));
+        PANDORA_MONITORING_API(FillTree(this->GetPandora(), "AlgTree"));
     }
 
-
-
     return STATUS_CODE_SUCCESS;
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+    bool ValidationAlgorithm::IsReconstructable(const LArHierarchyHelper::MCHierarchy::Node *pMCNode)
+{
+    unsigned int nHitsU(0), nHitsV(0), nHitsW(0);
+    const CaloHitList caloHitList(pMCNode->GetCaloHits());
+
+    for (const CaloHit *const pCaloHit : caloHitList)
+    {
+        if (pCaloHit->GetHitType() == TPC_VIEW_U)
+        {
+            ++nHitsU;
+        }
+        else if (pCaloHit->GetHitType() == TPC_VIEW_V)
+        {
+            ++nHitsV;
+        }
+        else if (pCaloHit->GetHitType() == TPC_VIEW_W)
+        {
+            ++nHitsW;
+        }
+    }
+
+    if ((nHitsU + nHitsV + nHitsW) < m_minRecoHits)
+        return false;
+
+    unsigned int nAboveThresholdViews(0);
+    for (unsigned int nHits : {nHitsU, nHitsV, nHitsW})
+    {
+        if (nHits >= m_minRecoHits)
+            ++nAboveThresholdViews;
+    }
+
+    return (nAboveThresholdViews >= m_minRecoGoodViews);
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
@@ -153,22 +198,19 @@ StatusCode ValidationAlgorithm::ReadSettings(const TiXmlHandle xmlHandle)
     PANDORA_RETURN_RESULT_IF_AND_IF(
         STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "RemoveRecoNeutrons", m_removeRecoNeutrons));
 
+    AlgorithmToolVector algorithmToolVector;
+    PANDORA_RETURN_RESULT_IF(
+        STATUS_CODE_SUCCESS, !=, XmlHelper::ProcessAlgorithmToolList(*this, xmlHandle, "ValidationTools", algorithmToolVector));
 
-    AlgorithmTool *pAlgorithmTool1(nullptr);
-    PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ProcessAlgorithmTool(*this, xmlHandle, "EventValidation", pAlgorithmTool1));
-    m_pEventValidationTool = dynamic_cast<EventValidationTool *>(pAlgorithmTool1);
+    for (AlgorithmTool *const pAlgorithmTool : algorithmToolVector)
+    {
+        BaseValidationTool *const pValidationTool(dynamic_cast<BaseValidationTool *>(pAlgorithmTool));
 
-    AlgorithmTool *pAlgorithmTool2(nullptr);
-    PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ProcessAlgorithmTool(*this, xmlHandle, "TrackValidation", pAlgorithmTool2));
-    m_pTrackValidationTool = dynamic_cast<TrackValidationTool *>(pAlgorithmTool2);
+        if (!pValidationTool)
+            return STATUS_CODE_INVALID_PARAMETER;
 
-    AlgorithmTool *pAlgorithmTool3(nullptr);
-    PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ProcessAlgorithmTool(*this, xmlHandle, "PFPValidation", pAlgorithmTool3));
-    m_pPFPValidationTool = dynamic_cast<PFPValidationTool *>(pAlgorithmTool3);
-
-    AlgorithmTool *pAlgorithmTool4(nullptr);
-    PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ProcessAlgorithmTool(*this, xmlHandle, "ShowerValidation", pAlgorithmTool4));
-    m_pShowerValidationTool = dynamic_cast<ShowerValidationTool *>(pAlgorithmTool4);
+        m_validationToolVector.push_back(pValidationTool);
+    }
 
     return STATUS_CODE_SUCCESS;
 }
