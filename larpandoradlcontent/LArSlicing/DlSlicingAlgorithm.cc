@@ -107,6 +107,7 @@ void DlSlicingAlgorithm::PopulateRootTree(const LArSliceHelper::SliceHitsMap &mc
         int view{0};
 
         FloatVector xx, zz;
+        IntVector cp;
 
         // Separate hits by view
         CaloHitList caloHitsU, caloHitsV, caloHitsW;
@@ -134,11 +135,6 @@ void DlSlicingAlgorithm::PopulateRootTree(const LArSliceHelper::SliceHitsMap &mc
                 continue;
             xx.clear(); zz.clear();
             view = caloHits.front()->GetHitType();
-            for (const CaloHit *const pCaloHit : caloHits)
-            {
-                xx.emplace_back(pCaloHit->GetPositionVector().GetX());
-                zz.emplace_back(pCaloHit->GetPositionVector().GetZ());
-            }
             CartesianVector matchedVertex(0, 0, 0);
             if (pdg == MU_MINUS)
             {
@@ -158,16 +154,23 @@ void DlSlicingAlgorithm::PopulateRootTree(const LArSliceHelper::SliceHitsMap &mc
                 LArVertexHelper::GetProjectedTrueVertex(pTransform, pMC, caloHits.front()->GetHitType(), trueVertex);
                 LArVertexHelper::MatchHitToVertex(caloHits, trueVertex, matchedVertex);
             }
+            for (const CaloHit *const pCaloHit : caloHits)
+            {
+                xx.emplace_back(pCaloHit->GetPositionVector().GetX());
+                zz.emplace_back(pCaloHit->GetPositionVector().GetZ());
+                cp.emplace_back(pCaloHit->GetPositionVector() == matchedVertex ? 1 : 0);
+                if (pCaloHit->GetPositionVector() == matchedVertex)
+                    ++cpCount;
+            }
 
             PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "event", event));
             PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "slice_id", sliceId));
             PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "is_true_neutrino", isNeutrino));
             PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "is_background", 0));
             PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "view", view));
-            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "vertex_x", matchedVertex.GetX()));
-            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "vertex_z", matchedVertex.GetZ()));
             PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "xx", &xx));
             PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "zz", &zz));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "cp", &cp));
             PANDORA_MONITORING_API(FillTree(this->GetPandora(), m_rootTreeName));
         }
 
@@ -178,6 +181,7 @@ void DlSlicingAlgorithm::PopulateRootTree(const LArSliceHelper::SliceHitsMap &mc
     if (!backgroundHits.empty())
     {
         FloatVector xx, zz;
+        IntVector cp;
 
         // Separate hits by view
         CaloHitList caloHitsU, caloHitsV, caloHitsW;
@@ -209,6 +213,7 @@ void DlSlicingAlgorithm::PopulateRootTree(const LArSliceHelper::SliceHitsMap &mc
             {
                 xx.emplace_back(pCaloHit->GetPositionVector().GetX());
                 zz.emplace_back(pCaloHit->GetPositionVector().GetZ());
+                cp.emplace_back(0);
             }
             PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "event", event));
             PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "slice_id", sliceId));
@@ -217,6 +222,7 @@ void DlSlicingAlgorithm::PopulateRootTree(const LArSliceHelper::SliceHitsMap &mc
             PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "view", view));
             PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "xx", &xx));
             PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "zz", &zz));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "cp", &cp));
             PANDORA_MONITORING_API(FillTree(this->GetPandora(), m_rootTreeName));
         }
     }
