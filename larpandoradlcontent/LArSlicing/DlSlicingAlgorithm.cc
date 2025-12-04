@@ -12,6 +12,7 @@
 #include "Pandora/AlgorithmHeaders.h"
 
 #include "larpandoracontent/LArHelpers/LArSliceHelper.h"
+#include "larpandoracontent/LArHelpers/LArVertexHelper.h"
 #include "larpandoracontent/LArObjects/LArCaloHit.h"
 
 #include "larpandoradlcontent/LArSlicing/DlSlicingAlgorithm.h"
@@ -93,10 +94,10 @@ StatusCode DlSlicingAlgorithm::Infer()
 
 void DlSlicingAlgorithm::PopulateRootTree(const LArSliceHelper::SliceHitsMap &mcSlices, const CaloHitList &backgroundHits) const
 {
-    // ToDo: Need to define a hit vertex in each view for each slice for the purpose of object condensation
     static int event{-1};
     ++event;
     int sliceId{0};
+    const LArTransformationPlugin *const pTransform{this->GetPandora().GetPlugins()->GetLArTransformationPlugin()};
     // Fill the training set with per slice information
     for (const auto &[pSlice, sliceHits] : mcSlices)
     {
@@ -138,11 +139,33 @@ void DlSlicingAlgorithm::PopulateRootTree(const LArSliceHelper::SliceHitsMap &mc
                 xx.emplace_back(pCaloHit->GetPositionVector().GetX());
                 zz.emplace_back(pCaloHit->GetPositionVector().GetZ());
             }
+            CartesianVector matchedVertex(0, 0, 0);
+            if (pdg == MU_MINUS)
+            {
+                CartesianVector trueVertex(0, 0, 0);
+                LArVertexHelper::GetProjectedTrueVertex(pTransform, pMC, caloHits.front()->GetHitType(), trueVertex);
+
+                CartesianVector trueDirection{pMC->GetMomentum().GetUnitVector()};
+                // Our hit lists here are for the whole slice, but for cosmics, we only want to consider hits from the cosmic muon itself to avoid
+                // attaching a vertex to a child particle's hits
+                CaloHitList filteredHits;
+                this->FilterSliceHitsToCosmic(caloHits, pMC, filteredHits);
+                LArVertexHelper::MatchHitToCosmicVertex(pTransform, filteredHits, trueDirection, matchedVertex);
+            }
+            else
+            {
+                CartesianVector trueVertex(0, 0, 0);
+                LArVertexHelper::GetProjectedTrueVertex(pTransform, pMC, caloHits.front()->GetHitType(), trueVertex);
+                LArVertexHelper::MatchHitToVertex(caloHits, trueVertex, matchedVertex);
+            }
+
             PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "event", event));
             PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "slice_id", sliceId));
             PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "is_true_neutrino", isNeutrino));
             PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "is_background", 0));
             PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "view", view));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "vertex_x", matchedVertex.GetX()));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "vertex_z", matchedVertex.GetZ()));
             PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "xx", &xx));
             PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "zz", &zz));
             PANDORA_MONITORING_API(FillTree(this->GetPandora(), m_rootTreeName));
@@ -197,6 +220,30 @@ void DlSlicingAlgorithm::PopulateRootTree(const LArSliceHelper::SliceHitsMap &mc
             PANDORA_MONITORING_API(FillTree(this->GetPandora(), m_rootTreeName));
         }
     }
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+void DlSlicingAlgorithm::FilterSliceHitsToCosmic(const CaloHitList &sliceHits, const MCParticle *const pCosmicMC,
+    CaloHitList &cosmicHits) const
+{
+    for (const CaloHit *const pCaloHit : sliceHits)
+    {
+        try
+        {
+            const MCParticle *const pMainMC{MCParticleHelper::GetMainMCParticle(pCaloHit)};
+            if (pMainMC == pCosmicMC)
+                cosmicHits.emplace_back(pCaloHit);
+        }
+        catch (StatusCodeException &)
+        {
+            continue;
+        }
+    }
+
+    // In the unlikely event that the cosmic ray has no direct hits, return the original slice hits
+    if (cosmicHits.empty())
+        cosmicHits = sliceHits;
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------

@@ -59,6 +59,16 @@ private:
     void PopulateRootTree(const LArSliceHelper::SliceHitsMap &mcSlices, const pandora::CaloHitList &backgroundHits) const;
 
     /**
+     *  @brief  Filter the slice hits to only those associated with the cosmic ray MC particle. In the unlikely event that the cosmic ray has no
+     *          direct hits, the original slice hits are added to the output list.
+     *
+     *  @param  sliceHits the slice hits
+     *  @param  pCosmicMC the cosmic ray MC particle
+     *  @param  cosmicHits the output cosmic hits
+     */
+    void FilterSliceHitsToCosmic(const pandora::CaloHitList &sliceHits, const pandora::MCParticle *const pCosmicMC, pandora::CaloHitList &cosmicHits) const;
+
+    /**
      *  @brief  Visualize the slices
      *
      *  @param  mcSlices the mc slices
