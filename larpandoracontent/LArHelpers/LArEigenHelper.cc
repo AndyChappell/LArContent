@@ -55,6 +55,27 @@ void LArEigenHelper::Vectorize(const T &caloHitContainer, Eigen::MatrixXf &centr
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
+void LArEigenHelper::Vectorize(const CartesianVector &vertex, Eigen::MatrixXf &hitMatrix)
+{
+    hitMatrix(0, 0) = vertex.GetX();
+    hitMatrix(0, 1) = vertex.GetZ();
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+void LArEigenHelper::Vectorize(const CartesianPointVector &points, Eigen::MatrixXf &hitMatrix)
+{
+    int i{0};
+    for (const CartesianVector &pos : points)
+    {
+        hitMatrix(i, 0) = pos.GetX();
+        hitMatrix(i, 1) = pos.GetZ();
+        ++i;
+    }
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
 void LArEigenHelper::GetAngles(const Eigen::MatrixXf &hitMatrix, const Eigen::RowVectorXf &origin, Eigen::RowVectorXf &phis)
 {
     const float pi{static_cast<float>(M_PI)};

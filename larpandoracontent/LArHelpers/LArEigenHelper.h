@@ -9,6 +9,7 @@
 #define LAR_EIGEN_HELPER_H 1
 
 #include "Objects/CartesianVector.h"
+#include "Pandora/PandoraInternal.h"
 
 #include <Eigen/Dense>
 
@@ -42,6 +43,22 @@ public:
      */
     template <class T>
     static void Vectorize(const T &caloHitContainer, Eigen::MatrixXf &centre, Eigen::MatrixXf &low, Eigen::MatrixXf &high);
+
+    /**
+     *  @brief  Convert a CartesianVector into an Eigen matrix.
+     *
+     *  @param  vertex the vertex from which to construct a maxtrix
+     *  @param  hitMatrix the output Eigen matrix
+     */
+    static void Vectorize(const pandora::CartesianVector &vertex, Eigen::MatrixXf &hitMatrix);
+
+    /**
+     *  @brief  Convert a CartesianPointVector into an Eigen matrix.
+     *
+     *  @param  points the vector of CartesianVector objects from which to construct a maxtrix
+     *  @param  hitMatrix the output Eigen matrix
+     */
+    static void Vectorize(const pandora::CartesianPointVector &points, Eigen::MatrixXf &hitMatrix);
 
     /**
      *  @brief  Retrieve the angle, coutner-clockwise relative to the x axis, between all hits in a matrix and a specified origin.
