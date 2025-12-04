@@ -11,13 +11,17 @@
 #include "Pandora/Algorithm.h"
 #include "Pandora/AlgorithmTool.h"
 
+#include "larpandoracontent/LArHelpers/LArHierarchyHelper.h"
+
+#include "larpandoracontent/LArMetrics/BaseValidationTool.h"
+
 namespace lar_content
 {
 
 /**
  *  @brief  EventValidationTool class
  */
-class EventValidationTool : public pandora::AlgorithmTool
+class EventValidationTool : public BaseValidationTool
 {
 public:
 
@@ -45,7 +49,8 @@ struct EventTreeVars
     EventValidationTool();
 
     void Run(const pandora::Algorithm *const pAlgorithm, const pandora::MCParticle *const pMCNu, 
-        const pandora::MCParticleVector &targetMC);
+        const LArHierarchyHelper::MCMatchesVector &mcMatchesVec, const pandora::MCParticleVector &targetMC, 
+        const pandora::PfoVector &bestRecoMatch);
 
 private:
     pandora::StatusCode ReadSettings(const pandora::TiXmlHandle xmlHandle);
@@ -56,6 +61,7 @@ private:
 
     std::string m_nuVertexPass1ListName;
     std::string m_nuVertexPass2ListName;
+    int m_eventNumber;
 };
 
 //------------------------------------------------------------------------------------------------------------------------------------------

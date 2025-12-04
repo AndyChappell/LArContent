@@ -25,12 +25,17 @@ TrackValidationTool::TrackValidationTool()
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-void TrackValidationTool::Run(const Algorithm *const pAlgorithm, const MCParticleVector &targetMC, const PfoVector &bestRecoMatch)
+void TrackValidationTool::Run(const Algorithm *const pAlgorithm, const MCParticle *const /*pMCNu*/, 
+    const LArHierarchyHelper::MCMatchesVector &/*mcMatchesVec*/, const MCParticleVector &targetMC, 
+    const PfoVector &bestRecoMatch)
 {
     if (PandoraContentApi::GetSettings(*pAlgorithm)->ShouldDisplayAlgorithmInfo())
         std::cout << "----> Running Algorithm Tool: " << this->GetInstanceName() << ", " << this->GetType() << std::endl;
 
     TrackTreeVars trackTreeVars;
+    trackTreeVars.m_run = this->GetPandora().GetRun();
+    trackTreeVars.m_subrun = this->GetPandora().GetSubrun();
+    trackTreeVars.m_event = this->GetPandora().GetEvent();
 
     this->MichelValidation(pAlgorithm, targetMC, bestRecoMatch, trackTreeVars);
     this->FillTree(trackTreeVars);
@@ -114,7 +119,9 @@ void TrackValidationTool::FillTree(TrackTreeVars &trackTreeVars)
     IntVector& michelIsChild = trackTreeVars.m_michelIsChild;
     IntVector& michelIsShower = trackTreeVars.m_michelIsShower;
 
-
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "TrackTree", "Run", trackTreeVars.m_run));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "TrackTree", "Subrun", trackTreeVars.m_subrun));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "TrackTree", "Event", trackTreeVars.m_event));
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "TrackTree", "MCP_HasMichel", &hasMichel));
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "TrackTree", "MCP_HasTargetMichel", &hasTargetMichel));
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "TrackTree", "BM_IsMichelRecod", &hasRecoMichel));
