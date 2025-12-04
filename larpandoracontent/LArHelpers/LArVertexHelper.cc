@@ -8,8 +8,10 @@
 
 #include "Geometry/LArTPC.h"
 #include "Managers/GeometryManager.h"
+#include "Pandora/PdgTable.h"
 
 #include "larpandoracontent/LArHelpers/LArClusterHelper.h"
+#include "larpandoracontent/LArHelpers/LArEigenHelper.h"
 #include "larpandoracontent/LArHelpers/LArGeometryHelper.h"
 #include "larpandoracontent/LArHelpers/LArPointingClusterHelper.h"
 #include "larpandoracontent/LArHelpers/LArVertexHelper.h"
@@ -131,6 +133,102 @@ void LArVertexHelper::GetTrueVertexPosition(
     u = static_cast<float>(pTransform->YZtoU(trueVertex.GetY(), trueVertex.GetZ()));
     v = static_cast<float>(pTransform->YZtoV(trueVertex.GetY(), trueVertex.GetZ()));
     w = static_cast<float>(pTransform->YZtoW(trueVertex.GetY(), trueVertex.GetZ()));
+}
+
+//-----------------------------------------------------------------------------------------------------------------------------------------
+
+void LArVertexHelper::GetProjectedTrueVertex(const LArTransformationPlugin *const pTransform, const MCParticle *const pMC, const HitType view,
+    CartesianVector &mcVertex)
+{
+    const CartesianVector vertex3d{pMC->GetParticleId() == PHOTON ? pMC->GetEndpoint() : pMC->GetVertex()};
+    switch (view)
+    {
+        case TPC_VIEW_U:
+            mcVertex.SetValues(vertex3d.GetX(), 0, pTransform->YZtoU(vertex3d.GetY(), vertex3d.GetZ()));
+            break;
+        case TPC_VIEW_V:
+            mcVertex.SetValues(vertex3d.GetX(), 0, pTransform->YZtoV(vertex3d.GetY(), vertex3d.GetZ()));
+            break;
+        case TPC_VIEW_W:
+            mcVertex.SetValues(vertex3d.GetX(), 0, pTransform->YZtoW(vertex3d.GetY(), vertex3d.GetZ()));
+            break;
+        default:
+            break;
+    }
+}
+
+//-----------------------------------------------------------------------------------------------------------------------------------------
+
+void LArVertexHelper::MatchHitToVertex(const CaloHitList &caloHitList, const CartesianVector &trueVertex, CartesianVector &matchedVertex)
+{
+    CaloHitVector caloHitVector(caloHitList.begin(), caloHitList.end());
+    const CartesianPointVector vertices(1, trueVertex);
+    Eigen::MatrixXf hitMat(caloHitList.size(), 2), vertMat(1, 2);
+    LArEigenHelper::Vectorize(caloHitList, hitMat);
+    LArEigenHelper::Vectorize({vertices}, vertMat);
+
+    if (hitMat.cols() != vertMat.cols())
+        throw StatusCodeException(STATUS_CODE_INVALID_PARAMETER);
+
+    Eigen::VectorXf hitSq{hitMat.rowwise().squaredNorm()};
+    Eigen::VectorXf vertSq{vertMat.rowwise().squaredNorm()};
+
+    // Compute all pairwise squared distances:
+    // D2(i,j) = |h_i|^2 + |v_j|^2 - 2 * h_i.dot(v_j)
+    Eigen::MatrixXf dot{hitMat * vertMat.transpose()};
+    Eigen::MatrixXf d2{(-2.0f * dot).colwise() + hitSq}; // add hit norms per column
+    d2 = d2.rowwise() + vertSq.transpose();              // add vertex norms per row
+
+    Eigen::VectorXf col{d2.col(0)};
+    Eigen::Index idx{0};
+    col.minCoeff(&idx);
+
+    const int index{static_cast<int>(idx)};
+    matchedVertex.SetValues(caloHitVector[index]->GetPositionVector().GetX(), 0, caloHitVector[index]->GetPositionVector().GetZ());
+}
+
+//-----------------------------------------------------------------------------------------------------------------------------------------
+
+void LArVertexHelper::MatchHitToCosmicVertex(const pandora::LArTransformationPlugin *const pTransform, const CaloHitList &caloHitList,
+    const CartesianVector &trueDirection, CartesianVector &matchedVertex)
+{
+    if (caloHitList.empty())
+    {
+        std::cout << "LArVertexHelper::MatchHitToCosmicVertex - empty calo hit list provided" << std::endl;
+        throw StatusCodeException(STATUS_CODE_INVALID_PARAMETER);
+    }
+
+    HitType view{caloHitList.front()->GetHitType()};
+    CartesianVector projectedDirection(0, 0, 0);
+    switch (view)
+    {
+        case TPC_VIEW_U:
+            projectedDirection.SetValues(trueDirection.GetX(), 0, pTransform->YZtoU(trueDirection.GetY(), trueDirection.GetZ()));
+            break;
+        case TPC_VIEW_V:
+            projectedDirection.SetValues(trueDirection.GetX(), 0, pTransform->YZtoV(trueDirection.GetY(), trueDirection.GetZ()));
+            break;
+        case TPC_VIEW_W:
+            projectedDirection.SetValues(trueDirection.GetX(), 0, pTransform->YZtoW(trueDirection.GetY(), trueDirection.GetZ()));
+            break;
+        default:
+            break;
+    }
+
+    // Pick the first hit in the hit list as the reference hit and compute the projected distance along the projected true direction
+    // The most upstream hit is our vertex
+    const CartesianVector refHitPos{caloHitList.front()->GetPositionVector()};
+    float mostUpstreamPosition{std::numeric_limits<float>::max()};
+    for (const CaloHit *const pCaloHit : caloHitList)
+    {
+        const CartesianVector delta{pCaloHit->GetPositionVector() - refHitPos};
+        const float projectedPosition{delta.GetDotProduct(projectedDirection)};
+        if (projectedPosition < mostUpstreamPosition)
+        {
+            mostUpstreamPosition = projectedPosition;
+            matchedVertex.SetValues(pCaloHit->GetPositionVector().GetX(), 0, pCaloHit->GetPositionVector().GetZ());
+        }
+    }
 }
 
 } // namespace lar_content

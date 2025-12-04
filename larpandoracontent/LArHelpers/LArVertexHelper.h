@@ -10,6 +10,7 @@
 
 #include "Objects/CartesianVector.h"
 #include "Objects/Cluster.h"
+#include "Objects/MCParticle.h"
 #include "Objects/Vertex.h"
 #include "Plugins/LArTransformationPlugin.h"
 
@@ -79,6 +80,40 @@ public:
      */
     static void GetTrueVertexPosition(const pandora::CartesianVector &vertex, const pandora::LArTransformationPlugin *const pTransform,
         float &x, float &u, float &v, float &w);
+
+    /**
+     *  @brief  Get the projected true vertex positions in a given view
+     *
+     *  @param  pTransform the LAr transformation plugin
+     *  @param  pMC the MC particle for which the vertex should be found
+     *  @param  view the TPC view
+     *  @param  mcVertex the output projected true vertex position
+     */
+    static void GetProjectedTrueVertex(const pandora::LArTransformationPlugin *const pTransform, const pandora::MCParticle *const pMC,
+        const pandora::HitType view, pandora::CartesianVector &mcVertex);
+
+    /**
+     *  @brief  Match a true, projected vertex to the closest provided hit
+     *
+     *  @param  caloHitList the list of calo hits
+     *  @param  trueVertex the true, projected vertex position
+     *  @param  matchedVertex the output matched vertex position
+     */
+    static void MatchHitToVertex(const pandora::CaloHitList &caloHitList, const pandora::CartesianVector &trueVertex,
+        pandora::CartesianVector &matchedVertex);
+
+    /**
+     *  @brief  Match a true, projected vertex to the closest provided hit associated with a cosmic ray.
+     *          Until t0 is corrected, true cosmic vertices can be signficanty displaced from hits. This method uses the true cosmic direction,
+     *          projected into the given view and then finds the most upstream hit based on a projection of hits onto that axis.
+     *
+     *  @param  pTransform the LAr transformation plugin
+     *  @param  caloHitList the list of calo hits
+     *  @param  trueDirection the true 3D direction of the cosmic ray
+     *  @param  matchedVertex the output matched vertex position
+     */
+    static void MatchHitToCosmicVertex(const pandora::LArTransformationPlugin *const pTransform, const pandora::CaloHitList &caloHitList,
+        const pandora::CartesianVector &trueDirection, pandora::CartesianVector &matchedVertex);
 };
 
 } // namespace lar_content
