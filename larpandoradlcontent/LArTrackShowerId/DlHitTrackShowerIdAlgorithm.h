@@ -217,6 +217,7 @@ private:
     bool m_trainingMode; ///< Training mode
     bool m_vertexRelative; ///< Whether to make hit positions relative to the reconstructed vertex position
     bool m_polarCoords; ///< Whether to use polar coordinates for the hit positions
+    bool m_visualize; ///< Whether to visualise the hits and their classifications
     float m_adcPeak; ///< Value representing peak of ADC distribution for all hits
     float m_maxAdcFactor; ///< Maximum ADC value for a hit will be m_adcPeak * m_maxAdcFactor, clipped beyond this
     int m_maxSeqLen; ///< Maximum sequence length when using polar coordinates

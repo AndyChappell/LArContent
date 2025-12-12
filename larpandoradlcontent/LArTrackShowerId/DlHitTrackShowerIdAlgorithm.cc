@@ -33,6 +33,7 @@ DlHitTrackShowerIdAlgorithm::DlHitTrackShowerIdAlgorithm() :
     m_trainingMode(false),
     m_vertexRelative(false),
     m_polarCoords(false),
+    m_visualize(false),
     m_adcPeak(123.f),
     m_maxAdcFactor(10.f),
     m_maxSeqLen(4096)
@@ -377,7 +378,10 @@ StatusCode DlHitTrackShowerIdAlgorithm::Infer()
     FloatVector xx, zz , rr, cosTheta, sinTheta, vv, adc, width;
     this->PopulateInputVectors(*pCaloHitList, bounds, vx, vz, xx, zz, rr, cosTheta, sinTheta, vv, adc, width, caloHitVector);
 
-    PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), false, DETECTOR_VIEW_XZ, -1, 1, 1));
+    if (m_visualize)
+    {
+        PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), false, DETECTOR_VIEW_XZ, -1, 1, 1));
+    }
     // Ensure each run conforms to the maximum sequence length
     size_t totalSize{rr.size()};
     for (size_t s = 0; s < totalSize; s += m_maxSeqLen)
@@ -496,13 +500,16 @@ StatusCode DlHitTrackShowerIdAlgorithm::Infer()
                     break;
             }
             // Visualise calo hits for class
-            if (!caloHitList.empty())
+            if (m_visualize && !caloHitList.empty())
             {
                 PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &caloHitList, categoryName,
                     predictedClass + 1 == MIP ? BLUE : RED));
             }
         }
-        PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
+        if (m_visualize)
+        {
+            PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
+        }
     }
 
     return STATUS_CODE_SUCCESS;
@@ -1048,6 +1055,7 @@ StatusCode DlHitTrackShowerIdAlgorithm::ReadSettings(const TiXmlHandle xmlHandle
     }
     PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "AdcPeak", m_adcPeak));
     PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "MaxAdcFactor", m_maxAdcFactor));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "Visualize", m_visualize));
 
     return STATUS_CODE_SUCCESS;
 }
