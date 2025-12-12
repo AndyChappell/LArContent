@@ -14,11 +14,12 @@
 
 #include "larpandoracontent/LArHelpers/LArFileHelper.h"
 #include "larpandoracontent/LArHelpers/LArGeometryHelper.h"
+#include "larpandoracontent/LArHelpers/LArMCParticleHelper.h"
 #include "larpandoracontent/LArHelpers/LArMvaHelper.h"
 #include "larpandoracontent/LArHelpers/LArVertexHelper.h"
+#include "larpandoracontent/LArHelpers/LArTopologyHelper.h"
 
 #include "larpandoracontent/LArObjects/LArCaloHit.h"
-#include "larpandoracontent/LArObjects/LArEventTopology.h"
 
 #include "larpandoradlcontent/LArHelpers/LArCanvasHelper.h"
 #include "larpandoradlcontent/LArObjects/VertexTuple.h"
@@ -73,11 +74,28 @@ StatusCode DlSecondaryVertexingAlgorithm::PrepareTrainingSample()
 {
     const CaloHitList *pCaloHitList2D{nullptr};
     PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetList(*this, "CaloHitList2D", pCaloHitList2D));
-    LArEventTopology eventTopology(*pCaloHitList2D);
-    eventTopology.ConstructVisibleHierarchy();
-    eventTopology.PruneHierarchy();
+    const MCParticleList *pMCParticleList{nullptr};
+    PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetCurrentList(*this, pMCParticleList));
+
+    PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), false, DETECTOR_VIEW_XZ, -1, 1, 1));
+    CaloHitList caloHitsW;
+    for (const CaloHit *const pCaloHit : *pCaloHitList2D)
+    {
+        if (pCaloHit->GetHitType() == TPC_VIEW_U)
+            caloHitsW.emplace_back(pCaloHit);
+    }
+    PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &caloHitsW, "Hits", GRAY));
     CartesianPointVector vertices;
-    eventTopology.GetVertices(vertices);
+    const LArTransformationPlugin *pTransform{this->GetPandora().GetPlugins()->GetLArTransformationPlugin()};
+    LArTopologyHelper::Filter filter(3);
+    LArTopologyHelper::GetTopologicalVertices(caloHitsW, filter, pTransform, vertices);
+
+    for (const CartesianVector &vertex : vertices)
+    {
+        const CartesianVector projVertex(vertex.GetX(), 0.f, vertex.GetZ());
+        PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &projVertex, "Vertex", RED, 1));
+    }
+    PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
 
     // Only train on events where there is a vertex in the fiducial volume
     bool hasFiducialVertex{false};
@@ -93,8 +111,6 @@ StatusCode DlSecondaryVertexingAlgorithm::PrepareTrainingSample()
     if (!hasFiducialVertex)
         return STATUS_CODE_SUCCESS;
 
-    const MCParticleList *pMCParticleList(nullptr);
-    PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetCurrentList(*this, pMCParticleList));
     LArMCParticleHelper::MCContributionMap mcToHitsMap;
     LArMCParticleHelper::GetMCToHitsMap(pCaloHitList2D, pMCParticleList, mcToHitsMap);
     MCParticleList hierarchy;
@@ -702,50 +718,31 @@ void DlSecondaryVertexingAlgorithm::VisualizeVertices(const CartesianPointVector
     const MCParticleList *pMCParticleList{nullptr};
     PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetCurrentList(*this, pMCParticleList));
     CartesianVector trueVertex3D(0, 0, 0);
-    if (LArMCParticleHelper::GetTrueVertex(pMCParticleList, trueVertex3D))
+
+    HitType view{caloHitList.front()->GetHitType()};
+    float x{0.f}, u{0.f}, v{0.f}, w{0.f};
+    const LArTransformationPlugin *transform{this->GetPandora().GetPlugins()->GetLArTransformationPlugin()};
+    for (const auto &vertex : vertices)
     {
-        HitType view{caloHitList.front()->GetHitType()};
-        float x{0.f}, u{0.f}, v{0.f}, w{0.f};
-        const LArTransformationPlugin *transform{this->GetPandora().GetPlugins()->GetLArTransformationPlugin()};
-        LArVertexHelper::GetPositionProjections(trueVertex3D, transform, x, u, v, w);
-        CartesianVector trueVertex(0, 0, 0);
+        CartesianVector recoVertex(0, 0, 0);
+        LArVertexHelper::GetPositionProjections(vertex, transform, x, u, v, w);
         switch (view)
         {
             case TPC_VIEW_U:
-                trueVertex = CartesianVector(x, 0.f, u);
+                recoVertex = CartesianVector(x, 0.f, u);
                 break;
             case TPC_VIEW_V:
-                trueVertex = CartesianVector(x, 0.f, v);
+                recoVertex = CartesianVector(x, 0.f, v);
                 break;
             case TPC_VIEW_W:
-                trueVertex = CartesianVector(x, 0.f, w);
+                recoVertex = CartesianVector(x, 0.f, w);
                 break;
             default:
                 break;
         }
-        for (const auto &vertex : vertices)
-        {
-            CartesianVector recoVertex(0, 0, 0);
-            LArVertexHelper::GetPositionProjections(vertex, transform, x, u, v, w);
-            switch (view)
-            {
-                case TPC_VIEW_U:
-                    recoVertex = CartesianVector(x, 0.f, u);
-                    break;
-                case TPC_VIEW_V:
-                    recoVertex = CartesianVector(x, 0.f, v);
-                    break;
-                case TPC_VIEW_W:
-                    recoVertex = CartesianVector(x, 0.f, w);
-                    break;
-                default:
-                    break;
-            }
-            PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &recoVertex, "reco vertex", RED, 2));
-        }
-        PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &trueVertex, "true vertex", BLUE, 2));
-        PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &caloHitList, "hits", BLACK));
+        PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &recoVertex, "reco vertex", RED, 2));
     }
+    PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &caloHitList, "hits", BLACK));
     PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
 }
 
