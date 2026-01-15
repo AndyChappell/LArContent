@@ -62,7 +62,7 @@ void TrackValidationTool::MichelValidation(const Algorithm *const pAlgorithm, co
                 if (std::abs(pMCChild->GetParticleId()) != 11)
                     continue;
 
-                if ((pMCParent->GetEndpoint() - pMCChild->GetVertex()).GetMagnitude() < 3.f)
+                if ((pMCParent->GetEndpoint() - pMCChild->GetVertex()).GetMagnitude() > 3.f)
                     continue;
 
                 pMCMichel = pMCChild;
@@ -125,7 +125,7 @@ void TrackValidationTool::FillTree(TrackTreeVars &trackTreeVars)
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "TrackTree", "MCP_HasMichel", &hasMichel));
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "TrackTree", "MCP_HasTargetMichel", &hasTargetMichel));
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "TrackTree", "BM_IsMichelRecod", &hasRecoMichel));
-    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "TrackTree", "BM_MichelIndex", &michelIndex));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "TrackTree", "MCP_MichelIndex", &michelIndex));
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "TrackTree", "BM_MichelIsChild", &michelIsChild));
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "TrackTree", "BM_MichelIsShower", &michelIsShower));
     PANDORA_MONITORING_API(FillTree(this->GetPandora(), "TrackTree"));
