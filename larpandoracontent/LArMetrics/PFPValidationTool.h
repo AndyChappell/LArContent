@@ -31,14 +31,21 @@ struct PFPTreeVars
     int m_subrun;
     int m_event;
     pandora::IntVector m_truePDG;
+    pandora::FloatVector m_trueEnergy;
+    pandora::FloatVector m_trueThetaXZ;
+    pandora::FloatVector m_trueThetaYZ;
     pandora::IntVector m_isTrack;
     pandora::IntVector m_isShower;
+    pandora::IntVector m_hasMatch;
     pandora::IntVector m_nMCHitsU;
     pandora::IntVector m_nMCHitsV;
     pandora::IntVector m_nMCHitsW;
+    pandora::IntVector m_nMCHits2D;
     pandora::IntVector m_nPfoHitsU;
     pandora::IntVector m_nPfoHitsV;
     pandora::IntVector m_nPfoHitsW;
+    pandora::IntVector m_nPfoHits2D;
+    pandora::IntVector m_nPfoHits3D;
     pandora::FloatVector m_completeness;
     pandora::FloatVector m_completenessU;
     pandora::FloatVector m_completenessV;
@@ -50,6 +57,12 @@ struct PFPTreeVars
     pandora::FloatVector m_trueVertexX;
     pandora::FloatVector m_trueVertexY; 
     pandora::FloatVector m_trueVertexZ;
+    pandora::FloatVector m_trueEndX;
+    pandora::FloatVector m_trueEndY; 
+    pandora::FloatVector m_trueEndZ;
+    pandora::FloatVector m_trueDirX;
+    pandora::FloatVector m_trueDirY; 
+    pandora::FloatVector m_trueDirZ;
     pandora::FloatVector m_trueLength;
     pandora::FloatVector m_trueDisplacement;
     pandora::FloatVector m_recoVertexX;
@@ -68,6 +81,8 @@ struct PFPTreeVars
     void Run(const pandora::Algorithm *const pAlgorithm, const pandora::MCParticle *const pMCNu, 
         const LArHierarchyHelper::MCMatchesVector &mcMatchesVec, const pandora::MCParticleVector &targetMC, 
         const pandora::PfoVector &bestRecoMatch);
+
+    void GetMCParticleInfo(const pandora::MCParticle *const pMCTarget, PFPTreeVars &pfpTreeVars);
 
     void GetMatchingInfo(const LArHierarchyHelper::MCMatchesVector &mcMatchesVec, const pandora::MCParticle *const pMCTarget, 
         const pandora::Pfo *const pBestMatch, PFPTreeVars &pfpTreeVars);

@@ -47,12 +47,45 @@ void PFPValidationTool::Run(const Algorithm *const pAlgorithm, const MCParticle 
         const MCParticle *const pMC(targetMC.at(i));
         const Pfo *const pBestMatch(bestRecoMatch.at(i));
 
+        this->GetMCParticleInfo(pMC, pfpTreeVars);
         this->GetMatchingInfo(mcMatchesVec, pMC, pBestMatch, pfpTreeVars);
         this->LengthValidation(pAlgorithm, pMCNu, pMC, pBestMatch, pfpTreeVars);
         this->PIDValidation(pAlgorithm, pMC, pBestMatch, pfpTreeVars);
     }
 
     this->FillTree(pfpTreeVars);
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+void PFPValidationTool::GetMCParticleInfo(const MCParticle *const pMCTarget, PFPTreeVars &pfpTreeVars)
+{
+    pfpTreeVars.m_trueEnergy.push_back(pMCTarget->GetEnergy());
+    const CartesianVector &trueEnd(pMCTarget->GetEndpoint());
+    pfpTreeVars.m_trueEndX.push_back(trueEnd.GetX());
+    pfpTreeVars.m_trueEndY.push_back(trueEnd.GetY());
+    pfpTreeVars.m_trueEndZ.push_back(trueEnd.GetZ());
+
+    // Angles
+    const CartesianVector &mcMom(pMCTarget->GetMomentum());
+
+    if (mcMom.GetMagnitudeSquared() < std::numeric_limits<float>::epsilon())
+    {
+        pfpTreeVars.m_trueThetaXZ.push_back(-4.f);
+        pfpTreeVars.m_trueThetaYZ.push_back(-4.f);
+        pfpTreeVars.m_trueDirX.push_back(-9999.f);
+        pfpTreeVars.m_trueDirY.push_back(-9999.f);
+        pfpTreeVars.m_trueDirZ.push_back(-9999.f);
+    }
+    else
+    {
+        pfpTreeVars.m_trueThetaXZ.push_back(atan2(mcMom.GetX(), mcMom.GetZ()));
+        pfpTreeVars.m_trueThetaYZ.push_back(asin(mcMom.GetY() / mcMom.GetMagnitude()));
+        const CartesianVector trueDir(mcMom.GetUnitVector());
+        pfpTreeVars.m_trueDirX.push_back(trueDir.GetX());
+        pfpTreeVars.m_trueDirY.push_back(trueDir.GetY());
+        pfpTreeVars.m_trueDirZ.push_back(trueDir.GetZ());
+    }
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
@@ -67,6 +100,7 @@ void PFPValidationTool::GetMatchingInfo(const LArHierarchyHelper::MCMatchesVecto
             continue;
 
         const CaloHitList &mcHits(mcMatches.GetMC()->GetCaloHits());
+        pfpTreeVars.m_nMCHits2D.push_back(mcHits.size());
         
         for (const HitType &hitType : {TPC_VIEW_U, TPC_VIEW_V, TPC_VIEW_W})
         {
@@ -106,12 +140,18 @@ void PFPValidationTool::GetMatchingInfo(const LArHierarchyHelper::MCMatchesVecto
              
         if (pBestMatch)
         {
-            const LArHierarchyHelper::RecoHierarchy::Node *pRecoNode(mcMatches.GetRecoMatches().front());       
+            const LArHierarchyHelper::RecoHierarchy::Node *pRecoNode(mcMatches.GetRecoMatches().front());
+            pfpTreeVars.m_hasMatch.push_back(1);
+            pfpTreeVars.m_nPfoHits2D.push_back(LArPfoHelper::GetNumberOfTwoDHits(pBestMatch));
+            pfpTreeVars.m_nPfoHits3D.push_back(LArPfoHelper::GetNumberOfThreeDHits(pBestMatch));
             pfpTreeVars.m_completeness.push_back(mcMatches.GetCompleteness(pRecoNode));
             pfpTreeVars.m_purity.push_back(mcMatches.GetPurity(pRecoNode));
         }
         else
         {
+            pfpTreeVars.m_hasMatch.push_back(0);
+            pfpTreeVars.m_nPfoHits2D.push_back(-1);
+            pfpTreeVars.m_nPfoHits3D.push_back(-1);
             pfpTreeVars.m_completeness.push_back(0.f);
             pfpTreeVars.m_purity.push_back(0.f);
         }
@@ -158,7 +198,12 @@ void PFPValidationTool::LengthValidation(const Algorithm *const pAlgorithm, cons
             pfpTreeVars.m_recoVertexX.push_back(pRecoVertex->GetPosition().GetX());
             pfpTreeVars.m_recoVertexY.push_back(pRecoVertex->GetPosition().GetY());
             pfpTreeVars.m_recoVertexZ.push_back(pRecoVertex->GetPosition().GetZ());
-            pfpTreeVars.m_vertexAcc.push_back((pRecoVertex->GetPosition() - trueVertex).GetMagnitude()); // TODO - sign this // TODO - Add wrong end?
+
+            // Signed vertexAcc
+            const float vertexAcc((pRecoVertex->GetPosition() - trueVertex).GetMagnitude());
+            const float sign((vertexAcc < std::numeric_limits<float>::epsilon() || pMCTarget->GetEnergy() < std::numeric_limits<float>::epsilon()) ? 1.f : 
+                             (pRecoVertex->GetPosition() - trueVertex).GetOpeningAngle(pMCTarget->GetMomentum()) < (M_PI * 0.5) ? 1.f : -1.f);
+            pfpTreeVars.m_vertexAcc.push_back(vertexAcc * sign);
             
             try
             {
@@ -214,14 +259,21 @@ void PFPValidationTool::PIDValidation(const Algorithm *const pAlgorithm, const M
 void PFPValidationTool::FillTree(PFPTreeVars &pfpTreeVars)
 {
     IntVector &truePDG = pfpTreeVars.m_truePDG;
+    FloatVector &trueEnergy = pfpTreeVars.m_trueEnergy;
+    FloatVector &trueThetaXZ = pfpTreeVars.m_trueThetaXZ;
+    FloatVector &trueThetaYZ = pfpTreeVars.m_trueThetaYZ;
     IntVector &isTrack = pfpTreeVars.m_isTrack;
     IntVector &isShower = pfpTreeVars.m_isShower;
+    IntVector &hasMatch = pfpTreeVars.m_hasMatch;
     IntVector &nMCHitsU = pfpTreeVars.m_nMCHitsU;
     IntVector &nMCHitsV = pfpTreeVars.m_nMCHitsV;
     IntVector &nMCHitsW = pfpTreeVars.m_nMCHitsW;
+    IntVector &nMCHits2D = pfpTreeVars.m_nMCHits2D;
     IntVector &nPfoHitsU = pfpTreeVars.m_nPfoHitsU;
     IntVector &nPfoHitsV = pfpTreeVars.m_nPfoHitsV;
     IntVector &nPfoHitsW = pfpTreeVars.m_nPfoHitsW;
+    IntVector &nPfoHits2D = pfpTreeVars.m_nPfoHits2D;
+    IntVector &nPfoHits3D = pfpTreeVars.m_nPfoHits3D;
     FloatVector &completeness = pfpTreeVars.m_completeness;
     FloatVector &completenessU = pfpTreeVars.m_completenessU;
     FloatVector &completenessV = pfpTreeVars.m_completenessV;
@@ -233,6 +285,12 @@ void PFPValidationTool::FillTree(PFPTreeVars &pfpTreeVars)
     FloatVector &trueVertexX = pfpTreeVars.m_trueVertexX;
     FloatVector &trueVertexY = pfpTreeVars.m_trueVertexY; 
     FloatVector &trueVertexZ = pfpTreeVars.m_trueVertexZ;
+    FloatVector &trueEndX = pfpTreeVars.m_trueEndX;
+    FloatVector &trueEndY = pfpTreeVars.m_trueEndY; 
+    FloatVector &trueEndZ = pfpTreeVars.m_trueEndZ;
+    FloatVector &trueDirX = pfpTreeVars.m_trueDirX;
+    FloatVector &trueDirY = pfpTreeVars.m_trueDirY; 
+    FloatVector &trueDirZ = pfpTreeVars.m_trueDirZ;
     FloatVector &trueLength = pfpTreeVars.m_trueLength;
     FloatVector &trueDisplacement = pfpTreeVars.m_trueDisplacement;
     FloatVector &recoVertexX = pfpTreeVars.m_recoVertexX;
@@ -247,14 +305,21 @@ void PFPValidationTool::FillTree(PFPTreeVars &pfpTreeVars)
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFPTree", "Event", pfpTreeVars.m_event));
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFPTree", "EventCount", m_eventNumber));
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFPTree", "MCP_TruePDG", &truePDG));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFPTree", "MCP_TrueEnergy", &trueEnergy));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFPTree", "MCP_TrueThetaXZ", &trueThetaXZ));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFPTree", "MCP_TrueThetaYZ", &trueThetaYZ));
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFPTree", "BM_IsTrack", &isTrack));
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFPTree", "BM_IsShower", &isShower));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFPTree", "MCP_HasMatch", &hasMatch));
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFPTree", "MCP_NMCHitsU", &nMCHitsU));
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFPTree", "MCP_NMCHitsV", &nMCHitsV));
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFPTree", "MCP_NMCHitsW", &nMCHitsW));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFPTree", "MCP_NMCHits2D", &nMCHits2D));
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFPTree", "BM_NPfoHitsU", &nPfoHitsU));
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFPTree", "BM_NPfoHitsV", &nPfoHitsV));
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFPTree", "BM_NPfoHitsW", &nPfoHitsW));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFPTree", "BM_NPfoHits2D", &nPfoHits2D));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFPTree", "BM_NPfoHits3D", &nPfoHits3D));
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFPTree", "BM_Completeness", &completeness));
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFPTree", "BM_CompletenessU", &completenessU));
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFPTree", "BM_CompletenessV", &completenessV));
@@ -266,6 +331,12 @@ void PFPValidationTool::FillTree(PFPTreeVars &pfpTreeVars)
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFPTree", "MCP_VertexX", &trueVertexX));
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFPTree", "MCP_VertexY", &trueVertexY));
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFPTree", "MCP_VertexZ", &trueVertexZ));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFPTree", "MCP_EndX", &trueEndX));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFPTree", "MCP_EndY", &trueEndY));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFPTree", "MCP_EndZ", &trueEndZ));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFPTree", "MCP_DirX", &trueDirX));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFPTree", "MCP_DirY", &trueDirY));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFPTree", "MCP_DirZ", &trueDirZ));
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFPTree", "MCP_Length", &trueLength));
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFPTree", "MCP_Displacement", &trueDisplacement));
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFPTree", "BM_VertexX", &recoVertexX));

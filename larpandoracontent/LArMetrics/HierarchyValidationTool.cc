@@ -124,7 +124,7 @@ void HierarchyValidationTool::FillRecoVariables(const Pfo *const pBestMatch, con
     }
     else
     {
-        const Pfo *const pParentPfo(LArPfoHelper::GetParentPfo(pBestMatch));
+        const Pfo *const pParentPfo(pBestMatch->GetParentPfoList().front());
         const auto bestMatchesIter(std::find(bestMatches.begin(), bestMatches.end(), pParentPfo));
 
         // If reco parent is not in the best-match list, the particle has been split
