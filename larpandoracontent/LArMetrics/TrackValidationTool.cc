@@ -51,10 +51,10 @@ void TrackValidationTool::MichelValidation(const Algorithm *const pAlgorithm, co
     {
         const MCParticle *const pMCParent(targetMC.at(iMC));
         const MCParticle *pMCMichel(nullptr);
-        int this_hasMichel(0), this_hasTargetMichel(0), this_hasRecoMichel(0);
+        int this_hasMichel(0), this_michelFromMuon(0), this_hasTargetMichel(0), this_hasRecoMichel(0);
         int this_michelIndex(-1), this_michelIsChild(0), this_michelIsShower(0);
 
-        // Find MC michel
+        // Find MC michel - from muon
         if (std::abs(pMCParent->GetParticleId()) == 13)
         {
             for (const MCParticle *const pMCChild : pMCParent->GetDaughterList())
@@ -65,8 +65,38 @@ void TrackValidationTool::MichelValidation(const Algorithm *const pAlgorithm, co
                 if ((pMCParent->GetEndpoint() - pMCChild->GetVertex()).GetMagnitude() > 3.f)
                     continue;
 
+                this_michelFromMuon = 1;
+
                 pMCMichel = pMCChild;
                 break;
+            }
+        } // from pions-muon-michel
+        else if (std::abs(pMCParent->GetParticleId()) == 211)
+        {
+            for (const MCParticle *const pMCChild : pMCParent->GetDaughterList())
+            {
+                if (std::abs(pMCChild->GetParticleId()) == 13)
+                {
+                    // If muon is a reco target (decay in flight pion, leave it)
+                    if (std::find(targetMC.begin(), targetMC.end(), pMCChild) != targetMC.end())
+                        continue;
+
+                    // look for electron!
+                    for (const MCParticle *const pMCGrandchild : pMCChild->GetDaughterList())
+                    {
+                        if (std::abs(pMCGrandchild->GetParticleId()) != 11)
+                            continue;
+
+                        if ((pMCChild->GetEndpoint() - pMCGrandchild->GetVertex()).GetMagnitude() > 3.f)
+                            continue;
+
+                        pMCMichel = pMCGrandchild;
+                        break;
+                    }
+                }
+
+                if (pMCMichel)
+                    break;
             }
         }
 
@@ -100,6 +130,7 @@ void TrackValidationTool::MichelValidation(const Algorithm *const pAlgorithm, co
         }
 
         trackTreeVars.m_hasMichel.push_back(this_hasMichel);
+        trackTreeVars.m_michelFromMuon.push_back(this_michelFromMuon);
         trackTreeVars.m_hasTargetMichel.push_back(this_hasTargetMichel);
         trackTreeVars.m_michelIndex.push_back(this_michelIndex);
         trackTreeVars.m_hasRecoMichel.push_back(this_hasRecoMichel);
@@ -113,6 +144,7 @@ void TrackValidationTool::MichelValidation(const Algorithm *const pAlgorithm, co
 void TrackValidationTool::FillTree(TrackTreeVars &trackTreeVars)
 {
     IntVector& hasMichel = trackTreeVars.m_hasMichel;
+    IntVector& michelFromMuon = trackTreeVars.m_michelFromMuon;
     IntVector& hasTargetMichel = trackTreeVars.m_hasTargetMichel;
     IntVector& hasRecoMichel = trackTreeVars.m_hasRecoMichel;
     IntVector& michelIndex = trackTreeVars.m_michelIndex;
@@ -123,6 +155,7 @@ void TrackValidationTool::FillTree(TrackTreeVars &trackTreeVars)
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "TrackTree", "Subrun", trackTreeVars.m_subrun));
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "TrackTree", "Event", trackTreeVars.m_event));
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "TrackTree", "MCP_HasMichel", &hasMichel));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "TrackTree", "MCP_MichelFromMuon", &michelFromMuon));
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "TrackTree", "MCP_HasTargetMichel", &hasTargetMichel));
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "TrackTree", "BM_IsMichelRecod", &hasRecoMichel));
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "TrackTree", "MCP_MichelIndex", &michelIndex));
