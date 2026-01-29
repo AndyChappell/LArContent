@@ -32,6 +32,7 @@ struct PFPTreeVars
     int m_event;
     pandora::IntVector m_truePDG;
     pandora::FloatVector m_trueEnergy;
+    pandora::FloatVector m_trueVisEnergy;
     pandora::FloatVector m_trueThetaXZ;
     pandora::FloatVector m_trueThetaYZ;
     pandora::IntVector m_isTrack;
@@ -84,8 +85,8 @@ struct PFPTreeVars
 
     void GetMCParticleInfo(const pandora::MCParticle *const pMCTarget, PFPTreeVars &pfpTreeVars);
 
-    void GetMatchingInfo(const LArHierarchyHelper::MCMatchesVector &mcMatchesVec, const pandora::MCParticle *const pMCTarget, 
-        const pandora::Pfo *const pBestMatch, PFPTreeVars &pfpTreeVars);
+    void GetMatchingInfo(const LArHierarchyHelper::MCMatchesVector &mcMatchesVec,
+        const pandora::MCParticle *const pMCTarget, const pandora::Pfo *const pBestMatch, PFPTreeVars &pfpTreeVars);
 
     void LengthValidation(const pandora::Algorithm *const pAlgorithm, const pandora::MCParticle *const pMCNu, 
         const pandora::MCParticle *const pTargetMC, const pandora::Pfo *const pBestMatch, PFPTreeVars &pfpTreeVars);

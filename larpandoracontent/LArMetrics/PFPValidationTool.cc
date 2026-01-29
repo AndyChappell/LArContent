@@ -61,6 +61,11 @@ void PFPValidationTool::Run(const Algorithm *const pAlgorithm, const MCParticle 
 void PFPValidationTool::GetMCParticleInfo(const MCParticle *const pMCTarget, PFPTreeVars &pfpTreeVars)
 {
     pfpTreeVars.m_trueEnergy.push_back(pMCTarget->GetEnergy());
+
+    // visible energy
+    const LArMCParticle *const pLArMCParticle(dynamic_cast<const LArMCParticle *>(pMCTarget));
+    pfpTreeVars.m_trueVisEnergy.push_back(pLArMCParticle->GetVisibleEnergy());
+
     const CartesianVector &trueEnd(pMCTarget->GetEndpoint());
     pfpTreeVars.m_trueEndX.push_back(trueEnd.GetX());
     pfpTreeVars.m_trueEndY.push_back(trueEnd.GetY());
@@ -90,8 +95,8 @@ void PFPValidationTool::GetMCParticleInfo(const MCParticle *const pMCTarget, PFP
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-void PFPValidationTool::GetMatchingInfo(const LArHierarchyHelper::MCMatchesVector &mcMatchesVec, const MCParticle *const pMCTarget, 
-    const Pfo *const pBestMatch, PFPTreeVars &pfpTreeVars)
+void PFPValidationTool::GetMatchingInfo(const LArHierarchyHelper::MCMatchesVector &mcMatchesVec, 
+    const MCParticle *const pMCTarget, const Pfo *const pBestMatch, PFPTreeVars &pfpTreeVars)
 {
     // Sorry for looping over matches again :( 
     for (const LArHierarchyHelper::MCMatches &mcMatches : mcMatchesVec)
@@ -240,7 +245,29 @@ void PFPValidationTool::LengthValidation(const Algorithm *const pAlgorithm, cons
 void PFPValidationTool::PIDValidation(const Algorithm *const pAlgorithm, const MCParticle *const pMCTarget, const Pfo *const pBestMatch, 
     PFPTreeVars &pfpTreeVars)
 {
-    pfpTreeVars.m_truePDG.push_back(pMCTarget->GetParticleId());
+    int truePDG(pMCTarget->GetParticleId());
+
+    // Get pi0
+    if (abs(pMCTarget->GetParticleId()) == 22)
+    {
+        if (pMCTarget->GetParentList().front()->GetParticleId() == 111)
+            truePDG = 111;
+    }
+
+    // Find MC michel - from muon
+    if (std::abs(pMCTarget->GetParticleId()) == 11)
+    {
+        const MCParticle *const pMCParent(pMCTarget->GetParentList().front());
+
+        if (abs(pMCParent->GetParticleId()) == 13)
+        {
+            if ((pMCParent->GetEndpoint() - pMCTarget->GetVertex()).GetMagnitude() < 3.f)
+                truePDG = 777;
+        }
+    }
+
+    pfpTreeVars.m_truePDG.push_back(truePDG);
+
 
     if (pBestMatch)
     {
@@ -260,6 +287,7 @@ void PFPValidationTool::FillTree(PFPTreeVars &pfpTreeVars)
 {
     IntVector &truePDG = pfpTreeVars.m_truePDG;
     FloatVector &trueEnergy = pfpTreeVars.m_trueEnergy;
+    FloatVector &trueVisEnergy = pfpTreeVars.m_trueVisEnergy;
     FloatVector &trueThetaXZ = pfpTreeVars.m_trueThetaXZ;
     FloatVector &trueThetaYZ = pfpTreeVars.m_trueThetaYZ;
     IntVector &isTrack = pfpTreeVars.m_isTrack;
@@ -306,6 +334,7 @@ void PFPValidationTool::FillTree(PFPTreeVars &pfpTreeVars)
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFPTree", "EventCount", m_eventNumber));
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFPTree", "MCP_TruePDG", &truePDG));
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFPTree", "MCP_TrueEnergy", &trueEnergy));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFPTree", "MCP_TrueVisEnergy", &trueVisEnergy));
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFPTree", "MCP_TrueThetaXZ", &trueThetaXZ));
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFPTree", "MCP_TrueThetaYZ", &trueThetaYZ));
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFPTree", "BM_IsTrack", &isTrack));
