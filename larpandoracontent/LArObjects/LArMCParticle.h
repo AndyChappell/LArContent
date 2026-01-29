@@ -85,6 +85,7 @@ class LArMCParticleParameters : public object_creation::MCParticle::Parameters
 public:
     pandora::InputInt m_nuanceCode; ///< The nuance code
     pandora::InputInt m_process;    ///< The process creating the particle
+    pandora::InputFloat m_visibleEnergy;
 };
 
 //------------------------------------------------------------------------------------------------------------------------------------------
@@ -123,9 +124,17 @@ public:
      */
     MCProcess GetProcess() const;
 
+    /**
+     *  @brief  Get the visible energy
+     *
+     *  @return the visible energy
+     */
+    float GetVisibleEnergy() const;
+
 private:
     int m_nuanceCode; ///< The nuance code
     int m_process;    ///< The process that created the particle
+    float m_visibleEnergy;
 };
 
 //------------------------------------------------------------------------------------------------------------------------------------------
@@ -184,7 +193,8 @@ private:
 inline LArMCParticle::LArMCParticle(const LArMCParticleParameters &parameters) :
     object_creation::MCParticle::Object(parameters),
     m_nuanceCode(parameters.m_nuanceCode.Get()),
-    m_process(parameters.m_process.Get())
+    m_process(parameters.m_process.Get()),
+    m_visibleEnergy(parameters.m_visibleEnergy.Get())
 {
 }
 
@@ -197,9 +207,17 @@ inline int LArMCParticle::GetNuanceCode() const
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
+inline float LArMCParticle::GetVisibleEnergy() const
+{
+    return m_visibleEnergy;
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
 inline void LArMCParticle::FillParameters(LArMCParticleParameters &parameters) const
 {
     parameters.m_nuanceCode = this->GetNuanceCode();
+    parameters.m_visibleEnergy = this->GetVisibleEnergy();
     parameters.m_process = this->GetProcess();
     parameters.m_energy = this->GetEnergy();
     parameters.m_momentum = this->GetMomentum();
