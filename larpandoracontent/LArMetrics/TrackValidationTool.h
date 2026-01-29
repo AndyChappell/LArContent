@@ -30,6 +30,7 @@ struct TrackTreeVars
     int m_subrun;
     int m_event;
     pandora::IntVector m_hasMichel; 
+    pandora::IntVector m_michelFromMuon; 
     pandora::IntVector m_hasTargetMichel;
     pandora::IntVector m_hasRecoMichel;
     pandora::IntVector m_michelIndex; 
