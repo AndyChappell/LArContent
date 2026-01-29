@@ -166,7 +166,7 @@ StatusCode ValidationAlgorithm::Run()
     unsigned int nAboveThresholdViews(0);
     for (unsigned int nHits : {nHitsU, nHitsV, nHitsW})
     {
-        if (nHits >= m_minRecoHits)
+        if (nHits >= m_minRecoHitsPerView)
             ++nAboveThresholdViews;
     }
 
