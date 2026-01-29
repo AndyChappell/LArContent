@@ -55,6 +55,10 @@ void EventValidationTool::GetInteractionTypeVariables(const MCParticle *const pM
     eventTreeVars.m_nuPDG = pMCNu->GetParticleId();
     eventTreeVars.m_nuEnergy = pMCNu->GetEnergy(); 
 
+    // Visible energy
+    const LArMCParticle *const pLArMCParticle(dynamic_cast<const LArMCParticle *>(pMCNu));
+    eventTreeVars.m_nuVisEnergy = pLArMCParticle->GetVisibleEnergy();
+
     if (std::abs(pMCNu->GetParticleId()) == 12)
     {
         for (const MCParticle *const pMCParticle : pMCNu->GetDaughterList())
@@ -142,6 +146,7 @@ void EventValidationTool::FillTree(EventTreeVars &eventTreeVars)
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "EventTree", "MCEvent_NTargets", eventTreeVars.m_nTargets));
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "EventTree", "MCNu_PDG", eventTreeVars.m_nuPDG));
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "EventTree", "MCNu_Energy", eventTreeVars.m_nuEnergy));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "EventTree", "MCNu_VisEnergy", eventTreeVars.m_nuVisEnergy));
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "EventTree", "MCInt_IsCC", eventTreeVars.m_isCC));
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "EventTree", "MCNu_VertexX", eventTreeVars.m_trueNuVertex.GetX()));
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "EventTree", "MCNu_VertexY", eventTreeVars.m_trueNuVertex.GetY()));

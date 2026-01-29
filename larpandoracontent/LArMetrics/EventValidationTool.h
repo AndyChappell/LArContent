@@ -36,6 +36,7 @@ struct EventTreeVars
     int m_nTargets;
     int m_nuPDG;
     float m_nuEnergy;
+    float m_nuVisEnergy;
     int m_isCC;
     pandora::CartesianVector m_trueNuVertex;
     pandora::CartesianVector m_recoNuVertexPass1;
@@ -73,6 +74,7 @@ inline EventValidationTool::EventTreeVars::EventTreeVars() :
     m_nTargets(-1),
     m_nuPDG(-1),
     m_nuEnergy(-1.f),
+    m_nuVisEnergy(-1.f),
     m_isCC(-1),
     m_trueNuVertex(pandora::CartesianVector(-9999.f, -9999.f, -9999.f)),
     m_recoNuVertexPass1(pandora::CartesianVector(-9999.f, -9999.f, -9999.f)),
