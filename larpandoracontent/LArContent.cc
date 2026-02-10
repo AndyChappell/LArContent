@@ -68,6 +68,7 @@
 #include "larpandoracontent/LArMonitoring/ShowerTensorVisualizationTool.h"
 #include "larpandoracontent/LArMonitoring/TestBeamEventValidationAlgorithm.h"
 #include "larpandoracontent/LArMonitoring/TestBeamHierarchyEventValidationAlgorithm.h"
+#include "larpandoracontent/LArMonitoring/TrackMonitoringAlgorithm.h"
 #include "larpandoracontent/LArMonitoring/TransverseMatrixVisualizationTool.h"
 #include "larpandoracontent/LArMonitoring/TransverseTensorVisualizationTool.h"
 #include "larpandoracontent/LArMonitoring/VertexMonitoringAlgorithm.h"
@@ -81,6 +82,7 @@
 #include "larpandoracontent/LArReclustering/CheatedThreeDClusteringTool.h"
 #include "larpandoracontent/LArReclustering/LArExample/RandomClusteringAlgorithm.h"
 #include "larpandoracontent/LArReclustering/LArExample/RandomFigureOfMeritTool.h"
+#include "larpandoracontent/LArReclustering/ShortTrackReclusteringAlgorithm.h"
 #include "larpandoracontent/LArReclustering/SimplePCAThreeDClusteringTool.h"
 
 #include "larpandoracontent/LArShowerRefinement/ConnectionPathwayFeatureTool.h"
@@ -250,6 +252,7 @@
     d("LArEventClusterValidation",              EventClusterValidationAlgorithm)                                                \
     d("LArTestBeamEventValidation",             TestBeamEventValidationAlgorithm)                                               \
     d("LArTestBeamHierarchyEventValidation",    TestBeamHierarchyEventValidationAlgorithm)                                      \
+    d("LArTrackMonitoring",                     TrackMonitoringAlgorithm)                                                       \
     d("LArHierarchyMonitoring",                 HierarchyMonitoringAlgorithm)                                                   \
     d("LArHierarchyValidation",                 HierarchyValidationAlgorithm)                                                   \
     d("LArPfoValidation",                       PfoValidationAlgorithm)                                                         \
@@ -358,6 +361,7 @@
     d("LArThreeDReclustering",                  ThreeDReclusteringAlgorithm)                                                    \
     d("LArThreeDMultiReclustering",             ThreeDMultiReclusteringAlgorithm)                                               \
     d("LArRandomClustering",                    RandomClusteringAlgorithm)                                                      \
+    d("LArShortTrackReclustering",              ShortTrackReclusteringAlgorithm)                                                \
     d("LArCandidateVertexCreation",             CandidateVertexCreationAlgorithm)                                               \
     d("LArEnergyKickVertexSelection",           EnergyKickVertexSelectionAlgorithm)                                             \
     d("LArHitAngleVertexSelection",             HitAngleVertexSelectionAlgorithm)                                               \
