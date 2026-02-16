@@ -40,10 +40,13 @@ public:
     ~ShortTrackReclusteringAlgorithm() = default;
 
 private:
+    typedef std::tuple<const pandora::CaloHit *, const pandora::CaloHit *, const pandora::CaloHit *> HitTriplet;
     typedef std::unordered_map<pandora::HitType, pandora::CaloHitSet> ViewToHitsMap;
     typedef std::unordered_map<pandora::HitType, pandora::ClusterList> ViewToClustersMap;
     typedef std::unordered_map<const pandora::Cluster *, const pandora::Pfo *> ClusterToPfoMap;
     typedef std::unordered_map<const pandora::Cluster *, pandora::FloatVector> ClusterToAdcMap;
+    typedef std::unordered_map<const pandora::Cluster *, pandora::CaloHitSet> ClusterToHitsMap;
+    typedef std::unordered_map<const pandora::Pfo *, std::vector<HitTriplet>> PfoToHitTripletsMap;
 
     pandora::StatusCode Run();
 
