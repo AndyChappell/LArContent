@@ -79,6 +79,26 @@ private:
     void CollectClusters(const pandora::PfoList &pfoList, ViewToClustersMap &viewToClustersMap, ClusterToPfoMap &clusterToPfoMap) const;
 
     /**
+     *  @brief  Loops over clusters and looks for evidence of discontinuous changes in ADC values, and collects the corresponding hits
+     *
+     *  @param  clusterToPfoMap the map of clusters to their parent PFO
+     *  @param  clusterToHitsMap the map in which to store the mapping of clusters to the hits associated with any identified ADC discontinuities
+     */
+    void FindAdcDiscontinuities(const ClusterToPfoMap &clusterToPfoMap, ClusterToHitsMap &clusterToHitsMap) const;
+
+    /**
+     *  @brief  Loops over the hits associated with identified ADC discontinuities and looks for corresponding hits in other views, to identify
+     *  potential triplets of hits across views that are consistent with a common 3D position
+     *
+     *  @param  clusterToHitsMap the map of clusters to the hits associated with any identified ADC discontinuities
+     *  @param  clusterToPfoMap the map of clusters to their parent PFO
+     *  @param  pfoToHitTripletsMap the map in which to store the mapping of PFOs to triplets of hits across views that are consistent with
+     *          a common 3D position
+     */
+    void MatchAdcDiscontinuities(const ClusterToHitsMap &clusterToHitsMap, const ClusterToPfoMap &clusterToPfoMap,
+        PfoToHitTripletsMap &pfoToHitTripletsMap) const;
+
+    /**
      *  @brief  Gets the hits associated with a cluster, ordered relative to a specified vertex
      *
      *  @param  clusterHits the hits associated with the cluster for which to retrieve the ordered hits

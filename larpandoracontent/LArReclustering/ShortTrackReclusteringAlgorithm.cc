@@ -50,6 +50,75 @@ StatusCode ShortTrackReclusteringAlgorithm::Run()
 
     // Loop over clusters, and look for evidence of discontinuous changes in ADC deposition and collect the corresponding hits.
     ClusterToHitsMap clusterToHitsMap;
+    this->FindAdcDiscontinuities(clusterToPfoMap, clusterToHitsMap);
+
+    // Find corresponding hits for discontinuity hits in other views.
+    PfoToHitTripletsMap pfoToHitTripletsMap;
+    this->MatchAdcDiscontinuities(clusterToHitsMap, clusterToPfoMap, pfoToHitTripletsMap);
+
+/*    for (const auto &[pPfo, hitTriplets] : pfoToHitTripletsMap)
+    {
+        std::cout << "PFO " << pPfo << ":" << std::endl;
+        for (const auto &[hitU, hitV, hitW] : hitTriplets)
+        {
+            const CartesianVector &posU{hitU->GetPositionVector()}, &posV{hitV->GetPositionVector()}, &posW{hitW->GetPositionVector()};
+            std::cout << "   ";
+            if (hitU)
+                std::cout << "U(" << posU.GetX() << "," << posU.GetZ() << ")";
+            if (hitV)
+                std::cout << " V(" << posV.GetX() << "," << posV.GetZ() << ")";
+            if (hitW)
+                std::cout << " W(" << posW.GetX() << "," << posW.GetZ() << ")";
+            std::cout << std::endl;
+        }
+    }*/
+
+    return STATUS_CODE_SUCCESS;
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+template <typename T>
+bool ShortTrackReclusteringAlgorithm::GetList(const std::string &listName, const T *&pList) const
+{
+    PandoraContentApi::GetList(*this, listName, pList);
+    return pList && !pList->empty();
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+void ShortTrackReclusteringAlgorithm::CollectUnclusteredHits(const CaloHitList &caloHitList, ViewToHitsMap &viewToUnclusteredHitsMap) const
+{
+    for (const CaloHit *const pCaloHit : caloHitList)
+    {
+        if (!PandoraContentApi::IsAvailable(*this, pCaloHit))
+            viewToUnclusteredHitsMap[pCaloHit->GetHitType()].insert(pCaloHit);
+    }
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+void ShortTrackReclusteringAlgorithm::CollectClusters(const PfoList &pfoList, ViewToClustersMap &viewToClustersMap, ClusterToPfoMap &clusterToPfoMap) const
+{
+    for (const Pfo *const pPfo : pfoList)
+    {
+        for (const HitType view : {TPC_VIEW_U, TPC_VIEW_V, TPC_VIEW_W})
+        {
+            ClusterList pfoClusterList;
+            LArPfoHelper::GetClusters(pPfo, view, pfoClusterList);
+            for (const Cluster *const pCluster : pfoClusterList)
+            {
+                viewToClustersMap[view].emplace_back(pCluster);
+                clusterToPfoMap[pCluster] = pPfo;
+            }
+        }
+    }
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+void ShortTrackReclusteringAlgorithm::FindAdcDiscontinuities(const ClusterToPfoMap &clusterToPfoMap, ClusterToHitsMap &clusterToHitsMap) const
+{
     for (const auto &[pCluster, pPfo] : clusterToPfoMap)
     {
         CaloHitList clusterHitList;
@@ -85,11 +154,16 @@ StatusCode ShortTrackReclusteringAlgorithm::Run()
             continue;
         }
     }
-    // Find corresponding hits for discontinuity hits in other views.
-    PfoToHitTripletsMap pfoToHitTripletsMap;
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+void ShortTrackReclusteringAlgorithm::MatchAdcDiscontinuities(const ClusterToHitsMap &clusterToHitsMap, const ClusterToPfoMap &clusterToPfoMap,
+    PfoToHitTripletsMap &pfoToHitTripletsMap) const
+{
     for (const auto &[pCluster, discontinuityHits] : clusterToHitsMap)
     {
-        const Pfo *const pPfo{clusterToPfoMap[pCluster]};
+        const Pfo *const pPfo{clusterToPfoMap.at(pCluster)};
         CaloHitList caloHits3D;
         CaloHitVector caloHits3Du, caloHits3Dv, caloHits3Dw;
         LArPfoHelper::GetCaloHits(pPfo, TPC_3D, caloHits3D);
@@ -187,65 +261,9 @@ StatusCode ShortTrackReclusteringAlgorithm::Run()
             }
         }
     }
-
-/*    for (const auto &[pPfo, hitTriplets] : pfoToHitTripletsMap)
-    {
-        std::cout << "PFO " << pPfo << ":" << std::endl;
-        for (const auto &[hitU, hitV, hitW] : hitTriplets)
-        {
-            const CartesianVector &posU{hitU->GetPositionVector()}, &posV{hitV->GetPositionVector()}, &posW{hitW->GetPositionVector()};
-            std::cout << "   ";
-            if (hitU)
-                std::cout << "U(" << posU.GetX() << "," << posU.GetZ() << ")";
-            if (hitV)
-                std::cout << " V(" << posV.GetX() << "," << posV.GetZ() << ")";
-            if (hitW)
-                std::cout << " W(" << posW.GetX() << "," << posW.GetZ() << ")";
-            std::cout << std::endl;
-        }
-    }*/
-
-    return STATUS_CODE_SUCCESS;
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
-
-template <typename T>
-bool ShortTrackReclusteringAlgorithm::GetList(const std::string &listName, const T *&pList) const
-{
-    PandoraContentApi::GetList(*this, listName, pList);
-    return pList && !pList->empty();
-}
-
-//------------------------------------------------------------------------------------------------------------------------------------------
-
-void ShortTrackReclusteringAlgorithm::CollectUnclusteredHits(const CaloHitList &caloHitList, ViewToHitsMap &viewToUnclusteredHitsMap) const
-{
-    for (const CaloHit *const pCaloHit : caloHitList)
-    {
-        if (!PandoraContentApi::IsAvailable(*this, pCaloHit))
-            viewToUnclusteredHitsMap[pCaloHit->GetHitType()].insert(pCaloHit);
-    }
-}
-
-//------------------------------------------------------------------------------------------------------------------------------------------
-
-void ShortTrackReclusteringAlgorithm::CollectClusters(const PfoList &pfoList, ViewToClustersMap &viewToClustersMap, ClusterToPfoMap &clusterToPfoMap) const
-{
-    for (const Pfo *const pPfo : pfoList)
-    {
-        for (const HitType view : {TPC_VIEW_U, TPC_VIEW_V, TPC_VIEW_W})
-        {
-            ClusterList pfoClusterList;
-            LArPfoHelper::GetClusters(pPfo, view, pfoClusterList);
-            for (const Cluster *const pCluster : pfoClusterList)
-            {
-                viewToClustersMap[view].emplace_back(pCluster);
-                clusterToPfoMap[pCluster] = pPfo;
-            }
-        }
-    }
-}
 
 void ShortTrackReclusteringAlgorithm::OrderHitsRelativeToVertex(const CaloHitVector &clusterHits, const LArPointingCluster::Vertex &vertex,
     CaloHitVector &orderedHits) const
