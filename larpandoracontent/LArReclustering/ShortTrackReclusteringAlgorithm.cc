@@ -137,7 +137,8 @@ StatusCode ShortTrackReclusteringAlgorithm::Run()
             row << pos.GetX(), pos.GetY(), pos.GetZ();
 
             const HitType view{pParent->GetHitType()};
-            const CaloHit *pBestU{view == TPC_VIEW_U ? pParent : nullptr}, *pBestV{view == TPC_VIEW_V ? pParent : nullptr}, *pBestW{view == TPC_VIEW_W ? pParent : nullptr};
+            const CaloHit *pBestU{view == TPC_VIEW_U ? pCaloHit : nullptr}, *pBestV{view == TPC_VIEW_V ? pCaloHit : nullptr},
+                *pBestW{view == TPC_VIEW_W ? pCaloHit : nullptr};
             if (view == TPC_VIEW_U || view == TPC_VIEW_V)
             {
                 Eigen::MatrixXf norms((hitMatrixW.rowwise() - row).array().pow(2).rowwise().sum());
@@ -170,7 +171,7 @@ StatusCode ShortTrackReclusteringAlgorithm::Run()
                 selectedV = nullptr;
             if (duw > 4.f && dvw > 4.f)
                 selectedW = nullptr;
- 
+
             if (selectedU || selectedV || selectedW)
             {
                 // We found candidates
