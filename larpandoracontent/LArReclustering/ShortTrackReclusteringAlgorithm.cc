@@ -16,6 +16,7 @@
 #include "larpandoracontent/LArHelpers/LArEigenHelper.h"
 #include "larpandoracontent/LArHelpers/LArGeometryHelper.h"
 #include "larpandoracontent/LArHelpers/LArPfoHelper.h"
+#include "larpandoracontent/LArObjects/LArTwoDSlidingFitResult.h"
 
 #include "larpandoracontent/LArReclustering/ShortTrackReclusteringAlgorithm.h"
 
@@ -321,15 +322,40 @@ void ShortTrackReclusteringAlgorithm::PartitionDiscontinuities(const PfoToHitTri
                     break;
             }
         }
-        (void)pClusterU; (void)pClusterV; (void)pClusterW;
+        const TwoDSlidingFitResult sfrU(pClusterU, 2, LArGeometryHelper::GetWirePitch(this->GetPandora(), TPC_VIEW_U));
+        const TwoDSlidingFitResult sfrV(pClusterV, 2, LArGeometryHelper::GetWirePitch(this->GetPandora(), TPC_VIEW_V));
+        const TwoDSlidingFitResult sfrW(pClusterW, 2, LArGeometryHelper::GetWirePitch(this->GetPandora(), TPC_VIEW_W));
         for (const auto &[hitU, hitV, hitW] : hitTriplets)
         {
+            float rL{0.f}, rT{0.f};
+            CartesianVector fitDir(0, 0, 0);
             if (hitU)
+            {
+                const CartesianVector &pos{hitU->GetPositionVector()};
+                sfrU.GetLocalPosition(pos, rL, rT);
+                sfrU.GetGlobalFitDirection(rL, fitDir);
+                const CartesianVector start{pos - fitDir * 5.0f}, end{pos + fitDir * 5.f};
                 PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &hitU->GetPositionVector(), "u", RED, 2));
+                PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &start, &end, "dir u", BLUE, 5, 1));
+            }
             if (hitV)
+            {
+                const CartesianVector &pos{hitV->GetPositionVector()};
+                sfrV.GetLocalPosition(pos, rL, rT);
+                sfrV.GetGlobalFitDirection(rL, fitDir);
+                const CartesianVector start{pos - fitDir * 5.0f}, end{pos + fitDir * 5.f};
                 PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &hitV->GetPositionVector(), "v", GREEN, 2));
+                PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &start, &end, "dir v", BLUE, 5, 1));
+            }
             if (hitW)
+            {
+                const CartesianVector &pos{hitW->GetPositionVector()};
+                sfrW.GetLocalPosition(pos, rL, rT);
+                sfrW.GetGlobalFitDirection(rL, fitDir);
+                const CartesianVector start{pos - fitDir * 5.f}, end{pos + fitDir * 5.f};
                 PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &hitW->GetPositionVector(), "w", BLUE, 2));
+                PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &start, &end, "dir w", BLUE, 5, 1));
+            }
             PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
         }
     }
