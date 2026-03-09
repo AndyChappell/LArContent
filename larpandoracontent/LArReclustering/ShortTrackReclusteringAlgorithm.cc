@@ -48,6 +48,8 @@ StatusCode ShortTrackReclusteringAlgorithm::Run()
     ClusterToPfoMap clusterToPfoMap;
     this->CollectClusters(*pPfoList, viewToClustersMap, clusterToPfoMap);
 
+    this->FitAndOrderClusters(viewToClustersMap);
+
     // Loop over clusters, and look for evidence of discontinuous changes in ADC deposition and collect the corresponding hits.
     ClusterToHitsMap clusterToHitsMap;
     this->FindAdcDiscontinuities(clusterToPfoMap, clusterToHitsMap);
@@ -120,42 +122,51 @@ void ShortTrackReclusteringAlgorithm::CollectClusters(const PfoList &pfoList, Vi
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
+void ShortTrackReclusteringAlgorithm::FitAndOrderClusters(const ViewToClustersMap &viewToClustersMap)
+{
+    for (const auto &[view, clusters] : viewToClustersMap)
+    {
+        for (const Cluster *const pCluster : clusters)
+        {
+            if (pCluster->GetNCaloHits() < 3)
+                continue;
+            switch (view)
+            {
+                case TPC_VIEW_U:
+                    m_clusterToSFRMap.emplace(pCluster, TwoDSlidingFitResult(pCluster, 3, LArGeometryHelper::GetWirePitch(this->GetPandora(), TPC_VIEW_U)));
+                    LArClusterHelper::OrderHitsAlongTrajectory(pCluster, m_clusterToSFRMap.at(pCluster), m_clusterToOrderedHitsMap[pCluster]);
+                    break;
+                case TPC_VIEW_V:
+                    m_clusterToSFRMap.emplace(pCluster, TwoDSlidingFitResult(pCluster, 3, LArGeometryHelper::GetWirePitch(this->GetPandora(), TPC_VIEW_V)));
+                    LArClusterHelper::OrderHitsAlongTrajectory(pCluster, m_clusterToSFRMap.at(pCluster), m_clusterToOrderedHitsMap[pCluster]);
+                    break;
+                case TPC_VIEW_W:
+                    m_clusterToSFRMap.emplace(pCluster, TwoDSlidingFitResult(pCluster, 3, LArGeometryHelper::GetWirePitch(this->GetPandora(), TPC_VIEW_W)));
+                    LArClusterHelper::OrderHitsAlongTrajectory(pCluster, m_clusterToSFRMap.at(pCluster), m_clusterToOrderedHitsMap[pCluster]);
+                    break;
+                default:
+                    break;
+            }
+        }
+    }
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
 void ShortTrackReclusteringAlgorithm::FindAdcDiscontinuities(const ClusterToPfoMap &clusterToPfoMap, ClusterToHitsMap &clusterToHitsMap) const
 {
     for (const auto &[pCluster, pPfo] : clusterToPfoMap)
     {
-        CaloHitList clusterHitList;
-        pCluster->GetOrderedCaloHitList().FillCaloHitList(clusterHitList);
+        CaloHitList clusterHitList{m_clusterToOrderedHitsMap.at(pCluster)};
         // Can't perform the pointing cluster's sliding linear fit without at least 3 hits
         if (clusterHitList.size() < 3)
             continue;
 
         CaloHitVector clusterHits(clusterHitList.begin(), clusterHitList.end());
-        HitType view{LArClusterHelper::GetClusterHitType(pCluster)};
-        const float nHalfWindow{2};
-        const float pitch{LArGeometryHelper::GetWirePitch(this->GetPandora(), view)};
-        try
-        {
-            LArPointingCluster pointingCluster(pCluster, nHalfWindow, pitch);
-
-            CaloHitVector forwardHits, backwardHits;
-            this->OrderHitsRelativeToVertex(clusterHits, pointingCluster.GetInnerVertex(), forwardHits);
-            this->OrderHitsRelativeToVertex(clusterHits, pointingCluster.GetOuterVertex(), backwardHits);
-
-            IntVector discontinuities;
-            this->GetStableAdcDiscontinuities(forwardHits, discontinuities);
-            for (const int index : discontinuities)
-                clusterToHitsMap[pCluster].insert(forwardHits.at(index));
-            IntVector backwardDiscontinuities;
-            this->GetStableAdcDiscontinuities(backwardHits, backwardDiscontinuities);
-            for (const int index : backwardDiscontinuities)
-                clusterToHitsMap[pCluster].insert(backwardHits.at(index));
-        }
-        catch (const StatusCodeException &)
-        {
-            // Couldn't construct a pointing cluster, so skip this cluster
-            continue;
-        }
+        IntVector discontinuities;
+        this->GetStableAdcDiscontinuities(clusterHits, discontinuities);
+        for (const int index : discontinuities)
+            clusterToHitsMap[pCluster].insert(clusterHits.at(index));
     }
 }
 
@@ -322,46 +333,36 @@ void ShortTrackReclusteringAlgorithm::PartitionDiscontinuities(const PfoToHitTri
         ClusterList pfoClusterList;
         LArPfoHelper::GetTwoDClusterList(pPfo, pfoClusterList);
         const Cluster *pClusterU{nullptr}, *pClusterV{nullptr}, *pClusterW{nullptr};
-        std::unordered_map<const Cluster *, TwoDSlidingFitResult> clusterToSFRMap;
-        std::unordered_map<const Cluster *, CaloHitList> clusterToOrderedHitsMap;
         for (const Cluster *const pCluster : pfoClusterList)
         {
-            std::cout << "Cluster hits: " << pCluster->GetNCaloHits() << std::endl;
             switch (LArClusterHelper::GetClusterHitType(pCluster))
             {
                 case TPC_VIEW_U:
                 {
-                    clusterToSFRMap.emplace(pCluster, TwoDSlidingFitResult(pCluster, 3, LArGeometryHelper::GetWirePitch(this->GetPandora(), TPC_VIEW_U)));
-                    LArClusterHelper::OrderHitsAlongTrajectory(pCluster, clusterToSFRMap.at(pCluster), clusterToOrderedHitsMap[pCluster]);
                     pClusterU = pCluster;
                     break;
                 }
                 case TPC_VIEW_V:
                 {
-                    clusterToSFRMap.emplace(pCluster, TwoDSlidingFitResult(pCluster, 3, LArGeometryHelper::GetWirePitch(this->GetPandora(), TPC_VIEW_V)));
-                    LArClusterHelper::OrderHitsAlongTrajectory(pCluster, clusterToSFRMap.at(pCluster), clusterToOrderedHitsMap[pCluster]);
                     pClusterV = pCluster;
                     break;
                 }
                 case TPC_VIEW_W:
                 {
-                    clusterToSFRMap.emplace(pCluster, TwoDSlidingFitResult(pCluster, 3, LArGeometryHelper::GetWirePitch(this->GetPandora(), TPC_VIEW_W)));
-                    LArClusterHelper::OrderHitsAlongTrajectory(pCluster, clusterToSFRMap.at(pCluster), clusterToOrderedHitsMap[pCluster]);
                     pClusterW = pCluster;
                     break;
                 }
                 default:
                     break;
             }
-            std::cout << "Done" << std::endl;
         }
-        std::cout << "Ordered hits size: " << clusterToOrderedHitsMap.size() << std::endl;
+        std::cout << "Ordered hits size: " << m_clusterToOrderedHitsMap.size() << std::endl;
 
         for (const auto &[hitU, hitV, hitW] : hitTriplets)
         {
-            const CaloHitList &orderedHitsU{pClusterU ? clusterToOrderedHitsMap.at(pClusterU) : CaloHitList()},
-                &orderedHitsV{pClusterV ? clusterToOrderedHitsMap.at(pClusterV) : CaloHitList()},
-                &orderedHitsW{pClusterW ? clusterToOrderedHitsMap.at(pClusterW) : CaloHitList()};
+            const CaloHitList &orderedHitsU{pClusterU ? m_clusterToOrderedHitsMap.at(pClusterU) : CaloHitList()},
+                &orderedHitsV{pClusterV ? m_clusterToOrderedHitsMap.at(pClusterV) : CaloHitList()},
+                &orderedHitsW{pClusterW ? m_clusterToOrderedHitsMap.at(pClusterW) : CaloHitList()};
             size_t indexU{0}, indexV{0}, indexW{0};
             if (hitU && pClusterU)
             {
