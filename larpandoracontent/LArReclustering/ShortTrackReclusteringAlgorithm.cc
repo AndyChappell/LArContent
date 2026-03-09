@@ -99,6 +99,7 @@ void ShortTrackReclusteringAlgorithm::CollectClusters(const PfoList &pfoList, Vi
                 clusterToPfoMap[pCluster] = pPfo;
 
                 /////////
+                /*
                 const TwoDSlidingFitResult sfr(pCluster, 3, LArGeometryHelper::GetWirePitch(this->GetPandora(), view));
                 CaloHitList clusterHits;
                 LArClusterHelper::OrderHitsAlongTrajectory(pCluster, sfr, clusterHits);
@@ -110,6 +111,7 @@ void ShortTrackReclusteringAlgorithm::CollectClusters(const PfoList &pfoList, Vi
                     ++i;
                 }
                 PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
+                */
                 /////////
             }
         }
@@ -320,37 +322,80 @@ void ShortTrackReclusteringAlgorithm::PartitionDiscontinuities(const PfoToHitTri
         ClusterList pfoClusterList;
         LArPfoHelper::GetTwoDClusterList(pPfo, pfoClusterList);
         const Cluster *pClusterU{nullptr}, *pClusterV{nullptr}, *pClusterW{nullptr};
+        std::unordered_map<const Cluster *, TwoDSlidingFitResult> clusterToSFRMap;
+        std::unordered_map<const Cluster *, CaloHitList> clusterToOrderedHitsMap;
         for (const Cluster *const pCluster : pfoClusterList)
         {
+            std::cout << "Cluster hits: " << pCluster->GetNCaloHits() << std::endl;
             switch (LArClusterHelper::GetClusterHitType(pCluster))
             {
                 case TPC_VIEW_U:
+                {
+                    clusterToSFRMap.emplace(pCluster, TwoDSlidingFitResult(pCluster, 3, LArGeometryHelper::GetWirePitch(this->GetPandora(), TPC_VIEW_U)));
+                    LArClusterHelper::OrderHitsAlongTrajectory(pCluster, clusterToSFRMap.at(pCluster), clusterToOrderedHitsMap[pCluster]);
                     pClusterU = pCluster;
                     break;
+                }
                 case TPC_VIEW_V:
+                {
+                    clusterToSFRMap.emplace(pCluster, TwoDSlidingFitResult(pCluster, 3, LArGeometryHelper::GetWirePitch(this->GetPandora(), TPC_VIEW_V)));
+                    LArClusterHelper::OrderHitsAlongTrajectory(pCluster, clusterToSFRMap.at(pCluster), clusterToOrderedHitsMap[pCluster]);
                     pClusterV = pCluster;
                     break;
+                }
                 case TPC_VIEW_W:
+                {
+                    clusterToSFRMap.emplace(pCluster, TwoDSlidingFitResult(pCluster, 3, LArGeometryHelper::GetWirePitch(this->GetPandora(), TPC_VIEW_W)));
+                    LArClusterHelper::OrderHitsAlongTrajectory(pCluster, clusterToSFRMap.at(pCluster), clusterToOrderedHitsMap[pCluster]);
                     pClusterW = pCluster;
                     break;
+                }
                 default:
                     break;
             }
+            std::cout << "Done" << std::endl;
         }
-        const TwoDSlidingFitResult sfrU(pClusterU, 2, LArGeometryHelper::GetWirePitch(this->GetPandora(), TPC_VIEW_U));
-        const TwoDSlidingFitResult sfrV(pClusterV, 2, LArGeometryHelper::GetWirePitch(this->GetPandora(), TPC_VIEW_V));
-        const TwoDSlidingFitResult sfrW(pClusterW, 2, LArGeometryHelper::GetWirePitch(this->GetPandora(), TPC_VIEW_W));
+        std::cout << "Ordered hits size: " << clusterToOrderedHitsMap.size() << std::endl;
 
         for (const auto &[hitU, hitV, hitW] : hitTriplets)
         {
-            CaloHitVector orderedHitsU, orderedHitsV, orderedHitsW;
+            const CaloHitList &orderedHitsU{pClusterU ? clusterToOrderedHitsMap.at(pClusterU) : CaloHitList()},
+                &orderedHitsV{pClusterV ? clusterToOrderedHitsMap.at(pClusterV) : CaloHitList()},
+                &orderedHitsW{pClusterW ? clusterToOrderedHitsMap.at(pClusterW) : CaloHitList()};
             size_t indexU{0}, indexV{0}, indexW{0};
             if (hitU && pClusterU)
-                indexU = this->OrderHitsAlongTrajectory(pClusterU, hitU, sfrU, 5.f, orderedHitsU);
+            {
+                auto it = std::find(orderedHitsU.begin(), orderedHitsU.end(), hitU);
+                if (it != orderedHitsU.end())
+                    indexU = std::distance(orderedHitsU.begin(), it);
+            }
             if (hitV && pClusterV)
-                indexV = this->OrderHitsAlongTrajectory(pClusterV, hitV, sfrV, 5.f, orderedHitsV);
+            {
+                auto it = std::find(orderedHitsV.begin(), orderedHitsV.end(), hitV);
+                if (it != orderedHitsV.end())
+                    indexV = std::distance(orderedHitsV.begin(), it);
+            }
             if (hitW && pClusterW)
-                indexW = this->OrderHitsAlongTrajectory(pClusterW, hitW, sfrW, 5.f, orderedHitsW);
+            {
+                auto it = std::find(orderedHitsW.begin(), orderedHitsW.end(), hitW);
+                if (it != orderedHitsW.end())
+                    indexW = std::distance(orderedHitsW.begin(), it);
+            }
+
+/*            for (const CaloHitList &clusterHits : {orderedHitsU, orderedHitsV, orderedHitsW})
+            {
+                int i{1};
+                PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), false, DETECTOR_VIEW_XZ, -1, -1, 1));
+                for (const CaloHit *const pCaloHit : clusterHits)
+                {
+                    const HitType view{pCaloHit->GetHitType()};
+                    int index{static_cast<int>(view == TPC_VIEW_U ? 1 + indexU : view == TPC_VIEW_V ? 1 + indexV : 1 + indexW)};
+                    const CartesianVector &position(pCaloHit->GetPositionVector());
+                    PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &position, std::to_string(i), index == i ? RED : BLUE, 2));
+                    ++i;
+                }
+                PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
+            }*/
 
             // Don't split when clusters are too small
             int nSmall{0};
@@ -373,28 +418,47 @@ void ShortTrackReclusteringAlgorithm::PartitionDiscontinuities(const PfoToHitTri
             nStepUp += balanceW > 1.5f;
             nStepDown += balanceW &&balanceW < 0.67f;
             nMissing += !balanceW;
+            if (nStepUp >= 2 || nStepDown >= 2)
+                std::cout << "Balances: " << balanceU << " " << balanceV << " " << balanceW << std::endl;
+
             if (nStepUp >= 3 || nStepDown >= 3 || (nStepUp == 2 && nMissing == 1) || (nStepDown == 2 && nMissing == 1))
             {
                 // We have a consistent discontinuous change in ADC across at least two views
-                std::cout << "Balance: " << "U: " << balanceU << " V: " << balanceV << " W: " << balanceW << std::endl;
-                partitions.emplace_back(Partition(pPfo, std::make_tuple(hitU, hitV, hitW), sfrU, sfrV, sfrW));
+                partitions.emplace_back(Partition(pPfo, std::make_tuple(hitU, hitV, hitW), orderedHitsU, orderedHitsV, orderedHitsW));
                 PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), false, DETECTOR_VIEW_XZ, -1, -1, 1));
                 if (hitU)
                 {
-                    const CartesianVector &pos(hitU->GetPositionVector());
-                    PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &pos, "U", RED, 2));
+                    int i{1};
+                    for (const CaloHit *const pCaloHit : orderedHitsU)
+                    {
+                        const CartesianVector &pos(pCaloHit->GetPositionVector());
+                        PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &pos, "u"+std::to_string(i), pCaloHit == hitU ? RED : BLUE, 2));
+                        ++i;
+                    }
+                    PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
                 }
                 if (hitV)
                 {
-                    const CartesianVector &pos(hitV->GetPositionVector());
-                    PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &pos, "V", RED, 2));
+                    int i{1};
+                    for (const CaloHit *const pCaloHit : orderedHitsV)
+                    {
+                        const CartesianVector &pos(pCaloHit->GetPositionVector());
+                        PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &pos, "V"+std::to_string(i), pCaloHit == hitV ? RED : BLUE, 2));
+                        ++i;
+                    }
+                    PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
                 }
                 if (hitW)
                 {
-                    const CartesianVector &pos(hitW->GetPositionVector());
-                    PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &pos, "W", RED, 2));
+                    int i{1};
+                    for (const CaloHit *const pCaloHit : orderedHitsW)
+                    {
+                        const CartesianVector &pos(pCaloHit->GetPositionVector());
+                        PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &pos, "W"+std::to_string(i), pCaloHit == hitW ? RED : BLUE, 2));
+                        ++i;
+                    }
+                    PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
                 }
-                PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
             }
         }
     }
@@ -653,12 +717,18 @@ float ShortTrackReclusteringAlgorithm::GetMonotonicityScore(const pandora::CaloH
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-float ShortTrackReclusteringAlgorithm::GetBalance(const pandora::CaloHitVector &hits, const size_t pivot) const
+float ShortTrackReclusteringAlgorithm::GetBalance(const pandora::CaloHitList &hits, const size_t pivot) const
 {
     FloatVector adcs;
     // Get pre-pivot median
-    for (size_t i = 0; i < pivot; ++i)
-        adcs.emplace_back(hits[i]->GetInputEnergy());
+    size_t i{0};
+    for (const CaloHit *const pCaloHit : hits)
+    {
+        if (i >= pivot)
+            break;
+        adcs.emplace_back(pCaloHit->GetInputEnergy());
+        ++i;
+    }
     size_t mid{adcs.size() / 2};
     std::nth_element(adcs.begin(), adcs.begin() + mid, adcs.end());
     const float medianDenom{!adcs.empty() ? adcs[mid] : 0.f};
@@ -666,8 +736,17 @@ float ShortTrackReclusteringAlgorithm::GetBalance(const pandora::CaloHitVector &
     adcs.clear();
 
     // Get post-pivot median
-    for (size_t i = pivot + 1; i < hits.size(); ++i)
-        adcs.emplace_back(hits[i]->GetInputEnergy());
+    i = 0;
+    for (const CaloHit *const pCaloHit : hits)
+    {
+        if (i < pivot)
+        {
+            ++i;
+            continue;
+        }
+        adcs.emplace_back(pCaloHit->GetInputEnergy());
+        ++i;
+    }
     mid = adcs.size() / 2;
     std::nth_element(adcs.begin(), adcs.begin() + mid, adcs.end());
     const float medianNum{!adcs.empty() ? adcs[mid] : 0.f};
