@@ -99,22 +99,6 @@ void ShortTrackReclusteringAlgorithm::CollectClusters(const PfoList &pfoList, Vi
             {
                 viewToClustersMap[view].emplace_back(pCluster);
                 clusterToPfoMap[pCluster] = pPfo;
-
-                /////////
-                /*
-                const TwoDSlidingFitResult sfr(pCluster, 3, LArGeometryHelper::GetWirePitch(this->GetPandora(), view));
-                CaloHitList clusterHits;
-                LArClusterHelper::OrderHitsAlongTrajectory(pCluster, sfr, clusterHits);
-                int i{1};
-                for (const CaloHit *const pCaloHit : clusterHits)
-                {
-                    const CartesianVector &position(pCaloHit->GetPositionVector());
-                    PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &position, std::to_string(i), BLUE, 2));
-                    ++i;
-                }
-                PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
-                */
-                /////////
             }
         }
     }
@@ -356,7 +340,6 @@ void ShortTrackReclusteringAlgorithm::PartitionDiscontinuities(const PfoToHitTri
                     break;
             }
         }
-        std::cout << "Ordered hits size: " << m_clusterToOrderedHitsMap.size() << std::endl;
 
         for (const auto &[hitU, hitV, hitW] : hitTriplets)
         {
@@ -382,21 +365,6 @@ void ShortTrackReclusteringAlgorithm::PartitionDiscontinuities(const PfoToHitTri
                 if (it != orderedHitsW.end())
                     indexW = std::distance(orderedHitsW.begin(), it);
             }
-
-/*            for (const CaloHitList &clusterHits : {orderedHitsU, orderedHitsV, orderedHitsW})
-            {
-                int i{1};
-                PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), false, DETECTOR_VIEW_XZ, -1, -1, 1));
-                for (const CaloHit *const pCaloHit : clusterHits)
-                {
-                    const HitType view{pCaloHit->GetHitType()};
-                    int index{static_cast<int>(view == TPC_VIEW_U ? 1 + indexU : view == TPC_VIEW_V ? 1 + indexV : 1 + indexW)};
-                    const CartesianVector &position(pCaloHit->GetPositionVector());
-                    PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &position, std::to_string(i), index == i ? RED : BLUE, 2));
-                    ++i;
-                }
-                PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
-            }*/
 
             // Don't split when clusters are too small
             int nSmall{0};
@@ -426,40 +394,6 @@ void ShortTrackReclusteringAlgorithm::PartitionDiscontinuities(const PfoToHitTri
             {
                 // We have a consistent discontinuous change in ADC across at least two views
                 partitions.emplace_back(Partition(pPfo, std::make_tuple(hitU, hitV, hitW), orderedHitsU, orderedHitsV, orderedHitsW));
-                PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), false, DETECTOR_VIEW_XZ, -1, -1, 1));
-                if (hitU)
-                {
-                    int i{1};
-                    for (const CaloHit *const pCaloHit : orderedHitsU)
-                    {
-                        const CartesianVector &pos(pCaloHit->GetPositionVector());
-                        PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &pos, "u"+std::to_string(i), pCaloHit == hitU ? RED : BLUE, 2));
-                        ++i;
-                    }
-                    PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
-                }
-                if (hitV)
-                {
-                    int i{1};
-                    for (const CaloHit *const pCaloHit : orderedHitsV)
-                    {
-                        const CartesianVector &pos(pCaloHit->GetPositionVector());
-                        PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &pos, "V"+std::to_string(i), pCaloHit == hitV ? RED : BLUE, 2));
-                        ++i;
-                    }
-                    PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
-                }
-                if (hitW)
-                {
-                    int i{1};
-                    for (const CaloHit *const pCaloHit : orderedHitsW)
-                    {
-                        const CartesianVector &pos(pCaloHit->GetPositionVector());
-                        PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &pos, "W"+std::to_string(i), pCaloHit == hitW ? RED : BLUE, 2));
-                        ++i;
-                    }
-                    PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
-                }
             }
         }
     }
@@ -559,7 +493,6 @@ double ShortTrackReclusteringAlgorithm::GetMedian(const std::vector<T> &values) 
 void ShortTrackReclusteringAlgorithm::GetStableAdcDiscontinuities(const pandora::CaloHitVector &hits, pandora::IntVector &discontinuities,
     const size_t window) const
 {
-    //PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), false, DETECTOR_VIEW_XZ, -1, -1, 1));
     PANDORA_THROW_IF(STATUS_CODE_INVALID_PARAMETER, window == 0);
     FloatVector normalizedAdc, movingAverage, movingVariance;
     this->NormalizeAdc(hits, normalizedAdc);
@@ -596,13 +529,6 @@ void ShortTrackReclusteringAlgorithm::GetStableAdcDiscontinuities(const pandora:
             continue;
         }
     }
-/*    for (const int index : discontinuities)
-    {
-        const CartesianVector &position(hits[index]->GetPositionVector());
-        PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &position, "d", RED, 2));
-    }
-    if (!discontinuities.empty())
-        PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));*/
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
