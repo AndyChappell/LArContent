@@ -51,19 +51,19 @@ private:
 
     struct Partition
     {
-        Partition(const pandora::Pfo *const pCurrentPfo, const HitTriplet &hitTriplet, const TwoDSlidingFitResult &sfrU,
-            const TwoDSlidingFitResult &sfrV, const TwoDSlidingFitResult &sfrW) :
+        Partition(const pandora::Pfo *const pCurrentPfo, const HitTriplet &hitTriplet, const pandora::CaloHitList &hitsU,
+            const pandora::CaloHitList &hitsV, const pandora::CaloHitList &hitsW) :
             m_pCurrentPfo(pCurrentPfo),
             m_hitTriplet(hitTriplet),
-            m_sfrU(sfrU),
-            m_sfrV(sfrV),
-            m_sfrW(sfrW)
+            m_hitsU(hitsU),
+            m_hitsV(hitsV),
+            m_hitsW(hitsW)
         {
         }
 
         const pandora::Pfo *const m_pCurrentPfo;
         const HitTriplet m_hitTriplet;
-        const TwoDSlidingFitResult m_sfrU, m_sfrV, m_sfrW;
+        const pandora::CaloHitList m_hitsU, m_hitsV, m_hitsW;
     };
     typedef std::vector<Partition> PartitionVector;
 
@@ -241,7 +241,7 @@ private:
      *
      *  @return the ratio of the median ADC value either side of the pivot
      */
-    float GetBalance(const pandora::CaloHitVector &hits, const size_t pivot) const;
+    float GetBalance(const pandora::CaloHitList &hits, const size_t pivot) const;
 
     /**
      *  @brief  Gets a windowed, ordered vector of hits along the direction of a sliding linear fit about the discontinuity hit.
