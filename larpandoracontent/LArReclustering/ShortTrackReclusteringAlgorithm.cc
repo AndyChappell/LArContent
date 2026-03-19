@@ -404,27 +404,38 @@ void ShortTrackReclusteringAlgorithm::PartitionDiscontinuities(const PfoToHitTri
 
 void ShortTrackReclusteringAlgorithm::Recluster(const PartitionVector &partitions) const
 {
-    std::string pfoListName{"TrackParticles3D"};
     std::string initialPfoListName;
     PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetCurrentListName<Pfo>(*this, initialPfoListName));
+    std::map<HitType, std::string> viewToClusterListNameMap;
+    for (const std::string &clusterListName : m_clusterListNames)
+    {
+        const ClusterList *pClusterList{nullptr};
+        PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetList(*this, clusterListName, pClusterList));
+        for (const Cluster *const pCluster : *pClusterList)
+        {
+            if (pCluster)
+            {
+                try
+                {
+                    viewToClusterListNameMap[LArClusterHelper::GetClusterHitType(pCluster)] = clusterListName;
+                }
+                catch (const StatusCodeException &)
+                {
+                    continue;
+                }
+            }
+        }
+    }
 
     const PfoList *pPfoList{nullptr};
     std::string tempPfoListName;
     PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::CreateTemporaryListAndSetCurrent(*this, pPfoList, tempPfoListName));
 
-    std::map<HitType, std::string> viewToClusterListNameMap{{TPC_VIEW_U, "ClustersU"}, {TPC_VIEW_V, "ClustersV"}, {TPC_VIEW_W, "ClustersW"}};
-    std::map<HitType, int> viewToIndexMap{{TPC_VIEW_U, 0}, {TPC_VIEW_V, 1}, {TPC_VIEW_W, 2}};
     for (const auto &[pPfo, hitTriplet, hitsU, hitsV, hitsW] : partitions)
     {
         CaloHitList pfoHits3D;
         LArPfoHelper::GetCaloHits(pPfo, TPC_3D, pfoHits3D);
 
-        // Need to get the cluster lists from XML and properly associated those.
-        // Similarly need to get the PFO list
-        // Need to remove the 3D hits from the current PFO and remake those
-        // Need to create a new PFO from the new clusters and add the 3D hits to that
-        // Need to change the hierarchy so that the new PFO is a child of the old one, and potentially associate any child PFOs from the original
-        // PFO to the new one - that's more complex, may want to just redo hierarchy building afterwards, or ensure this runs before
         PandoraContentApi::ParticleFlowObject::Parameters pfoParameters;
         pfoParameters.m_particleId = pPfo->GetParticleId();
         pfoParameters.m_charge = PdgTable::GetParticleCharge(pfoParameters.m_particleId.Get());
@@ -468,7 +479,7 @@ void ShortTrackReclusteringAlgorithm::Recluster(const PartitionVector &partition
         const Pfo *pNewPfo(nullptr);
         PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::ParticleFlowObject::Create(*this, pfoParameters, pNewPfo));
     }
-    PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::SaveList<Pfo>(*this, tempPfoListName, pfoListName));
+    PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::SaveList<Pfo>(*this, tempPfoListName, m_pfoListName));
 
     PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::ReplaceCurrentList<Pfo>(*this, initialPfoListName));
 }
@@ -837,6 +848,7 @@ StatusCode ShortTrackReclusteringAlgorithm::ReadSettings(const TiXmlHandle xmlHa
 {
     PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadValue(xmlHandle, "CaloHitListName", m_caloHitListName));
     PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadValue(xmlHandle, "PfoListName", m_pfoListName));
+    PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadVectorOfValues(xmlHandle, "ClusterListNames", m_clusterListNames));
 
     return STATUS_CODE_SUCCESS;
 }
