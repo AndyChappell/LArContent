@@ -418,7 +418,7 @@ void ShortTrackReclusteringAlgorithm::Recluster(const PartitionVector &partition
     std::map<HitType, int> viewToIndexMap{{TPC_VIEW_U, 0}, {TPC_VIEW_V, 1}, {TPC_VIEW_W, 2}};
     for (const auto &[pPfo, hitTriplet, hitsU, hitsV, hitsW] : partitions)
     {
-        CaloHitList pfoHits3D, newPfoHits3D;
+        CaloHitList pfoHits3D;
         LArPfoHelper::GetCaloHits(pPfo, TPC_3D, pfoHits3D);
 
         // Need to get the cluster lists from XML and properly associated those.
@@ -451,10 +451,7 @@ void ShortTrackReclusteringAlgorithm::Recluster(const PartitionVector &partition
             {
                 const CaloHit *pParent{static_cast<const CaloHit *>(pCaloHit->GetParentAddress())};
                 if (std::find(cluster2Hits.begin(), cluster2Hits.end(), pParent) != cluster2Hits.end())
-                {
-                    newPfoHits3D.emplace_back(pCaloHit);
                     PandoraContentApi::RemoveFromCluster(*this, clusterList3D.front(), pCaloHit);
-                }
             }
 
             std::string newClusterListName;
@@ -470,18 +467,6 @@ void ShortTrackReclusteringAlgorithm::Recluster(const PartitionVector &partition
             pfoParameters.m_clusterList.emplace_back(pNewCluster);
         }
 
-        std::string newCluster3DListName;
-        const ClusterList *pClusterList3D{nullptr};
-        PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::CreateTemporaryListAndSetCurrent(*this, pClusterList3D, newCluster3DListName));
-        PandoraContentApi::Cluster::Parameters clusterParameters3D;
-        clusterParameters3D.m_caloHitList = std::move(newPfoHits3D);
-
-        const Cluster *pNewCluster3D(nullptr);
-        PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::Cluster::Create(*this, clusterParameters3D, pNewCluster3D));
-        PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::SaveList<Cluster>(*this, "TrackClusters3D"));
-
-        pfoParameters.m_clusterList.emplace_back(pNewCluster3D);
-        std::cout << "Making new PFO with " << pfoParameters.m_clusterList.size() << " clusters" << std::endl;
         const Pfo *pNewPfo(nullptr);
         PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::ParticleFlowObject::Create(*this, pfoParameters, pNewPfo));
     }
