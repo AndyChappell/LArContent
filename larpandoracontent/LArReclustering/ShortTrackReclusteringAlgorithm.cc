@@ -390,8 +390,6 @@ void ShortTrackReclusteringAlgorithm::PartitionDiscontinuities(const PfoToHitTri
             nStepUp += balanceW > 1.5f;
             nStepDown += balanceW &&balanceW < 0.67f;
             nMissing += !balanceW;
-            if (nStepUp >= 2 || nStepDown >= 2)
-                std::cout << "Balances: " << balanceU << " " << balanceV << " " << balanceW << std::endl;
 
             if (nStepUp >= 3 || nStepDown >= 3 || (nStepUp == 2 && nMissing == 1) || (nStepDown == 2 && nMissing == 1))
             {
