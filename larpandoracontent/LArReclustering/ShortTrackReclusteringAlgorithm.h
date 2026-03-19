@@ -287,6 +287,7 @@ private:
 
     std::string m_caloHitListName; ///< Name of list of calo hits to consider during reclustering
     std::string m_pfoListName; ///< Name of list of track-like pfos to consider for reclustering
+    pandora::StringVector m_clusterListNames; ///< Names of lists of clusters to consider during reclustering
     std::unordered_map<const pandora::Cluster *, TwoDSlidingFitResult> m_clusterToSFRMap;
     std::unordered_map<const pandora::Cluster *, pandora::CaloHitList> m_clusterToOrderedHitsMap;
 };
