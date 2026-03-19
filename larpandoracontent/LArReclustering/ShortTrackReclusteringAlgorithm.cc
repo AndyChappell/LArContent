@@ -802,48 +802,6 @@ float ShortTrackReclusteringAlgorithm::GetBalance(const pandora::CaloHitList &hi
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-size_t ShortTrackReclusteringAlgorithm::OrderHitsAlongTrajectory(const Cluster *const pCluster, const CaloHit *const pDiscontinuityHit,
-    const TwoDSlidingFitResult &sfr, const float window, CaloHitVector &orderedHits) const
-{
-    // Get the linear region around the discontinuity
-    float rL{0.f}, rT{0.f};
-    CartesianVector fitDir(0, 0, 0);
-    const CartesianVector &pos{pDiscontinuityHit->GetPositionVector()};
-    sfr.GetLocalPosition(pos, rL, rT);
-    sfr.GetGlobalFitDirection(rL, fitDir);
-    const CartesianVector start{pos - fitDir * window}, end{pos + fitDir * window};
-
-    // Collect the hits that project into the linear region and sort
-    CaloHitList clusterHitList;
-    pCluster->GetOrderedCaloHitList().FillCaloHitList(clusterHitList);
-    CaloHitVector clusterHits(clusterHitList.begin(), clusterHitList.end());
-    FloatVector projections;
-    std::vector<std::pair<float, const CaloHit*>> hitProjectionPairs;
-    for (const CaloHit *const pCaloHit : clusterHits)
-    {
-        const CartesianVector &hitPos{pCaloHit->GetPositionVector()};
-        const CartesianVector hitDir{hitPos - pos};
-        const float lPos{hitDir.GetDotProduct(fitDir)};
-
-        if (std::abs(lPos) <= window)
-            hitProjectionPairs.emplace_back(lPos, pCaloHit);
-    }
-    std::sort(hitProjectionPairs.begin(), hitProjectionPairs.end(), [](const auto a, const auto b) { return a.first < b.first; });
-
-    size_t localIndex{0}, pivot{0};
-    for (const auto &[_, pCaloHit] : hitProjectionPairs)
-    {
-        orderedHits.emplace_back(pCaloHit);
-        if (pCaloHit == pDiscontinuityHit)
-            pivot = localIndex;
-        ++localIndex;
-    }
-
-    return pivot;
-}
-
-//------------------------------------------------------------------------------------------------------------------------------------------
-
 StatusCode ShortTrackReclusteringAlgorithm::ReadSettings(const TiXmlHandle xmlHandle)
 {
     PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadValue(xmlHandle, "CaloHitListName", m_caloHitListName));
