@@ -55,6 +55,8 @@ StatusCode VisualParticleMonitoringAlgorithm::Run()
         this->MakeSelection(pCaloHitList, targetMCParticleToHitsMap);
     }
 
+    std::cout << "Selected " << targetMCParticleToHitsMap.size() << " MC particles for visualisation:" << m_visualizeMC << std::endl;
+
     if (m_visualizeMC)
     {
         if (m_groupMCByPdg)
@@ -102,15 +104,12 @@ void VisualParticleMonitoringAlgorithm::VisualizeIndependentMC(const LArMCPartic
 
     PANDORA_MONITORING_API(
         SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, m_transparencyThresholdE, m_energyScaleThresholdE, m_scalingFactor));
-    LArMCParticleHelper::GetBreadthFirstHierarchyRepresentation(mcMap.begin()->first, linearisedMC);
 
+    std::cout << "Map: " << mcMap.size() << " entries" << std::endl;
     size_t colorIdx{0};
     int mcIdx{0};
-    for (const MCParticle *pMC : linearisedMC)
+    for (const auto &[pMC, hits] : mcMap)
     {
-        const auto iter{mcMap.find(pMC)};
-        if (iter == mcMap.end())
-            continue;
         std::string key("other");
         try
         {
@@ -124,7 +123,7 @@ void VisualParticleMonitoringAlgorithm::VisualizeIndependentMC(const LArMCPartic
         }
 
         CaloHitList uHits, vHits, wHits;
-        for (const CaloHit *pCaloHit : iter->second)
+        for (const CaloHit *pCaloHit : hits)
         {
             const HitType view{pCaloHit->GetHitType()};
             if (view == HitType::TPC_VIEW_U)
@@ -454,11 +453,7 @@ void VisualParticleMonitoringAlgorithm::MakeSelection(const CaloHitList *pCaloHi
         try
         {
             const MCParticle *pMC{MCParticleHelper::GetMainMCParticle(pCaloHit)};
-            const MCParticle *const pParentMCParticle(LArMCParticleHelper::GetParentMCParticle(pMC));
-            if (LArMCParticleHelper::IsNeutrino(pParentMCParticle))
-            {
-                mcMap[pMC].emplace_back(pCaloHit);
-            }
+            mcMap[pMC].emplace_back(pCaloHit);
         }
         catch (const StatusCodeException &)
         {
