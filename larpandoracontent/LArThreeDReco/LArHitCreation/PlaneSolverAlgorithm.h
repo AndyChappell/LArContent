@@ -53,6 +53,7 @@ private:
     {
         int m_aIndex;
         int m_bIndex;
+        float m_cost;
     };
 
     struct Triplet
@@ -60,6 +61,7 @@ private:
         int m_uIndex;
         int m_vIndex;
         int m_wIndex;
+        float m_cost;
     };
 
     typedef std::unordered_map<pandora::HitType, pandora::CaloHitVector> PlaneToHitsMap;
@@ -128,10 +130,11 @@ private:
      *  @param  assignment the output of the Kuhne-Munkres algorithm, indicating the index of the assigned B hit for each A hit (or -1 if unmatched)
      *  @param  nA the number of A hits
      *  @param  nB the number of B hits
+     *  @param  costMatrix the cost matrix that was used as input to the Kuhne-Munkres algorithm
      *
      *  @return The list of UV pairs
      */
-    PairVector BuildPairs(const pandora::IntVector &assignment, int nA, int nB) const;
+    PairVector BuildPairs(const pandora::IntVector &assignment, int nA, int nB, const CostMatrix& costMatrix) const;
 
     /**
      *  @brief  Build the list of triplets based on the assignment of constraint hits to AB pairs from the second pass of the Kuhne-Munkres algorithm
@@ -140,20 +143,13 @@ private:
      *  @param  assignment the output of the Kuhne-Munkres algorithm, indicating the index of the assigned constraint hit for each AB pair
      *          (or -1 if unmatched)
      *  @param  nC the number of constraint hits
+     *  @param  costMatrix the cost matrix that was used as input to the Kuhne-Munkres algorithm
      *  @param  constraintView the view that was used as the constraint in the chi-squared calculation
      *
      *  @return The list of triplets, where unmatched AB pairs are indicated with a constraint index of -1
      */
-    TripletVector BuildTriplets(const PairVector& pairs, const pandora::IntVector& assignment, int nC, const pandora::HitType constraintView) const;
-
-    /**
-     *  @brief  Create a 3D hit from a double of U and V hits
-     *
-     *  @param  pCaloHitU the U view hit
-     *  @param  pCaloHitV the V view hit
-     *  @param[out] pCaloHit3D the 3D hit to be created
-     */
-    void CreateThreeDHit(const pandora::CaloHit *const pCaloHitU, const pandora::CaloHit *const pCaloHitV, const pandora::CaloHit *&pCaloHit3D) const;
+    TripletVector BuildTriplets(const PairVector& pairs, const pandora::IntVector& assignment, int nC, const CostMatrix& costMatrix,
+        const pandora::HitType constraintView) const;
 
     /**
      *  @brief  Create a 3D hit from a triplet of U, V and W hits
@@ -165,6 +161,15 @@ private:
      */
     void CreateThreeDHit(const pandora::CaloHit *const pCaloHitU, const pandora::CaloHit *const pCaloHitV, const pandora::CaloHit *const pCaloHitW,
         const pandora::CaloHit *&pCaloHit3D) const;
+
+    /**
+     *  @brief  Select the pairing views based on the specified constraint view
+     *
+     *  @param  constraintView the view to be used as the constraint in the chi-squared calculation
+     *  @param[out] viewA the first view to be used for pairing
+     *  @param[out] viewB the second view to be used for pairing
+     */
+    void SelectViewPair(const pandora::HitType constraintView, pandora::HitType &viewA, pandora::HitType &viewB) const;
 
     pandora::StatusCode ReadSettings(const pandora::TiXmlHandle xmlHandle);
 
