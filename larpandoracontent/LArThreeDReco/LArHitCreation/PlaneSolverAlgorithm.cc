@@ -67,35 +67,59 @@ void PlaneSolverAlgorithm::Solve() const
     // relationships between the 2D hits in each unit.
     for (const auto &[_, readout] : m_planeToReadoutMap)
     {
-        HitType constraintView{TPC_VIEW_W};
+        int nHitsU{static_cast<int>(readout.at(TPC_VIEW_U).size())};
+        int nHitsV{static_cast<int>(readout.at(TPC_VIEW_V).size())};
+        int nHitsW{static_cast<int>(readout.at(TPC_VIEW_W).size())};
+
+        HitType constraintView{nHitsW >= nHitsV && nHitsW >= nHitsU ? TPC_VIEW_W : nHitsV >= nHitsU ? TPC_VIEW_V : TPC_VIEW_U};
+        std::cout << "Constraint view: " << constraintView << " with nHitsW = " << nHitsW << ", nHitsV = " << nHitsV << ", nHitsU = " << nHitsU << std::endl;
         CostMatrix costMatrix{this->ComputeCostMatrix(readout, 100.f, constraintView)};
         const IntVector assignment{this->KuhneMunkres(costMatrix)};
-        const HitType viewA((constraintView == TPC_VIEW_W || constraintView == TPC_VIEW_V) ? TPC_VIEW_U : TPC_VIEW_V);
-        const HitType viewB((constraintView == TPC_VIEW_W || constraintView == TPC_VIEW_U) ? TPC_VIEW_V : TPC_VIEW_W);
+        HitType viewA, viewB;
+        this->SelectViewPair(constraintView, viewA, viewB);
         int nHitsA{static_cast<int>(readout.at(viewA).size())};
         int nHitsB{static_cast<int>(readout.at(viewB).size())};
-        const PairVector pairs{this->BuildPairs(assignment, nHitsA, nHitsB)};
+        const PairVector pairs{this->BuildPairs(assignment, nHitsA, nHitsB, costMatrix)};
+        std::cout << "-----------------------------" << std::endl;
+        std::cout << "Pairs" << std::endl;
+        std::cout << "-----------------------------" << std::endl;
+        for (size_t i = 0; i < pairs.size(); ++i)
+        {
+            std::cout << "Pair: i = " << pairs[i].m_aIndex << ", j = " << pairs[i].m_bIndex << ", cost = " << pairs[i].m_cost << std::endl;
+        }
         CostMatrix tripletCostMatrix{this->ComputeTripletCostMatrix(pairs, readout, 100.f, constraintView)};
         const IntVector tripletAssignment{this->KuhneMunkres(tripletCostMatrix)};
         int nHitsC{static_cast<int>(readout.at(constraintView).size())};
-        const TripletVector triplets{this->BuildTriplets(pairs, tripletAssignment, nHitsC, constraintView)};
-        //CaloHitList hitsU{readout.at(TPC_VIEW_U).begin(), readout.at(TPC_VIEW_U).end()};
-        //CaloHitList hitsV{readout.at(TPC_VIEW_V).begin(), readout.at(TPC_VIEW_V).end()};
-        //PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &hitsU, "U", RED));
-        //PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &hitsV, "V", GREEN));
+        const TripletVector triplets{this->BuildTriplets(pairs, tripletAssignment, nHitsC, tripletCostMatrix, constraintView)};
         std::cout << "-----------------------------" << std::endl;
         std::cout << "Triplets" << std::endl;
         std::cout << "-----------------------------" << std::endl;
         for (size_t i = 0; i < triplets.size(); ++i)
         {
-            std::cout << "Triplet: i = " << triplets[i].m_uIndex << ", j = " << triplets[i].m_vIndex << ", k = " << triplets[i].m_wIndex << std::endl;
+            std::cout << "Triplet: i = " << triplets[i].m_uIndex << ", j = " << triplets[i].m_vIndex << ", k = " << triplets[i].m_wIndex <<
+                ", cost = " << triplets[i].m_cost << std::endl;
             const CaloHit *pHit3D{nullptr};
-            if (triplets[i].m_wIndex >= 0)
+            try
+            {
+            if (triplets[i].m_uIndex >= 0 && triplets[i].m_vIndex >= 0 && triplets[i].m_wIndex >= 0)
+            {
                 this->CreateThreeDHit(readout.at(TPC_VIEW_U)[triplets[i].m_uIndex], readout.at(TPC_VIEW_V)[triplets[i].m_vIndex],
                     readout.at(TPC_VIEW_W)[triplets[i].m_wIndex], pHit3D);
+            }
             else
-                this->CreateThreeDHit(readout.at(TPC_VIEW_U)[triplets[i].m_uIndex], readout.at(TPC_VIEW_V)[triplets[i].m_vIndex], pHit3D);
-            hits3D.emplace_back(pHit3D);
+            {
+                const CaloHit *pHitU{(triplets[i].m_uIndex >= 0) ? readout.at(TPC_VIEW_U)[triplets[i].m_uIndex] : nullptr};
+                const CaloHit *pHitV{(triplets[i].m_vIndex >= 0) ? readout.at(TPC_VIEW_V)[triplets[i].m_vIndex] : nullptr};
+                const CaloHit *pHitW{(triplets[i].m_wIndex >= 0) ? readout.at(TPC_VIEW_W)[triplets[i].m_wIndex] : nullptr};
+                this->CreateThreeDHit(pHitU, pHitV, pHitW, pHit3D);
+            }
+            }
+            catch (const StatusCodeException &e)
+            {
+                std::cout << "Complaint" << std::endl;
+            }
+            if (pHit3D)
+                hits3D.emplace_back(pHit3D);
         }
         std::cout << "-----------------------------" << std::endl;
         std::cout << "Number of triplets: " << triplets.size() << std::endl;
@@ -110,8 +134,9 @@ void PlaneSolverAlgorithm::Solve() const
 PlaneSolverAlgorithm::CostMatrix PlaneSolverAlgorithm::ComputeCostMatrix(const PlaneToHitsMap &planeToHitsMap, const float unmatchedCost,
     const HitType constraintView) const
 {
-    const HitType viewA((constraintView == TPC_VIEW_W || constraintView == TPC_VIEW_V) ? TPC_VIEW_U : TPC_VIEW_V);
-    const HitType viewB((constraintView == TPC_VIEW_W || constraintView == TPC_VIEW_U) ? TPC_VIEW_V : TPC_VIEW_W);
+    HitType viewA, viewB;
+    this->SelectViewPair(constraintView, viewA, viewB);
+    std::cout << "View A: " << viewA << ", View B: " << viewB << ", Constraint view: " << constraintView << std::endl;
     const CaloHitVector &aHits(planeToHitsMap.at(viewA));
     const CaloHitVector &bHits(planeToHitsMap.at(viewB));
     const CaloHitVector &cHits(planeToHitsMap.at(constraintView));
@@ -189,8 +214,8 @@ PlaneSolverAlgorithm::CostMatrix PlaneSolverAlgorithm::ComputeCostMatrix(const P
 PlaneSolverAlgorithm::CostMatrix PlaneSolverAlgorithm::ComputeTripletCostMatrix(const PairVector &pairs, const PlaneToHitsMap &planeToHitsMap,
     const float unmatchedCost, const HitType constraintView) const
 {
-    const HitType viewA((constraintView == TPC_VIEW_W || constraintView == TPC_VIEW_V) ? TPC_VIEW_U : TPC_VIEW_V);
-    const HitType viewB((constraintView == TPC_VIEW_W || constraintView == TPC_VIEW_U) ? TPC_VIEW_V : TPC_VIEW_W);
+    HitType viewA, viewB;
+    this->SelectViewPair(constraintView, viewA, viewB);
     const CaloHitVector &aHits{planeToHitsMap.at(viewA)};
     const CaloHitVector &bHits{planeToHitsMap.at(viewB)};
     const CaloHitVector &cHits{planeToHitsMap.at(constraintView)};
@@ -326,7 +351,7 @@ IntVector PlaneSolverAlgorithm::KuhneMunkres(const CostMatrix& cost) const
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-PlaneSolverAlgorithm::PairVector PlaneSolverAlgorithm::BuildPairs(const IntVector &assignment, int nA, int nB) const
+PlaneSolverAlgorithm::PairVector PlaneSolverAlgorithm::BuildPairs(const IntVector &assignment, int nA, int nB, const CostMatrix& costMatrix) const
 {
     PairVector pairs;
 
@@ -334,8 +359,8 @@ PlaneSolverAlgorithm::PairVector PlaneSolverAlgorithm::BuildPairs(const IntVecto
     {
         int j{assignment[i]};
 
-        if (j < nB)
-            pairs.push_back({i, j});
+        if (j < nB && costMatrix[i][j] < 100.f)
+            pairs.push_back({i, j, costMatrix[i][j]});
     }
 
     return pairs;
@@ -344,7 +369,7 @@ PlaneSolverAlgorithm::PairVector PlaneSolverAlgorithm::BuildPairs(const IntVecto
 //------------------------------------------------------------------------------------------------------------------------------------------
 
 PlaneSolverAlgorithm::TripletVector PlaneSolverAlgorithm::BuildTriplets(const PairVector& pairs, const IntVector& assignment, int nC,
-    const HitType constraintView) const
+    const CostMatrix& costMatrix, const HitType constraintView) const
 {
     TripletVector result;
     const int nPairs{static_cast<int>(pairs.size())};
@@ -353,35 +378,35 @@ PlaneSolverAlgorithm::TripletVector PlaneSolverAlgorithm::BuildTriplets(const Pa
     {
         int k{assignment[p]};
 
-        if (k < nC)
+        if (k < nC && costMatrix[p][k] < 100.f)
         {
             switch (constraintView)
             {
                 case TPC_VIEW_U:
-                    result.push_back({k, pairs[p].m_aIndex, pairs[p].m_bIndex});
+                    result.push_back({k, pairs[p].m_aIndex, pairs[p].m_bIndex, costMatrix[p][k]});
                     break;
                 case TPC_VIEW_V:
-                    result.push_back({pairs[p].m_aIndex, k, pairs[p].m_bIndex});
+                    result.push_back({pairs[p].m_aIndex, k, pairs[p].m_bIndex, costMatrix[p][k]});
                     break;
                 case TPC_VIEW_W:
-                    result.push_back({pairs[p].m_aIndex, pairs[p].m_bIndex, k});
+                    result.push_back({pairs[p].m_aIndex, pairs[p].m_bIndex, k, costMatrix[p][k]});
                     break;
                 default:
                     throw StatusCodeException(STATUS_CODE_INVALID_PARAMETER);
             }
         }
-        else
+        else if (costMatrix[p][k] < 100.f)
         {
             switch (constraintView)
             {
                 case TPC_VIEW_U:
-                    result.push_back({-1, pairs[p].m_aIndex, pairs[p].m_bIndex});
+                    result.push_back({-1, pairs[p].m_aIndex, pairs[p].m_bIndex, pairs[p].m_cost});
                     break;
                 case TPC_VIEW_V:
-                    result.push_back({pairs[p].m_aIndex, -1, pairs[p].m_bIndex});
+                    result.push_back({pairs[p].m_aIndex, -1, pairs[p].m_bIndex, pairs[p].m_cost});
                     break;
                 case TPC_VIEW_W:
-                    result.push_back({pairs[p].m_aIndex, pairs[p].m_bIndex, -1});
+                    result.push_back({pairs[p].m_aIndex, pairs[p].m_bIndex, -1, pairs[p].m_cost});
                     break;
                 default:
                     throw StatusCodeException(STATUS_CODE_INVALID_PARAMETER);
@@ -394,17 +419,29 @@ PlaneSolverAlgorithm::TripletVector PlaneSolverAlgorithm::BuildTriplets(const Pa
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-void PlaneSolverAlgorithm::CreateThreeDHit(const CaloHit *const pCaloHitU, const CaloHit *const pCaloHitV, const CaloHit *&pCaloHit3D) const
+void PlaneSolverAlgorithm::CreateThreeDHit(const CaloHit *const pCaloHitU, const CaloHit *const pCaloHitV, const CaloHit *const pCaloHitW,
+    const CaloHit *&pCaloHit3D) const
 {
     float chi2{0.f};
     CartesianVector pos3D(0, 0, 0);
     PandoraContentApi::CaloHit::Parameters parameters;
-    LArGeometryHelper::MergeTwoPositions3D(this->GetPandora(), TPC_VIEW_U, TPC_VIEW_V, pCaloHitU->GetPositionVector(), pCaloHitV->GetPositionVector(),
-        pos3D, chi2);
+    if (pCaloHitU && pCaloHitV && pCaloHitW)
+    {
+        LArGeometryHelper::MergeThreePositions3D(this->GetPandora(), TPC_VIEW_U, TPC_VIEW_V, TPC_VIEW_W, pCaloHitU->GetPositionVector(),
+            pCaloHitV->GetPositionVector(), pCaloHitW->GetPositionVector(), pos3D, chi2);
+    }
+    else
+    {
+        const CaloHit *const pHitA(pCaloHitU ? pCaloHitU : pCaloHitV);
+        const CaloHit *const pHitB(pCaloHitW ? pCaloHitW : pCaloHitV);
+        LArGeometryHelper::MergeTwoPositions3D(this->GetPandora(), pHitA->GetHitType(), pHitB->GetHitType(), pHitA->GetPositionVector(),
+            pHitB->GetPositionVector(), pos3D, chi2);
+    }
+
     parameters.m_positionVector = pos3D;
     parameters.m_hitType = TPC_3D;
 
-    const CaloHit *const pCaloHit2D(pCaloHitU);
+    const CaloHit *const pCaloHit2D(pCaloHitW ? pCaloHitW : pCaloHitU ? pCaloHitU : pCaloHitV);
     parameters.m_pParentAddress = static_cast<const void *>(pCaloHit2D);
     parameters.m_cellThickness = pCaloHit2D->GetCellThickness();
     parameters.m_cellGeometry = RECTANGULAR;
@@ -428,39 +465,26 @@ void PlaneSolverAlgorithm::CreateThreeDHit(const CaloHit *const pCaloHitU, const
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-void PlaneSolverAlgorithm::CreateThreeDHit(const CaloHit *const pCaloHitU, const CaloHit *const pCaloHitV, const CaloHit *const pCaloHitW,
-    const CaloHit *&pCaloHit3D) const
+void PlaneSolverAlgorithm::SelectViewPair(const HitType constraintView, HitType &viewA, HitType &viewB) const
 {
-    float chi2{0.f};
-    CartesianVector pos3D(0, 0, 0);
-    PandoraContentApi::CaloHit::Parameters parameters;
-    LArGeometryHelper::MergeThreePositions3D(this->GetPandora(), TPC_VIEW_U, TPC_VIEW_V, TPC_VIEW_W, pCaloHitU->GetPositionVector(),
-        pCaloHitV->GetPositionVector(), pCaloHitW->GetPositionVector(), pos3D, chi2);
-    parameters.m_positionVector = pos3D;
-    parameters.m_hitType = TPC_3D;
-
-    const CaloHit *const pCaloHit2D(pCaloHitU);
-    parameters.m_pParentAddress = static_cast<const void *>(pCaloHit2D);
-    parameters.m_cellThickness = pCaloHit2D->GetCellThickness();
-    parameters.m_cellGeometry = RECTANGULAR;
-    parameters.m_cellSize0 = pCaloHit2D->GetCellLengthScale();
-    parameters.m_cellSize1 = pCaloHit2D->GetCellLengthScale();
-    parameters.m_cellNormalVector = pCaloHit2D->GetCellNormalVector();
-    parameters.m_expectedDirection = pCaloHit2D->GetExpectedDirection();
-    parameters.m_nCellRadiationLengths = pCaloHit2D->GetNCellRadiationLengths();
-    parameters.m_nCellInteractionLengths = pCaloHit2D->GetNCellInteractionLengths();
-    parameters.m_time = pCaloHit2D->GetTime();
-    parameters.m_inputEnergy = pCaloHit2D->GetInputEnergy();
-    parameters.m_mipEquivalentEnergy = pCaloHit2D->GetMipEquivalentEnergy();
-    parameters.m_electromagneticEnergy = pCaloHit2D->GetElectromagneticEnergy();
-    parameters.m_hadronicEnergy = pCaloHit2D->GetHadronicEnergy();
-    parameters.m_isDigital = pCaloHit2D->IsDigital();
-    parameters.m_hitRegion = pCaloHit2D->GetHitRegion();
-    parameters.m_layer = pCaloHit2D->GetLayer();
-    parameters.m_isInOuterSamplingLayer = pCaloHit2D->IsInOuterSamplingLayer();
-    PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::CaloHit::Create(*this, parameters, pCaloHit3D));
+    switch (constraintView)
+    {
+        case TPC_VIEW_U:
+            viewA = TPC_VIEW_V;
+            viewB = TPC_VIEW_W;
+            break;
+        case TPC_VIEW_V:
+            viewA = TPC_VIEW_U;
+            viewB = TPC_VIEW_W;
+            break;
+        case TPC_VIEW_W:
+            viewA = TPC_VIEW_U;
+            viewB = TPC_VIEW_V;
+            break;
+        default:
+            throw StatusCodeException(STATUS_CODE_INVALID_PARAMETER);
+    }
 }
-
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
