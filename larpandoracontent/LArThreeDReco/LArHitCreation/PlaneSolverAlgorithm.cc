@@ -27,6 +27,7 @@ PlaneSolverAlgorithm::PlaneSolverAlgorithm() :
 
 StatusCode PlaneSolverAlgorithm::Run()
 {
+    m_planeToReadoutMap.clear();
     const CaloHitList *pCaloHitList(nullptr);
     PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetList(*this, m_caloHitListName, pCaloHitList));
 
@@ -97,7 +98,6 @@ void PlaneSolverAlgorithm::Solve() const
                 for (const auto *pHit : readout.at(TPC_VIEW_W))
                     nHitsW += !usedHits.count(pHit);
             }
-            std::cout << "Pass " << pass << ": nHitsU = " << nHitsU << ", nHitsV = " << nHitsV << ", nHitsW = " << nHitsW << std::endl;
 
             HitType constraintView{HIT_CUSTOM};
             if (pass == 1)
@@ -125,17 +125,10 @@ void PlaneSolverAlgorithm::Solve() const
                     nActualA += !usedHits.count(pHit);
                 for (const auto *pHit : readout.at(viewB))
                     nActualB += !usedHits.count(pHit);
-                std::cout << "Actual hits in view A: " << nActualA << ", Actual hits in view B: " << nActualB << std::endl;
             }
             if (nHitsA == 0 || nHitsB == 0)
                 continue;
             const PairVector pairs{this->BuildPairs(assignment, nHitsA, nHitsB, costMatrix, chi2Threshold)};
-            for (size_t i = 0; i < pairs.size(); ++i)
-            {
-                std::cout << "Pass " << pass << " - Pair " << i << ": " << viewA << " index = " << pairs[i].m_aIndex << " (" <<
-                    usedHits.count(readout.at(viewA)[pairs[i].m_aIndex]) << "), " << "), " << viewB << " index (" <<
-                    usedHits.count(readout.at(viewB)[pairs[i].m_bIndex]) << ") = " << pairs[i].m_bIndex << ", chi2 = " << pairs[i].m_cost << std::endl;
-            }
             CostMatrix tripletCostMatrix{this->ComputeTripletCostMatrix(pairs, readout, 100.f, constraintView, usedHits)};
             const IntVector tripletAssignment{this->KuhneMunkres(tripletCostMatrix)};
             int nHitsC{static_cast<int>(readout.at(constraintView).size())};
@@ -143,10 +136,6 @@ void PlaneSolverAlgorithm::Solve() const
             for (size_t i = 0; i < triplets.size(); ++i)
             {
                 const CaloHit *pHit3D{nullptr};
-                std::cout << "Pass " << pass << " - Triplet " << i << ": U index = " << triplets[i].m_uIndex << " (" <<
-                    (usedHits.count(readout.at(TPC_VIEW_U)[triplets[i].m_uIndex])) << "), V index = " << triplets[i].m_vIndex <<
-                    " (" << (usedHits.count(readout.at(TPC_VIEW_V)[triplets[i].m_vIndex])) << ", W index = " << triplets[i].m_wIndex <<
-                    " (" << (usedHits.count(readout.at(TPC_VIEW_W)[triplets[i].m_wIndex])) << "), chi2 = " << triplets[i].m_cost << std::endl;
                 if (triplets[i].m_uIndex >= 0 && triplets[i].m_vIndex >= 0 && triplets[i].m_wIndex >= 0)
                 {
                     const CaloHit *pHitU{readout.at(TPC_VIEW_U)[triplets[i].m_uIndex]};
@@ -199,9 +188,6 @@ void PlaneSolverAlgorithm::Solve() const
                     }
                 }
             }
-            std::cout << "----------- Pass " << pass << " -----------" << std::endl;
-            std::cout << "Number of triplets: " << triplets.size() << std::endl;
-            std::cout << "Number of 3D hits: " << hits3D.size() << std::endl;
             usedView = constraintView;
         }
         // Add in the fallback triplets that were not picked up in the second pass
