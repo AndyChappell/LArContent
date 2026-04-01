@@ -78,6 +78,7 @@ StatusCode TrackRecoveryAlgorithm::Run()
         const CaloHitList &hitsU{clusterToHitMap[pClusterU]}, &hitsV{clusterToHitMap[pClusterV]}, &hitsW{clusterToHitMap[pClusterW]};
 
         CaloHitSet unmatchedHitsU, unmatchedHitsV, unmatchedHitsW;
+        CaloHitList mergeHitsU, mergeHitsV, mergeHitsW;
         this->FindUnmatchedHits(hitsU, hitsV, hitsW, unmatchedHitsV, unmatchedHitsW);
         this->FindUnmatchedHits(hitsV, hitsU, hitsW, unmatchedHitsU, unmatchedHitsW);
         this->FindUnmatchedHits(hitsW, hitsU, hitsV, unmatchedHitsU, unmatchedHitsV);
@@ -89,41 +90,34 @@ StatusCode TrackRecoveryAlgorithm::Run()
         PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &hitsU, "U", RED));
         PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &hitsV, "V", GREEN));
         PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &hitsW, "W", BLUE));
-        for (const CaloHit *const pCaloHit : unmatchedHitsU)
+
+        this->IdentifyHitsToMerge(pClusterU, hitsU, unmatchedHitsU, clusterToFitMap, mergeHitsU);
+        this->IdentifyHitsToMerge(pClusterV, hitsV, unmatchedHitsV, clusterToFitMap, mergeHitsV);
+        this->IdentifyHitsToMerge(pClusterW, hitsW, unmatchedHitsW, clusterToFitMap, mergeHitsW);
+
+        for (const CaloHit *const pCaloHit : mergeHitsU)
         {
             const CartesianVector position{pCaloHit->GetPositionVector()};
-            PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &position, "Unmatched U", RED, 2.f));
-        }
-        // HERE: We can use the longitudinal position along the fit relative to the front and back hits to understand if our
-        // hits are along the track, before, or after it.
-        // If the hits are before or after, we can probably trivial agree to the inclusion/transfer of the hits into this PFO.
-        // If the hits are long the track, we can look up the layer, use some precompued layer to hit mappings to find the
-        // hits "either side" of the unmatched hit and see if it forms a blocking path - if it does, include it, otherwise don't
-        {
-            const CartesianVector front{hitsV.front()->GetPositionVector()};
-            const CartesianVector back{hitsV.back()->GetPositionVector()};
+            PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &position, "Merge U", RED, 2.f));
             float rL{0.f}, rT{0.f};
-            if (clusterToFitMap.find(pClusterV) != clusterToFitMap.end())
-                clusterToFitMap.at(pClusterV).GetLocalPosition(front, rL, rT);
-            std::cout << "Front V hit has local coordinates rL = " << rL << " and rT = " << rT << " in the V cluster frame." << std::endl;
-            if (clusterToFitMap.find(pClusterV) != clusterToFitMap.end())
-                clusterToFitMap.at(pClusterV).GetLocalPosition(back, rL, rT);
-            std::cout << " Back V hit has local coordinates rL = " << rL << " and rT = " << rT << " in the V cluster frame." << std::endl;
+            clusterToFitMap.at(pClusterU).GetLocalPosition(position, rL, rT);
+            std::cout << "Merge U hit has rL = " << rL << " and rT = " << rT << std::endl;
         }
-        for (const CaloHit *const pCaloHit : unmatchedHitsV)
+        for (const CaloHit *const pCaloHit : mergeHitsV)
         {
             const CartesianVector position{pCaloHit->GetPositionVector()};
-            PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &position, "Unmatched V", GREEN, 2.f));
-            if (clusterToFitMap.find(pClusterV) == clusterToFitMap.end())
-                continue;
+            PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &position, "Merge V", GREEN, 2.f));
             float rL{0.f}, rT{0.f};
             clusterToFitMap.at(pClusterV).GetLocalPosition(position, rL, rT);
-            std::cout << "Unmatched U hit has local coordinates rL = " << rL << " and rT = " << rT << " in the V cluster frame." << std::endl;
+            std::cout << "Merge V hit has rL = " << rL << " and rT = " << rT << std::endl;
         }
-        for (const CaloHit *const pCaloHit : unmatchedHitsW)
+        for (const CaloHit *const pCaloHit : mergeHitsW)
         {
             const CartesianVector position{pCaloHit->GetPositionVector()};
-            PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &position, "Unmatched W", BLUE, 2.f));
+            PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &position, "Merge W", BLUE, 2.f));
+            float rL{0.f}, rT{0.f};
+            clusterToFitMap.at(pClusterW).GetLocalPosition(position, rL, rT);
+            std::cout << "Merge W hit has rL = " << rL << " and rT = " << rT << std::endl;
         }
         PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
     }
@@ -171,6 +165,48 @@ void TrackRecoveryAlgorithm::FindUnmatchedHits(const CaloHitList &hitsA, const C
             unmatchedHitsB.insert(pHitB);
         if (cIterator == hitsC.end() && bIterator != hitsB.end())
             unmatchedHitsC.insert(pHitC);
+    }
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+void TrackRecoveryAlgorithm::IdentifyHitsToMerge(const Cluster *pCluster, const CaloHitList &clusterHits, const CaloHitSet &unmatchedHits,
+    const ClusterToFitMap &clusterToFitMap, CaloHitList &mergeHits) const
+{
+    if (pCluster && (clusterHits.size() > 1) && (clusterToFitMap.find(pCluster) != clusterToFitMap.end()))
+    {
+        float rLFront{0.f}, rLBack{0.f}, dummy{0.f};
+        clusterToFitMap.at(pCluster).GetLocalPosition(clusterHits.front()->GetPositionVector(), rLFront, dummy);
+        clusterToFitMap.at(pCluster).GetLocalPosition(clusterHits.back()->GetPositionVector(), rLBack, dummy);
+        for (const CaloHit *const pCaloHit : unmatchedHits)
+        {
+            float rL{0.f};
+            clusterToFitMap.at(pCluster).GetLocalPosition(pCaloHit->GetPositionVector(), rL, dummy);
+            if (rLFront <= rL && rL <= rLBack)
+            {
+                // We're along the track, look for this hit acting as a blocking path
+                for (auto iter = clusterHits.begin(); iter != std::prev(clusterHits.end()); ++iter)
+                {
+                    const CaloHit *const pHit1{*iter}, *const pHit2{*(std::next(iter))};
+                    if (LArClusterHelper::HasBlockedPath({pCaloHit}, pHit1, pHit2))
+                    {
+                        mergeHits.emplace_back(pCaloHit);
+                        break;
+                    }
+                }
+            }
+            else
+            {
+                // We're outside the track, extend it
+                mergeHits.emplace_back(pCaloHit);
+            }
+        }
+    }
+    else
+    {
+        // Entire view is missing, or has less than 3 hits, so we should merge all unmatched hits
+        for (const CaloHit *const pCaloHit : unmatchedHits)
+            mergeHits.emplace_back(pCaloHit);
     }
 }
 
