@@ -58,6 +58,23 @@ private:
     void FindUnmatchedHits(const pandora::CaloHitList &hitsA, const pandora::CaloHitList &hitsB, const pandora::CaloHitList &hitsC,
         pandora::CaloHitSet &unmatchedHitsB, pandora::CaloHitSet &unmatchedHitsC) const;
 
+    /**
+     *  @brief  Identifies hits to merge from a collection of hits provisionally identified as being missing from a cluster.
+     *          If a candidate hit lies along the existing set of hits, we look for a gap in the existing set that could be filled by this hit.
+     *          If we find one, we consider this a valid addition. Alternatively, if a candidate hit lies outside the existing set of hits, we
+     *          assume this is an extension of the track and consider this a valid addition. If there are no existing hits in the cluster, we
+     *          assume the view was missing, and add all hits. The key assumption here is that the unmatched hits are already considered good
+     *          candidates based on the triplet matching.
+     *
+     *  @param  pCluster the cluster for which to identify hits to merge
+     *  @param  clusterHits the list of hits already associated to the cluster
+     *  @param  unmatchedHits the set of hits not in the cluster, under consideration for merging
+     *  @param  clusterToFitMap the map containing sliding fit results for clusters
+     *  @param  mergeHits the list in which to store hits to merge
+     */
+    void IdentifyHitsToMerge(const pandora::Cluster *pCluster, const pandora::CaloHitList &clusterHits, const pandora::CaloHitSet &unmatchedHits,
+        const ClusterToFitMap &clusterToFitMap, pandora::CaloHitList &mergeHits) const;
+
     pandora::StatusCode ReadSettings(const pandora::TiXmlHandle xmlHandle);
 
     std::string m_inputPfoListName; ///< The name of the input PFO list containing track-like PFOs
