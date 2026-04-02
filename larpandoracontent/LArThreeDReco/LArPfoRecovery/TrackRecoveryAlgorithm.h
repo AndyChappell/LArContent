@@ -33,7 +33,6 @@ private:
     typedef std::unordered_map<const pandora::Cluster *, const TwoDSlidingFitResult> ClusterToFitMap;
     typedef std::unordered_map<const pandora::CaloHit *, const pandora::Cluster *> HitToClusterToMap;
     typedef std::unordered_map<const pandora::Cluster *, const pandora::Pfo *> ClusterToPfoMap;
-    typedef std::unordered_map<pandora::HitType, pandora::CaloHitList> ViewToHitsMap;
 
     pandora::StatusCode Run();
 

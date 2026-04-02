@@ -40,7 +40,6 @@ StatusCode TrackRecoveryAlgorithm::Run()
     ClusterToHitMap clusterToHitMap;
     ClusterToFitMap clusterToFitMap;
     HitToClusterToMap hitToClusterMap;
-    ViewToHitsMap viewToHitsMap;
     for (const Pfo *const pPfo : *pPfoList)
     {
         for (const HitType view : {TPC_VIEW_U, TPC_VIEW_V, TPC_VIEW_W, TPC_3D})
@@ -61,16 +60,29 @@ StatusCode TrackRecoveryAlgorithm::Run()
                 else
                     LArClusterHelper::GetAllHits(pCluster, clusterToHitMap[pCluster]);
                 for (const CaloHit *const pCaloHit : clusterToHitMap[pCluster])
-                {
                     hitToClusterMap[pCaloHit] = pCluster;
-                    viewToHitsMap[view].emplace_back(pCaloHit);
-                }
+            }
+        }
+    }
+    // Loop over all clusters to catch any that aren't associated to a PFO
+    for (const std::string &clusterListName : m_inputClusterListNames)
+    {
+        const ClusterList *pClusterList(nullptr);
+        PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetList(*this, clusterListName, pClusterList));
+        for (const Cluster *const pCluster : *pClusterList)
+        {
+            if (clusterToPfoMap.find(pCluster) == clusterToPfoMap.end())
+            {
+                LArClusterHelper::GetAllHits(pCluster, clusterToHitMap[pCluster]);
+                for (const CaloHit *const pCaloHit : clusterToHitMap[pCluster])
+                    hitToClusterMap[pCaloHit] = pCluster;
             }
         }
     }
 
     // Loop over the PFOs and project 3D hits from two views into the third view to look for unassociated hits
     PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1.f, 1.f, 1.f));
+    std::unordered_map<const Pfo *, std::unordered_map<HitType, CaloHitList>> pfoToMergeHitsMap;
     for (const Pfo *const pPfo : *pPfoList)
     {
         const Cluster *const pClusterU{pfoToViewClusterMap[pPfo][TPC_VIEW_U]}, *const pClusterV{pfoToViewClusterMap[pPfo][TPC_VIEW_V]},
@@ -82,9 +94,6 @@ StatusCode TrackRecoveryAlgorithm::Run()
         this->FindUnmatchedHits(hitsU, hitsV, hitsW, unmatchedHitsV, unmatchedHitsW);
         this->FindUnmatchedHits(hitsV, hitsU, hitsW, unmatchedHitsU, unmatchedHitsW);
         this->FindUnmatchedHits(hitsW, hitsU, hitsV, unmatchedHitsU, unmatchedHitsV);
-
-        std::cout << "PFO has " << unmatchedHitsU.size() << " unmatched U hits, "
-                  << unmatchedHitsV.size() << " unmatched V hits and " << unmatchedHitsW.size() << " unmatched W hits." << std::endl;
 
         // Construct 3D hits from the combinatorics of each view pair and project into the third view
         PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &hitsU, "U", RED));
@@ -120,20 +129,52 @@ StatusCode TrackRecoveryAlgorithm::Run()
 
         for (const CaloHit *const pCaloHit : mergeHitsU)
         {
+            pfoToMergeHitsMap[pPfo][TPC_VIEW_U].emplace_back(pCaloHit);
             const CartesianVector position{pCaloHit->GetPositionVector()};
             PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &position, "Merge U", RED, 2.f));
         }
         for (const CaloHit *const pCaloHit : mergeHitsV)
         {
+            pfoToMergeHitsMap[pPfo][TPC_VIEW_V].emplace_back(pCaloHit);
             const CartesianVector position{pCaloHit->GetPositionVector()};
             PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &position, "Merge V", GREEN, 2.f));
         }
         for (const CaloHit *const pCaloHit : mergeHitsW)
         {
+            pfoToMergeHitsMap[pPfo][TPC_VIEW_W].emplace_back(pCaloHit);
             const CartesianVector position{pCaloHit->GetPositionVector()};
             PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &position, "Merge W", BLUE, 2.f));
         }
         PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
+    }
+
+    std::map<const CaloHit *, int> hitToNumMergesMap;
+    for (auto &[pPfo, viewToMergeHitsMap] : pfoToMergeHitsMap)
+    {
+        for (auto &[view, mergeHits] : viewToMergeHitsMap)
+        {
+            const Cluster *pNewCluster{pfoToViewClusterMap[pPfo][view]};
+            // Need to allow for the possibility that the view was entirely missing, in which case we need to create a new cluster to merge into
+            for (const CaloHit *const pCaloHit : mergeHits)
+            {
+                if (hitToNumMergesMap.find(pCaloHit) == hitToNumMergesMap.end())
+                    hitToNumMergesMap[pCaloHit] = 0;
+                hitToNumMergesMap[pCaloHit]++;
+                if (hitToClusterMap.find(pCaloHit) != hitToClusterMap.end())
+                {
+                    const Cluster *pOldCluster{hitToClusterMap[pCaloHit]};
+                    PandoraContentApi::RemoveFromCluster(*this, pOldCluster, pCaloHit);
+                    CaloHitList &oldClusterHits{clusterToHitMap[pOldCluster]};
+                    std::remove(oldClusterHits.begin(), oldClusterHits.end(), pCaloHit);
+                }
+                CaloHitList preHitList;
+                LArClusterHelper::GetAllHits(pNewCluster, preHitList);
+                PandoraContentApi::AddToCluster(*this, pNewCluster, pCaloHit);
+                CaloHitList postHitList;
+                LArClusterHelper::GetAllHits(pNewCluster, postHitList);
+                hitToClusterMap[pCaloHit] = pNewCluster;
+            }
+        }
     }
 
     return STATUS_CODE_SUCCESS;
