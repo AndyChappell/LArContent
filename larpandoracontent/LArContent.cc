@@ -143,6 +143,7 @@
 #include "larpandoracontent/LArThreeDReco/LArPfoMopUp/VertexBasedPfoMopUpAlgorithm.h"
 
 #include "larpandoracontent/LArThreeDReco/LArPfoRecovery/ParticleRecoveryAlgorithm.h"
+#include "larpandoracontent/LArThreeDReco/LArPfoRecovery/TrackFillAlgorithm.h"
 #include "larpandoracontent/LArThreeDReco/LArPfoRecovery/TrackRecoveryAlgorithm.h"
 #include "larpandoracontent/LArThreeDReco/LArPfoRecovery/VertexBasedPfoRecoveryAlgorithm.h"
 
@@ -310,6 +311,7 @@
     d("LArShowerMergingPfoMopUp",               ShowerMergingPfoMopUpAlgorithm)                                                 \
     d("LArVertexBasedPfoMopUp",                 VertexBasedPfoMopUpAlgorithm)                                                   \
     d("LArParticleRecovery",                    ParticleRecoveryAlgorithm)                                                      \
+    d("LArTrackFill",                           TrackFillAlgorithm)                                                             \
     d("LArTrackRecovery",                       TrackRecoveryAlgorithm)                                                         \
     d("LArVertexBasedPfoRecovery",              VertexBasedPfoRecoveryAlgorithm)                                                \
     d("LArThreeDRemnants",                      ThreeViewRemnantsAlgorithm)                                                     \
