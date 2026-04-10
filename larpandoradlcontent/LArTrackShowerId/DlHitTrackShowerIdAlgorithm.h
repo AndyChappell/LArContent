@@ -197,8 +197,10 @@ private:
      *  @param  bounds The coordinate bounds structure
      *  @param  vx The x position of the vertex
      *  @param  vz The z position of the vertex
-     *  @param  xx The x coordinate vector
-     *  @param  zz The z coordinate vector
+     *  @param  x_rel The vertex relative x coordinate vector
+     *  @param  z_rel The vertex relative z coordinate vector
+     *  @param  x_abs The absolute x coordinate vector
+     *  @param  z_abs The absolute z coordinate vector
      *  @param  rr The radial coordinate vector
      *  @param  cosTheta The cosine of the theta angle vector
      *  @param  sinTheta The sine of the theta angle vector
@@ -207,18 +209,15 @@ private:
      *  @param  width The width vector
      *  @param  sortedCaloHitList The output sorted calo hit list
      */
-    void PopulateInputVectors(const pandora::CaloHitList &caloHitList, const Bounds &bounds, const float vx, const float vz, pandora::FloatVector &xx,
-        pandora::FloatVector &zz, pandora::FloatVector &rr, pandora::FloatVector &cosTheta, pandora::FloatVector &sinTheta, pandora::FloatVector &vv,
-        pandora::FloatVector &adc, pandora::FloatVector &width, pandora::CaloHitVector &sortedCaloHitList) const;
+    void PopulateInputVectors(const pandora::CaloHitList &caloHitList, const Bounds &bounds, const float vx, const float vz, pandora::FloatVector &x_rel,
+        pandora::FloatVector &z_rel, pandora::FloatVector &x_abs, pandora::FloatVector &z_abs, pandora::FloatVector &rr, pandora::FloatVector &cosTheta,
+        pandora::FloatVector &sinTheta, pandora::FloatVector &vv, pandora::FloatVector &adc, pandora::FloatVector &width,
+        pandora::CaloHitVector &sortedCaloHitList) const;
 
     pandora::StatusCode ReadSettings(const pandora::TiXmlHandle xmlHandle);
 
     std::string m_caloHitListName; ///< Name of input calo hit list
     bool m_trainingMode; ///< Training mode
-    bool m_vertexRelative; ///< Whether to make hit positions relative to the reconstructed vertex position
-    bool m_polarCoords; ///< Whether to use polar coordinates for the hit positions
-    float m_adcPeak; ///< Value representing peak of ADC distribution for all hits
-    float m_maxAdcFactor; ///< Maximum ADC value for a hit will be m_adcPeak * m_maxAdcFactor, clipped beyond this
     int m_maxSeqLen; ///< Maximum sequence length when using polar coordinates
     std::string m_rootFileName; ///< Name of the ROOT file to save the training sample
     std::string m_rootTreeName; ///< Name of the ROOT tree to save the training sample

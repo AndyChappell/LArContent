@@ -30,10 +30,6 @@ namespace lar_dl_content
 DlHitTrackShowerIdAlgorithm::DlHitTrackShowerIdAlgorithm() :
     m_caloHitListName(""),
     m_trainingMode(false),
-    m_vertexRelative(false),
-    m_polarCoords(false),
-    m_adcPeak(123.f),
-    m_maxAdcFactor(10.f),
     m_maxSeqLen(4096)
 {
 }
@@ -78,10 +74,7 @@ StatusCode DlHitTrackShowerIdAlgorithm::PrepareTrainingSample()
         return STATUS_CODE_SUCCESS;
     float vx{0.f};
     float vz{0.f};
-    if (m_vertexRelative)
-    {
-        PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, != , this->GetVertexPlanarCoordinates(pCaloHitList->front()->GetHitType(), vx, vz));
-    }
+    PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, != , this->GetVertexPlanarCoordinates(pCaloHitList->front()->GetHitType(), vx, vz));
 
     LArMCParticleHelper::MCContributionMap mcToHitsMap;
     LArMCParticleHelper::GetMCToHitsMap(*pCaloHitList, mcToHitsMap, false);
@@ -210,20 +203,16 @@ StatusCode DlHitTrackShowerIdAlgorithm::PrepareTrainingSample()
     categoryToHitsMap.clear();
 
     // Collect hits and respective categories into feature vectors for training
-    FloatVector xx, zz;
+    FloatVector x_rel, z_rel, x_abs, z_abs;
     FloatVector rr, cosTheta, sinTheta;
     FloatVector vv;
-    if (!m_polarCoords)
-    {
-        xx.resize(hitToCategoriesMap.size(), 0);
-        zz.resize(hitToCategoriesMap.size(), 0);
-    }
-    else
-    {
-        rr.resize(hitToCategoriesMap.size(), 0);
-        cosTheta.resize(hitToCategoriesMap.size(), 0);
-        sinTheta.resize(hitToCategoriesMap.size(), 0);
-    }
+    x_rel.resize(hitToCategoriesMap.size(), 0);
+    z_rel.resize(hitToCategoriesMap.size(), 0);
+    x_abs.resize(hitToCategoriesMap.size(), 0);
+    z_abs.resize(hitToCategoriesMap.size(), 0);
+    rr.resize(hitToCategoriesMap.size(), 0);
+    cosTheta.resize(hitToCategoriesMap.size(), 0);
+    sinTheta.resize(hitToCategoriesMap.size(), 0);
     vv.resize(hitToCategoriesMap.size(), 0);
     FloatVector adc(hitToCategoriesMap.size(), 0), width(hitToCategoriesMap.size(), 0);
     IntVector semanticLabel(hitToCategoriesMap.size(), UNINITIALISED);
@@ -249,33 +238,30 @@ StatusCode DlHitTrackShowerIdAlgorithm::PrepareTrainingSample()
             default:
                 return STATUS_CODE_NOT_FOUND;
         }
-        if (!m_polarCoords)
+        const float dx{x - vx};
+        const float dz{z - vz};
+        x_rel[i] = dx / bounds.rMax;
+        z_rel[i] = dz / bounds.rMax;
+        x_abs[i] = x / 360.f;   // Scale by approximate detector size - make this configurable
+        z_abs[i] = z / 1208.f;  // Scale by approximate detector size - make this configurable
+ 
+        const float r{std::sqrt(dx * dx + dz * dz)};
+        if (r > 0.f)
         {
-            xx[i] = (x - bounds.xMin) / bounds.xRange;
-            zz[i] = (z - bounds.zMin) / bounds.zRange;
+            rr[i] = r / bounds.rMax;
+            // Scale to [0,1] to aid training
+            cosTheta[i] = dx / (r + std::numeric_limits<float>::epsilon());
+            sinTheta[i] = dz / (r + std::numeric_limits<float>::epsilon());
         }
         else
         {
-            const float dx{x - vx};
-            const float dz{z - vz};
-            const float r{std::sqrt(dx * dx + dz * dz)};
-            if (r > 0.f)
-            {
-                rr[i] = r / bounds.rMax;
-                // Scale to [0,1] to aid training
-                cosTheta[i] = 0.5f * (1.f + dx / r);
-                sinTheta[i] = 0.5f * (1.f + dz / r);
-            }
-            else
-            {
-                rr[i] = 0.f;
-                // Scale to [0,1] to aid training
-                cosTheta[i] = 0.5f * (1.f + 1.f);
-                sinTheta[i] = 0.5f * (1.f + 0.f);
-            }
+            rr[i] = 0.f;
+            cosTheta[i] = 0;
+            sinTheta[i] = 0;
         }
-        adc[i] = std::log(1.f + std::min(pCaloHit->GetInputEnergy(), m_adcPeak * m_maxAdcFactor)) / std::log(1.f + m_adcPeak * m_maxAdcFactor);
-        width[i] = pCaloHit->GetCellSize1() / bounds.xRange;
+
+        adc[i] = std::log(1.f + pCaloHit->GetInputEnergy()) * 0.1f; // Log scale and normalization to keep expected values [0,1]
+        width[i] = pCaloHit->GetCellSize1() / 360.f; // Scale by approximate detector size - make this configurable
         for (const auto &category : categories)
             semanticLabel[i] = static_cast<int>(category);
         instanceLabel[i] = hitToInstanceMap.at(pCaloHit);
@@ -285,65 +271,63 @@ StatusCode DlHitTrackShowerIdAlgorithm::PrepareTrainingSample()
     if (!adc.empty())
     {
         PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "event", event));
-        if (!m_polarCoords)
+        // Sort the vectors by r
+        std::vector<size_t> indices(adc.size());
+        std::iota(indices.begin(), indices.end(), 0);
+        std::sort(indices.begin(), indices.end(), [&rr](size_t a, size_t b) { return rr[a] < rr[b]; });
+
+        auto reorder = [&](auto &vec)
         {
-            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "view", &vv));
-            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "x", &xx));
-            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "z", &zz));
-            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "adc", &adc));
-            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "width", &width));
-            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "semantic_label", &semanticLabel));
-            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "instance_label", &instanceLabel));
+            using VecType = std::decay_t<decltype(vec)>;
+            VecType sorted(vec.size());
+            for (size_t a = 0; a < indices.size(); ++a)
+                sorted[a] = vec[indices[a]];
+            vec.swap(sorted);
+        };
+
+        reorder(x_rel);
+        reorder(z_rel);
+        reorder(x_abs);
+        reorder(z_abs);
+        reorder(vv);
+        reorder(rr);
+        reorder(cosTheta);
+        reorder(sinTheta);
+        reorder(adc);
+        reorder(width);
+        reorder(semanticLabel);
+        reorder(instanceLabel);
+
+        size_t totalSize{rr.size()};
+        for (size_t s = 0; s < totalSize; s += m_maxSeqLen)
+        {
+            size_t end{std::min(s + m_maxSeqLen, totalSize)};
+            FloatVector xRelChunk(x_rel.begin() + s, x_rel.begin() + end);
+            FloatVector zRelChunk(z_rel.begin() + s, z_rel.begin() + end);
+            FloatVector xAbsChunk(x_abs.begin() + s, x_abs.begin() + end);
+            FloatVector zAbsChunk(z_abs.begin() + s, z_abs.begin() + end);
+            FloatVector vvChunk(vv.begin() + s, vv.begin() + end);
+            FloatVector rrChunk(rr.begin() + s, rr.begin() + end);
+            FloatVector cosThetaChunk(cosTheta.begin() + s, cosTheta.begin() + end);
+            FloatVector sinThetaChunk(sinTheta.begin() + s, sinTheta.begin() + end);
+            FloatVector adcChunk(adc.begin() + s, adc.begin() + end);
+            FloatVector widthChunk(width.begin() + s, width.begin() + end);
+            IntVector semanticLabelChunk(semanticLabel.begin() + s, semanticLabel.begin() + end);
+            IntVector instanceLabelChunk(instanceLabel.begin() + s, instanceLabel.begin() + end);
+
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "view", &vvChunk));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "x_rel", &xRelChunk));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "z_rel", &zRelChunk));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "x_abs", &xAbsChunk));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "z_abs", &zAbsChunk));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "r", &rrChunk));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "cosTheta", &cosThetaChunk));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "sinTheta", &sinThetaChunk));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "adc", &adcChunk));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "width", &widthChunk));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "semantic_label", &semanticLabelChunk));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "instance_label", &instanceLabelChunk));
             PANDORA_MONITORING_API(FillTree(this->GetPandora(), m_rootTreeName));
-        }
-        else
-        {
-            // Sort the vectors by r
-            std::vector<size_t> indices(adc.size());
-            std::iota(indices.begin(), indices.end(), 0);
-            std::sort(indices.begin(), indices.end(), [&rr](size_t a, size_t b) { return rr[a] < rr[b]; });
-
-            auto reorder = [&](auto &vec)
-            {
-                using VecType = std::decay_t<decltype(vec)>;
-                VecType sorted(vec.size());
-                for (size_t a = 0; a < indices.size(); ++a)
-                    sorted[a] = vec[indices[a]];
-                vec.swap(sorted);
-            };
-
-            reorder(vv);
-            reorder(rr);
-            reorder(cosTheta);
-            reorder(sinTheta);
-            reorder(adc);
-            reorder(width);
-            reorder(semanticLabel);
-            reorder(instanceLabel);
-
-            size_t totalSize{rr.size()};
-            for (size_t s = 0; s < totalSize; s += m_maxSeqLen)
-            {
-                size_t end{std::min(s + m_maxSeqLen, totalSize)};
-                FloatVector vvChunk(vv.begin() + s, vv.begin() + end);
-                FloatVector rrChunk(rr.begin() + s, rr.begin() + end);
-                FloatVector cosThetaChunk(cosTheta.begin() + s, cosTheta.begin() + end);
-                FloatVector sinThetaChunk(sinTheta.begin() + s, sinTheta.begin() + end);
-                FloatVector adcChunk(adc.begin() + s, adc.begin() + end);
-                FloatVector widthChunk(width.begin() + s, width.begin() + end);
-                IntVector semanticLabelChunk(semanticLabel.begin() + s, semanticLabel.begin() + end);
-                IntVector instanceLabelChunk(instanceLabel.begin() + s, instanceLabel.begin() + end);
-
-                PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "view", &vvChunk));
-                PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "r", &rrChunk));
-                PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "cosTheta", &cosThetaChunk));
-                PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "sinTheta", &sinThetaChunk));
-                PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "adc", &adcChunk));
-                PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "width", &widthChunk));
-                PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "semantic_label", &semanticLabelChunk));
-                PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "instance_label", &instanceLabelChunk));
-                PANDORA_MONITORING_API(FillTree(this->GetPandora(), m_rootTreeName));
-            }
         }
     }
 
@@ -362,10 +346,7 @@ StatusCode DlHitTrackShowerIdAlgorithm::Infer()
     // Get projected vertex coordinates if needed
     float vx{0.f};
     float vz{0.f};
-    if (m_vertexRelative)
-    {
-        PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, != , this->GetVertexPlanarCoordinates(pCaloHitList->front()->GetHitType(), vx, vz));
-    }
+    PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, != , this->GetVertexPlanarCoordinates(pCaloHitList->front()->GetHitType(), vx, vz));
 
     // Get coordinate minima and maxima
     Bounds bounds;
@@ -373,8 +354,8 @@ StatusCode DlHitTrackShowerIdAlgorithm::Infer()
 
     // Prepare input feature vectors
     CaloHitVector caloHitVector;
-    FloatVector xx, zz , rr, cosTheta, sinTheta, vv, adc, width;
-    this->PopulateInputVectors(*pCaloHitList, bounds, vx, vz, xx, zz, rr, cosTheta, sinTheta, vv, adc, width, caloHitVector);
+    FloatVector x_rel, z_rel, x_abs, z_abs, rr, cosTheta, sinTheta, vv, adc, width;
+    this->PopulateInputVectors(*pCaloHitList, bounds, vx, vz, x_rel, z_rel, x_abs, z_abs, rr, cosTheta, sinTheta, vv, adc, width, caloHitVector);
 
     PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), false, DETECTOR_VIEW_XZ, -1, 1, 1));
     // Ensure each run conforms to the maximum sequence length
@@ -382,6 +363,10 @@ StatusCode DlHitTrackShowerIdAlgorithm::Infer()
     for (size_t s = 0; s < totalSize; s += m_maxSeqLen)
     {
         size_t end{std::min(s + m_maxSeqLen, totalSize)};
+        FloatVector xRelBatch(x_rel.begin() + s, x_rel.begin() + end);
+        FloatVector zRelBatch(z_rel.begin() + s, z_rel.begin() + end);
+        FloatVector xAbsBatch(x_abs.begin() + s, x_abs.begin() + end);
+        FloatVector zAbsBatch(z_abs.begin() + s, z_abs.begin() + end);
         FloatVector vvBatch(vv.begin() + s, vv.begin() + end);
         FloatVector rrBatch(rr.begin() + s, rr.begin() + end);
         FloatVector cosBatch(cosTheta.begin() + s, cosTheta.begin() + end);
@@ -389,15 +374,12 @@ StatusCode DlHitTrackShowerIdAlgorithm::Infer()
         FloatVector adcBatch(adc.begin() + s, adc.begin() + end);
         FloatVector widthBatch(width.begin() + s, width.begin() + end);
 
-//        vvBatch.resize(m_maxSeqLen, 0.f);
-//        rrBatch.resize(m_maxSeqLen, 0.f);
-//        cosBatch.resize(m_maxSeqLen, 0.f);
-//        sinBatch.resize(m_maxSeqLen, 0.f);
-//        adcBatch.resize(m_maxSeqLen, 0.f);
-//        widthBatch.resize(m_maxSeqLen, 0.f);
-
         long batchSize = static_cast<long>(rrBatch.size());
         std::vector<LArDLHelper::TorchInput> tensors{
+            torch::from_blob(xRelBatch.data(), {batchSize}),
+            torch::from_blob(zRelBatch.data(), {batchSize}),
+            torch::from_blob(xAbsBatch.data(), {batchSize}),
+            torch::from_blob(zAbsBatch.data(), {batchSize}),
             torch::from_blob(vvBatch.data(), {batchSize}),
             torch::from_blob(rrBatch.data(), {batchSize}),
             torch::from_blob(cosBatch.data(), {batchSize}),
@@ -859,7 +841,7 @@ StatusCode DlHitTrackShowerIdAlgorithm::GetVertexPlanarCoordinates(const HitType
         std::cout << "DlHitTrackShowerIdAlgorithm: No vertices found in the vertex list" << std::endl;
         return STATUS_CODE_NOT_FOUND;
     }
-    const CartesianVector &vertex{m_vertexRelative ? pVertexList->front()->GetPosition() : CartesianVector(0.f, 0.f, 0.f)};
+    const CartesianVector &vertex{pVertexList->front()->GetPosition()};
     vx = vertex.GetX();
     const LArTransformationPlugin *transform{this->GetPandora().GetPlugins()->GetLArTransformationPlugin()};
     switch (view)
@@ -891,13 +873,10 @@ void DlHitTrackShowerIdAlgorithm::GetCoordinateExtrema(const CaloHitList &caloHi
         bounds.xMax = std::max(pos.GetX(), bounds.xMax);
         bounds.zMin = std::min(pos.GetZ(), bounds.zMin);
         bounds.zMax = std::max(pos.GetZ(), bounds.zMax);
-        if (m_vertexRelative)
-        {
-            const float x{pos.GetX() - vx};
-            const float z{pos.GetZ() - vz};
-            const float r{std::sqrt(x * x + z * z)};
-            bounds.rMax = std::max(r, bounds.rMax);
-        }
+        const float x{pos.GetX() - vx};
+        const float z{pos.GetZ() - vz};
+        const float r{std::sqrt(x * x + z * z)};
+        bounds.rMax = std::max(r, bounds.rMax);
     }
     bounds.xRange = bounds.xMax - bounds.xMin > 0 ? bounds.xMax - bounds.xMin : 1.f;
     bounds.zRange = bounds.zMax - bounds.zMin > 0 ? bounds.zMax - bounds.zMin : 1.f;
@@ -906,25 +885,21 @@ void DlHitTrackShowerIdAlgorithm::GetCoordinateExtrema(const CaloHitList &caloHi
 //------------------------------------------------------------------------------------------------------------------------------------------
 
 void DlHitTrackShowerIdAlgorithm::PopulateInputVectors(const CaloHitList &caloHitList, const Bounds &bounds, const float vx, const float vz,
-    FloatVector &xx, FloatVector &zz, FloatVector &rr, FloatVector &cosTheta, FloatVector &sinTheta, FloatVector &vv, FloatVector &adc,
-    FloatVector &width, CaloHitVector &sortedCaloHitList) const
+    FloatVector &x_rel, FloatVector &z_rel, FloatVector &x_abs, FloatVector &z_abs, FloatVector &rr, FloatVector &cosTheta, FloatVector &sinTheta,
+    FloatVector &vv, FloatVector &adc, FloatVector &width, CaloHitVector &sortedCaloHitList) const
 {
     if (caloHitList.empty())
         return;
 
     const size_t nHits{caloHitList.size()};
 
-    if (!m_polarCoords)
-    {
-        xx.resize(nHits, 0);
-        zz.resize(nHits, 0);
-    }
-    else
-    {
-        rr.resize(nHits, 0);
-        cosTheta.resize(nHits, 0);
-        sinTheta.resize(nHits, 0);
-    }
+    x_rel.resize(nHits, 0);
+    z_rel.resize(nHits, 0);
+    x_abs.resize(nHits, 0);
+    z_abs.resize(nHits, 0);
+    rr.resize(nHits, 0);
+    cosTheta.resize(nHits, 0);
+    sinTheta.resize(nHits, 0);
     vv.resize(nHits, 0);
     adc.resize(nHits, 0);
     width.resize(nHits, 0);
@@ -949,63 +924,61 @@ void DlHitTrackShowerIdAlgorithm::PopulateInputVectors(const CaloHitList &caloHi
             default:
                 throw StatusCodeException(STATUS_CODE_NOT_FOUND);
         }
-        if (!m_polarCoords)
+        const float dx{x - vx};
+        const float dz{z - vz};
+        x_rel[i] = dx / bounds.rMax;
+        z_rel[i] = dz / bounds.rMax;
+        x_abs[i] = x / 360.f;
+        z_abs[i] = z / 1208.f;
+
+        const float r{std::sqrt(dx * dx + dz * dz)};
+        if (r > 0.f)
         {
-            xx[i] = (x - bounds.xMin) / bounds.xRange;
-            zz[i] = (z - bounds.zMin) / bounds.zRange;
+            rr[i] = r / bounds.rMax;
+            // Scale to [0,1]
+            cosTheta[i] = dx / (r + std::numeric_limits<float>::epsilon());
+            sinTheta[i] = dz / (r + std::numeric_limits<float>::epsilon());
         }
         else
         {
-            const float dx{x - vx};
-            const float dz{z - vz};
-            const float r{std::sqrt(dx * dx + dz * dz)};
-            if (r > 0.f)
-            {
-                rr[i] = r / bounds.rMax;
-                // Scale to [0,1]
-                cosTheta[i] = 0.5f * (1.f + dx / r);
-                sinTheta[i] = 0.5f * (1.f + dz / r);
-            }
-            else
-            {
-                rr[i] = 0.f;
-                // Scale to [0,1]
-                cosTheta[i] = 0.5f * (1.f + 1.f);
-                sinTheta[i] = 0.5f * (1.f + 0.f);
-            }
+            rr[i] = 0.f;
+            cosTheta[i] = 0;
+            sinTheta[i] = 0;
         }
-        adc[i] = std::log(1.f + std::min(pCaloHit->GetInputEnergy(), m_adcPeak * m_maxAdcFactor)) / std::log(1.f + m_adcPeak * m_maxAdcFactor);
-        width[i] = pCaloHit->GetCellSize1() / bounds.xRange;
+
+        adc[i] = std::log(1.f + pCaloHit->GetInputEnergy()) * 0.1; // Log scale and nomralization to keep expected values in [0,1]
+        width[i] = pCaloHit->GetCellSize1() / 360.f;
         ++i;
     }
 
-    if (m_polarCoords)
+    // Sort the vectors by r
+    IndexVector indices(adc.size());
+    std::iota(indices.begin(), indices.end(), 0);
+    std::sort(indices.begin(), indices.end(), [&rr](size_t a, size_t b) { return rr[a] < rr[b]; });
+
+    auto reorder = [&](auto &vec)
     {
-        // Sort the vectors by r
-        IndexVector indices(adc.size());
-        std::iota(indices.begin(), indices.end(), 0);
-        std::sort(indices.begin(), indices.end(), [&rr](size_t a, size_t b) { return rr[a] < rr[b]; });
+        using VecType = std::decay_t<decltype(vec)>;
+        VecType sorted(vec.size());
+        for (size_t a = 0; a < indices.size(); ++a)
+            sorted[a] = vec[indices[a]];
+        vec.swap(sorted);
+    };
 
-        auto reorder = [&](auto &vec)
-        {
-            using VecType = std::decay_t<decltype(vec)>;
-            VecType sorted(vec.size());
-            for (size_t a = 0; a < indices.size(); ++a)
-                sorted[a] = vec[indices[a]];
-            vec.swap(sorted);
-        };
+    reorder(x_rel);
+    reorder(z_rel);
+    reorder(x_abs);
+    reorder(z_abs);
+    reorder(vv);
+    reorder(rr);
+    reorder(cosTheta);
+    reorder(sinTheta);
+    reorder(adc);
+    reorder(width);
 
-        reorder(vv);
-        reorder(rr);
-        reorder(cosTheta);
-        reorder(sinTheta);
-        reorder(adc);
-        reorder(width);
-
-        sortedCaloHitList.clear();
-        sortedCaloHitList.insert(sortedCaloHitList.end(), caloHitList.begin(), caloHitList.end());
-        reorder(sortedCaloHitList);
-    }
+    sortedCaloHitList.clear();
+    sortedCaloHitList.insert(sortedCaloHitList.end(), caloHitList.begin(), caloHitList.end());
+    reorder(sortedCaloHitList);
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
@@ -1014,16 +987,8 @@ StatusCode DlHitTrackShowerIdAlgorithm::ReadSettings(const TiXmlHandle xmlHandle
 {
     PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadValue(xmlHandle, "TrainingMode", m_trainingMode));
     PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "CaloHitListName", m_caloHitListName));
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "VertexRelative", m_vertexRelative));
-    if (m_vertexRelative)
-    {
-        PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadValue(xmlHandle, "VertexListName", m_vertexListName));
-        PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "PolarCoords", m_polarCoords));
-        if (m_polarCoords)
-        {
-            PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "MaxSeqLen", m_maxSeqLen));
-        }
-    }
+    PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadValue(xmlHandle, "VertexListName", m_vertexListName));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "MaxSeqLen", m_maxSeqLen));
     if (m_trainingMode)
     {
         PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadValue(xmlHandle, "RootFileName", m_rootFileName));
@@ -1036,8 +1001,6 @@ StatusCode DlHitTrackShowerIdAlgorithm::ReadSettings(const TiXmlHandle xmlHandle
         modelName = LArFileHelper::FindFileInPath(modelName, "FW_SEARCH_PATH");
         LArDLHelper::LoadModel(modelName, m_model);
     }
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "AdcPeak", m_adcPeak));
-    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "MaxAdcFactor", m_maxAdcFactor));
 
     return STATUS_CODE_SUCCESS;
 }
