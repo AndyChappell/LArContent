@@ -250,6 +250,28 @@ StatusCode DlVertexingAlgorithm::Infer()
             }
         }
 
+        if (m_pass > 1)
+        {
+            PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1.f, 1.f, 1.f));
+            std::unordered_map<int, CaloHitList> classToCaloHitsMap;
+            for (const auto &[pCaloHit, pixel] : m_hitToPixelMap)
+            {
+                const int row{pixel.first}, col{pixel.second};
+                const auto cls{classesAccessor[0][row][col]};
+                if (cls > 0 && cls < m_nClasses)
+                    classToCaloHitsMap[cls].push_back(pCaloHit);
+            }
+            for (int i = 1; i < m_nClasses; ++i)
+            {
+                if (classToCaloHitsMap.find(i) == classToCaloHitsMap.end())
+                    continue;
+                const CaloHitList &caloHits{classToCaloHitsMap.at(i)};
+                PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &caloHits, "Class " + std::to_string(i), AUTOITER));
+                    //PANDORA_MONITORING_API(VisualiseC AddMarkerToVisualization(this->GetPandora(), &hitPos, "hit", GREY, 1));
+            }
+            PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
+        }
+
         CartesianPointVector positionVector;
         this->MakeWirePlaneCoordinatesFromCanvas(
             canvas, canvasWidth, canvasHeight, colOffset, rowOffset, view, driftMin, driftMax, wireMin[view], wireMax[view], positionVector);
@@ -261,9 +283,22 @@ StatusCode DlVertexingAlgorithm::Infer()
             vertexCandidatesW.emplace_back(positionVector.front());
 
 #ifdef MONITORING
-        if (m_visualise)
+        if (m_visualise && m_pass > 1)
         {
-            PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1.f, 1.f, 1.f));
+            if (!vertexCandidatesU.empty())
+            {
+                PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &vertexCandidatesU.front(), "U(reco)", RED, 2));
+            }
+            if (!vertexCandidatesV.empty())
+            {
+                PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &vertexCandidatesV.front(), "V(reco)", RED, 2));
+            }
+            if (!vertexCandidatesU.empty())
+            {
+                PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &vertexCandidatesW.front(), "W(reco)", RED, 2));
+            }
+
+            /*PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1.f, 1.f, 1.f));
             const MCParticleList *pMCParticleList{nullptr};
             PANDORA_THROW_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetCurrentList(*this, pMCParticleList));
 
@@ -293,7 +328,7 @@ StatusCode DlVertexingAlgorithm::Infer()
                     std::string label{isU ? "U" : isV ? "V" : "W"};
                     PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &pos, label, RED, 3));
                 }
-            }
+            }*/
             PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
         }
 #endif
@@ -366,8 +401,9 @@ StatusCode DlVertexingAlgorithm::Infer()
 //-----------------------------------------------------------------------------------------------------------------------------------------
 
 StatusCode DlVertexingAlgorithm::MakeNetworkInputFromHits(const CaloHitList &caloHits, const HitType view, const float xMin,
-    const float xMax, const float zMin, const float zMax, LArDLHelper::TorchInput &networkInput, PixelVector &pixelVector) const
+    const float xMax, const float zMin, const float zMax, LArDLHelper::TorchInput &networkInput, PixelVector &pixelVector)
 {
+    m_hitToPixelMap.clear();
     // ATTN If wire w pitches vary between TPCs, exception will be raised in initialisation of lar pseudolayer plugin
     const LArTPC *const pTPC(this->GetPandora().GetGeometry()->GetLArTPCMap().begin()->second);
     const float pitch(view == TPC_VIEW_U ? pTPC->GetWirePitchU() : view == TPC_VIEW_V ? pTPC->GetWirePitchV() : pTPC->GetWirePitchW());
@@ -400,6 +436,7 @@ StatusCode DlVertexingAlgorithm::MakeNetworkInputFromHits(const CaloHitList &cal
         const int pixelX{static_cast<int>(std::floor((x - xBinEdges[0]) / dx))};
         const int pixelZ{static_cast<int>(std::floor((z - zBinEdges[0]) / dz))};
         accessor[0][0][pixelZ][pixelX] += adc;
+        m_hitToPixelMap[pCaloHit] = std::make_pair(pixelZ, pixelX);
     }
     for (int row = 0; row < m_height; ++row)
     {

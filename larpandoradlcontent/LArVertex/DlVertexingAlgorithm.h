@@ -57,7 +57,7 @@ private:
      *  @return The StatusCode resulting from the function
      **/
     pandora::StatusCode MakeNetworkInputFromHits(const pandora::CaloHitList &caloHits, const pandora::HitType view, const float xMin,
-        const float xMax, const float zMin, const float zMax, LArDLHelper::TorchInput &networkInput, PixelVector &pixelVector) const;
+        const float xMax, const float zMin, const float zMax, LArDLHelper::TorchInput &networkInput, PixelVector &pixelVector);
 
     /*
      *  @brief  Create a list of wire plane-space coordinates from a canvas
@@ -102,6 +102,8 @@ private:
     std::string m_rootTreeName; ///< The ROOT tree name
     std::string m_rootFileName; ///< The ROOT file name
     std::mt19937 m_rng;         ///< The random number generator
+                                //
+    std::unordered_map<const pandora::CaloHit *, Pixel> m_hitToPixelMap; ///< The map of wire plane view to model name
 };
 
 } // namespace lar_dl_content
