@@ -150,17 +150,12 @@ void HierarchyValidationAlgorithm::EventValidation(const LArHierarchyHelper::Mat
                 continue;
             primaries.sort(LArMCParticleHelper::SortByMomentum);
 
-            int isCC{0}, isQE{0}, isResonant{0}, isDIS{0}, isCoherent{0}, isNuMu{0}, isNuE{0}, nPiZero{0}, nPiPlus{0}, nPiMinus{0},
-                nPhotons{0}, nProtons{0};
+            int isCC{0}, isNuMu{0}, isNuE{0}, nPiZero{0}, nPiPlus{0}, nPiMinus{0}, nPhotons{0}, nProtons{0};
 
             try
             {
                 const InteractionDescriptor descriptor{LArInteractionTypeHelper::GetInteractionDescriptor(primaries)};
                 isCC = descriptor.IsCC();
-                isQE = descriptor.IsQE();
-                isResonant = descriptor.IsResonant();
-                isDIS = descriptor.IsDIS();
-                isCoherent = descriptor.IsCoherent();
                 isNuMu = descriptor.IsMuonNeutrino();
                 isNuE = descriptor.IsElectronNeutrino();
                 nPiZero = static_cast<int>(descriptor.GetNumPiZero());
@@ -288,10 +283,6 @@ void HierarchyValidationAlgorithm::EventValidation(const LArHierarchyHelper::Mat
             PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_eventTreeName.c_str(), "interaction", interaction));
             PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_eventTreeName.c_str(), "nRecoSlices", nRecoSlices));
             PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_eventTreeName.c_str(), "isCC", isCC));
-            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_eventTreeName.c_str(), "isQE", isQE));
-            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_eventTreeName.c_str(), "isResonant", isResonant));
-            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_eventTreeName.c_str(), "isDIS", isDIS));
-            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_eventTreeName.c_str(), "isCoherent", isCoherent));
             PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_eventTreeName.c_str(), "isNuMu", isNuMu));
             PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_eventTreeName.c_str(), "isNuE", isNuE));
             PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_eventTreeName.c_str(), "nPiZero", nPiZero));
@@ -423,16 +414,11 @@ void HierarchyValidationAlgorithm::MCValidation(const LArHierarchyHelper::MatchI
                 float vtxDz{std::numeric_limits<float>::max()};
                 float vtxDr{std::numeric_limits<float>::max()};
 
-                int isCC{0}, isQE{0}, isResonant{0}, isDIS{0}, isCoherent{0}, isNuMu{0}, isNuE{0}, nPiZero{0}, nPiPlus{0}, nPiMinus{0},
-                    nPhotons{0}, nProtons{0};
+                int isCC{0}, isNuMu{0}, isNuE{0}, nPiZero{0}, nPiPlus{0}, nPiMinus{0}, nPhotons{0}, nProtons{0};
                 try
                 {
                     const InteractionDescriptor descriptor{LArInteractionTypeHelper::GetInteractionDescriptor(primaries)};
                     isCC = descriptor.IsCC();
-                    isQE = descriptor.IsQE();
-                    isResonant = descriptor.IsResonant();
-                    isDIS = descriptor.IsDIS();
-                    isCoherent = descriptor.IsCoherent();
                     isNuMu = descriptor.IsMuonNeutrino();
                     isNuE = descriptor.IsElectronNeutrino();
                     nPiZero = static_cast<int>(descriptor.GetNumPiZero());
@@ -548,10 +534,6 @@ void HierarchyValidationAlgorithm::MCValidation(const LArHierarchyHelper::MatchI
                 PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_MCTreeName.c_str(), "vtxDz", vtxDz));
                 PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_MCTreeName.c_str(), "vtxDr", vtxDr));
                 PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_MCTreeName.c_str(), "isCC", isCC));
-                PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_MCTreeName.c_str(), "isQE", isQE));
-                PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_MCTreeName.c_str(), "isResonant", isResonant));
-                PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_MCTreeName.c_str(), "isDIS", isDIS));
-                PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_MCTreeName.c_str(), "isCoherent", isCoherent));
                 PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_MCTreeName.c_str(), "isNuMu", isNuMu));
                 PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_MCTreeName.c_str(), "isNuE", isNuE));
                 PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_MCTreeName.c_str(), "nPiZero", nPiZero));

@@ -116,6 +116,7 @@ StatusCode VertexMonitoringAlgorithm::AssessVertices() const
     {
         const LArTransformationPlugin *transform{this->GetPandora().GetPlugins()->GetLArTransformationPlugin()};
         const CartesianVector &trueVertex{pTrueNeutrino->GetVertex()};
+        (void)trueVertex;
         const CartesianVector &recoVertex{LArPfoHelper::GetVertex(pRecoNeutrino)->GetPosition()};
         if (m_visualise)
         {
@@ -141,18 +142,13 @@ StatusCode VertexMonitoringAlgorithm::AssessVertices() const
             PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &rw, "W reco vertex", RED, 2));
         }
 
-        if (m_writeFile && LArVertexHelper::IsInFiducialVolume(this->GetPandora(), trueVertex, "dune_fd_hd"))
+        if (m_writeFile) // && LArVertexHelper::IsInFiducialVolume(this->GetPandora(), trueVertex, "dune_fd_hd"))
         {
             const CartesianVector delta{recoVertex - trueVertex};
             const float dx{delta.GetX()}, dy{delta.GetY()}, dz{delta.GetZ()}, dr{delta.GetMagnitude()};
             const float trueNuEnergy{pTrueNeutrino->GetEnergy()};
             const int success{1};
             const int isCC{descriptor.IsCC()};
-            const int isQE{descriptor.IsQE()};
-            const int isRes{descriptor.IsResonant()};
-            const int isDIS{descriptor.IsDIS()};
-            const int isCoh{descriptor.IsCoherent()};
-            const int isOther{!(isCC || isQE || isRes || isDIS)};
             const int isMu{descriptor.IsMuonNeutrino()};
             const int isElectron{descriptor.IsElectronNeutrino()};
             const int nPiZero{static_cast<int>(descriptor.GetNumPiZero())};
@@ -162,12 +158,11 @@ StatusCode VertexMonitoringAlgorithm::AssessVertices() const
             const int nProtons{static_cast<int>(descriptor.GetNumProtons())};
             PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "success", success));
             PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "trueNuEnergy", trueNuEnergy));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "dx", dx));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "dy", dy));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "dz", dz));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "dr", dr));
             PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "isCC", isCC));
-            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "isQE", isQE));
-            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "isRes", isRes));
-            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "isDIS", isDIS));
-            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "isCoh", isCoh));
-            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "isOther", isOther));
             PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "isMu", isMu));
             PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "isElectron", isElectron));
             PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "nPiZero", nPiZero));
@@ -175,28 +170,20 @@ StatusCode VertexMonitoringAlgorithm::AssessVertices() const
             PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "nPiMinus", nPiMinus));
             PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "nPhotons", nPhotons));
             PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "nProtons", nProtons));
-            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "dx", dx));
-            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "dy", dy));
-            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "dz", dz));
-            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "dr", dr));
             PANDORA_MONITORING_API(FillTree(this->GetPandora(), m_treename.c_str()));
         }
     }
     else if (pTrueNeutrino)
     {
         const CartesianVector &trueVertex{pTrueNeutrino->GetVertex()};
+        (void)trueVertex;
 
-        if (m_writeFile && LArVertexHelper::IsInFiducialVolume(this->GetPandora(), trueVertex, "dune_fd_hd"))
+        if (m_writeFile) // && LArVertexHelper::IsInFiducialVolume(this->GetPandora(), trueVertex, "dune_fd_hd"))
         {
             const int success{0};
             const float dx{-999.f}, dy{-999.f}, dz{-999.f}, dr{-999.f};
             const float trueNuEnergy{pTrueNeutrino->GetEnergy()};
             const int isCC{descriptor.IsCC()};
-            const int isQE{descriptor.IsQE()};
-            const int isRes{descriptor.IsResonant()};
-            const int isDIS{descriptor.IsDIS()};
-            const int isCoh{descriptor.IsCoherent()};
-            const int isOther{!(isCC || isQE || isRes || isDIS)};
             const int isMu{descriptor.IsMuonNeutrino()};
             const int isElectron{descriptor.IsElectronNeutrino()};
             const int nPiZero{static_cast<int>(descriptor.GetNumPiZero())};
@@ -206,12 +193,11 @@ StatusCode VertexMonitoringAlgorithm::AssessVertices() const
             const int nProtons{static_cast<int>(descriptor.GetNumProtons())};
             PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "success", success));
             PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "trueNuEnergy", trueNuEnergy));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "dx", dx));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "dy", dy));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "dz", dz));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "dr", dr));
             PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "isCC", isCC));
-            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "isQE", isQE));
-            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "isRes", isRes));
-            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "isDIS", isDIS));
-            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "isCoh", isCoh));
-            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "isOther", isOther));
             PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "isMu", isMu));
             PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "isElectron", isElectron));
             PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "nPiZero", nPiZero));
@@ -219,10 +205,6 @@ StatusCode VertexMonitoringAlgorithm::AssessVertices() const
             PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "nPiMinus", nPiMinus));
             PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "nPhotons", nPhotons));
             PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "nProtons", nProtons));
-            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "dx", dx));
-            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "dy", dy));
-            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "dz", dz));
-            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_treename.c_str(), "dr", dr));
             PANDORA_MONITORING_API(FillTree(this->GetPandora(), m_treename.c_str()));
         }
     }

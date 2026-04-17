@@ -335,10 +335,6 @@ public:
      *  @brief  Constructor
      *
      *  @param  isCC Whether or not the interaction is a CC interaction
-     *  @param  isQE Whether or not the interaction is a QE interaction
-     *  @param  isRes Whether or not the interaction is a resonant interaction
-     *  @param  isDIS Whether or not the interaction is a DIS interaction
-     *  @param  isCoherent Whether or not the interaction is a coherent interaction
      *  @param  isNumu Whether or not the interaction is a numu interaction
      *  @param  isNue Whether or not the interaction is a nue interaction
      *  @param  nPiPlus Number of pi plus in the final state
@@ -346,8 +342,8 @@ public:
      *  @param  nPhotons Number of photons in the final state
      *  @param  nProtons Number of protons in the final state
      */
-    InteractionDescriptor(const bool isCC, const bool isQE, const bool isRes, const bool isDIS, const bool isCoherent, const bool isNumu,
-        const bool isNue, const unsigned int nPiPlus, const unsigned int nPiMinus, const unsigned int nPhotons, const unsigned int nProtons);
+    InteractionDescriptor(const bool isCC, const bool isNumu, const bool isNue, const unsigned int nPiPlus, const unsigned int nPiMinus,
+        const unsigned int nPhotons, const unsigned int nProtons);
 
     /**
      *  @brief  Whether or not the interaction is CC
@@ -355,34 +351,6 @@ public:
      *  @return Whether or not the interaction is CC
      */
     bool IsCC() const;
-
-    /**
-     *  @brief  Whether or not the interaction is QE
-     *
-     *  @return Whether or not the interaction is QE
-     */
-    bool IsQE() const;
-
-    /**
-     *  @brief  Whether or not the interaction is resonant
-     *
-     *  @return Whether or not the interaction is resonant
-     */
-    bool IsResonant() const;
-
-    /**
-     *  @brief  Whether or not the interaction is DIS
-     *
-     *  @return Whether or not the interaction is DIS
-     */
-    bool IsDIS() const;
-
-    /**
-     *  @brief  Whether or not the interaction is coherent
-     *
-     *  @return Whether or not the interaction is coherent
-     */
-    bool IsCoherent() const;
 
     /**
      *  @brief  Whether or not the interaction is muon neutrino
@@ -433,28 +401,8 @@ public:
      */
     unsigned int GetNumProtons() const;
 
-    /**
-     *  @brief  Retrieve a unique ID describing the event (that is, a given type of interaction with specific final state particles has a
-     *          particular ID)
-     *
-     *  @return The unique identifier for the event
-     */
-    int GetUniqueId() const;
-
-    /**
-     *  @brief  Retrieve the string descriptor for the event
-     *
-     *  @return The string descriptor for the event
-     */
-    const std::string &ToString() const;
-
     static const int CC;
     static const int NC;
-    static const int QE;
-    static const int RES;
-    static const int DIS;
-    static const int COH;
-    static const int OTH;
     static const int MU;
     static const int E;
     static const int PIZERO;
@@ -465,10 +413,6 @@ public:
 
 private:
     const bool m_isCC;
-    const bool m_isQE;
-    const bool m_isResonant;
-    const bool m_isDIS;
-    const bool m_isCoherent;
     const bool m_isNumu;
     const bool m_isNue;
     const unsigned int m_nPiZero;
@@ -476,8 +420,6 @@ private:
     const unsigned int m_nPiMinus;
     const unsigned int m_nPhotons;
     const unsigned int m_nProtons;
-    int m_id;
-    std::string m_descriptor;
 };
 
 //------------------------------------------------------------------------------------------------------------------------------------------
@@ -485,34 +427,6 @@ private:
 inline bool InteractionDescriptor::IsCC() const
 {
     return m_isCC;
-}
-
-//------------------------------------------------------------------------------------------------------------------------------------------
-
-inline bool InteractionDescriptor::IsQE() const
-{
-    return m_isQE;
-}
-
-//------------------------------------------------------------------------------------------------------------------------------------------
-
-inline bool InteractionDescriptor::IsResonant() const
-{
-    return m_isResonant;
-}
-
-//------------------------------------------------------------------------------------------------------------------------------------------
-
-inline bool InteractionDescriptor::IsDIS() const
-{
-    return m_isDIS;
-}
-
-//------------------------------------------------------------------------------------------------------------------------------------------
-
-inline bool InteractionDescriptor::IsCoherent() const
-{
-    return m_isCoherent;
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
@@ -562,20 +476,6 @@ inline unsigned int InteractionDescriptor::GetNumPhotons() const
 inline unsigned int InteractionDescriptor::GetNumProtons() const
 {
     return m_nProtons;
-}
-
-//------------------------------------------------------------------------------------------------------------------------------------------
-
-inline int InteractionDescriptor::GetUniqueId() const
-{
-    return m_id;
-}
-
-//------------------------------------------------------------------------------------------------------------------------------------------
-
-inline const std::string &InteractionDescriptor::ToString() const
-{
-    return m_descriptor;
 }
 
 } // namespace lar_content

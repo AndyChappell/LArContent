@@ -1550,10 +1550,10 @@ void LArHierarchyHelper::MatchInfo::Print(const MCHierarchy &mcHierarchy) const
         const LArMCParticle *const pLArRoot{dynamic_cast<const LArMCParticle *const>(pRootMC)};
         if (pLArRoot)
             std::cout << "=== MC Interaction : PDG " << std::to_string(pLArRoot->GetParticleId())
-                      << " Energy: " << std::to_string(pLArRoot->GetEnergy()) << " Type: " << descriptor.ToString() << std::endl;
+                      << " Energy: " << std::to_string(pLArRoot->GetEnergy()) << std::endl;
         else
             std::cout << "=== MC Interaction : PDG " << std::to_string(pRootMC->GetParticleId())
-                      << " Energy: " << std::to_string(pRootMC->GetEnergy()) << " Type: " << descriptor.ToString() << std::endl;
+                      << " Energy: " << std::to_string(pRootMC->GetEnergy()) << std::endl;
 
         unsigned int nNeutrinoMCParticles{this->GetNNeutrinoMCNodes(pRootMC)}, nNeutrinoRecoParticles{0};
         unsigned int nCosmicMCParticles{this->GetNCosmicRayMCNodes(pRootMC)}, nCosmicRecoParticles{0};
