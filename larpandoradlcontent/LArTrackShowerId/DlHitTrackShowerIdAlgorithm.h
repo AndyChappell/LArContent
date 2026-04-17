@@ -204,14 +204,15 @@ private:
      *  @param  rr The radial coordinate vector
      *  @param  cosTheta The cosine of the theta angle vector
      *  @param  sinTheta The sine of the theta angle vector
-     *  @param  vv The value vector
+     *  @param  wirePitch The vector of wire pitches
+     *  @param  wireAngle The vector of wire angles
      *  @param  adc The ADC value vector
      *  @param  width The width vector
      *  @param  sortedCaloHitList The output sorted calo hit list
      */
     void PopulateInputVectors(const pandora::CaloHitList &caloHitList, const Bounds &bounds, const float vx, const float vz, pandora::FloatVector &x_rel,
         pandora::FloatVector &z_rel, pandora::FloatVector &x_abs, pandora::FloatVector &z_abs, pandora::FloatVector &rr, pandora::FloatVector &cosTheta,
-        pandora::FloatVector &sinTheta, pandora::FloatVector &vv, pandora::FloatVector &adc, pandora::FloatVector &width,
+        pandora::FloatVector &sinTheta, pandora::FloatVector &wirePitch, pandora::FloatVector &wireAngle, pandora::FloatVector &adc, pandora::FloatVector &width,
         pandora::CaloHitVector &sortedCaloHitList) const;
 
     pandora::StatusCode ReadSettings(const pandora::TiXmlHandle xmlHandle);

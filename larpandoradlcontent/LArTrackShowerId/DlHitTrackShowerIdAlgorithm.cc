@@ -14,6 +14,7 @@
 #include "larpandoradlcontent/LArTrackShowerId/DlHitTrackShowerIdAlgorithm.h"
 
 #include "larpandoracontent/LArHelpers/LArFileHelper.h"
+#include "larpandoracontent/LArHelpers/LArGeometryHelper.h"
 #include "larpandoracontent/LArHelpers/LArPcaHelper.h"
 
 #include <chrono>
@@ -72,6 +73,12 @@ StatusCode DlHitTrackShowerIdAlgorithm::PrepareTrainingSample()
     PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetList(*this, m_caloHitListName, pCaloHitList));
     if (!pCaloHitList || pCaloHitList->empty())
         return STATUS_CODE_SUCCESS;
+
+    LArGeometryHelper::DetectorBoundaries detBounds{LArGeometryHelper::GetDetectorBoundaries(this->GetPandora())};
+    const float detSpanX{detBounds.m_xBoundaries.second - detBounds.m_xBoundaries.first};
+    const float detSpanZ{detBounds.m_zBoundaries.second - detBounds.m_zBoundaries.first};
+    const LArTPC *const pLArTPC(this->GetPandora().GetGeometry()->GetLArTPCMap().begin()->second);
+
     float vx{0.f};
     float vz{0.f};
     PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, != , this->GetVertexPlanarCoordinates(pCaloHitList->front()->GetHitType(), vx, vz));
@@ -186,10 +193,31 @@ StatusCode DlHitTrackShowerIdAlgorithm::PrepareTrainingSample()
     /*
     for (const auto &[cat, caloHitList] : categoryToHitsMap)
     {
-        PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &caloHitList, std::to_string(cat), AUTOITER));
+        std::string categoryName;
+        switch (cat)
+        {
+            case MIP:
+                categoryName = "MIP";
+                break;
+            case HIP:
+                categoryName = "HIP";
+                break;
+            case SHOWER:
+                categoryName = "SHOWER";
+                break;
+            case LOW_E:
+                categoryName = "LOW_E";
+                break;
+            default:
+                categoryName = "UNINITIALISED";
+                break;
+        }
+
+        PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &caloHitList, categoryName, AUTOITER));
     }
 
-    PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
+    PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));*/
+    /*
 
     for (const auto &[pMC, caloHitList] : instanceToHitsMap)
     {
@@ -205,7 +233,7 @@ StatusCode DlHitTrackShowerIdAlgorithm::PrepareTrainingSample()
     // Collect hits and respective categories into feature vectors for training
     FloatVector x_rel, z_rel, x_abs, z_abs;
     FloatVector rr, cosTheta, sinTheta;
-    FloatVector vv;
+    FloatVector wirePitch, wireAngle;
     x_rel.resize(hitToCategoriesMap.size(), 0);
     z_rel.resize(hitToCategoriesMap.size(), 0);
     x_abs.resize(hitToCategoriesMap.size(), 0);
@@ -213,7 +241,8 @@ StatusCode DlHitTrackShowerIdAlgorithm::PrepareTrainingSample()
     rr.resize(hitToCategoriesMap.size(), 0);
     cosTheta.resize(hitToCategoriesMap.size(), 0);
     sinTheta.resize(hitToCategoriesMap.size(), 0);
-    vv.resize(hitToCategoriesMap.size(), 0);
+    wirePitch.resize(hitToCategoriesMap.size(), 0);
+    wireAngle.resize(hitToCategoriesMap.size(), 0);
     FloatVector adc(hitToCategoriesMap.size(), 0), width(hitToCategoriesMap.size(), 0);
     IntVector semanticLabel(hitToCategoriesMap.size(), UNINITIALISED);
     IntVector instanceLabel(hitToCategoriesMap.size(), UNINITIALISED);
@@ -227,13 +256,16 @@ StatusCode DlHitTrackShowerIdAlgorithm::PrepareTrainingSample()
         switch (view)
         {
             case TPC_VIEW_U:
-                vv[i] = 1 / 3.f;
+                wirePitch[i] = pLArTPC->GetWirePitchU();
+                wireAngle[i] = pLArTPC->GetWireAngleU();
                 break;
             case TPC_VIEW_V:
-                vv[i] = 2 / 3.f;
+                wirePitch[i] = pLArTPC->GetWirePitchV();
+                wireAngle[i] = pLArTPC->GetWireAngleV();
                 break;
             case TPC_VIEW_W:
-                vv[i] = 3 / 3.f;
+                wirePitch[i] = pLArTPC->GetWirePitchW();
+                wireAngle[i] = pLArTPC->GetWireAngleW();
                 break;
             default:
                 return STATUS_CODE_NOT_FOUND;
@@ -242,8 +274,8 @@ StatusCode DlHitTrackShowerIdAlgorithm::PrepareTrainingSample()
         const float dz{z - vz};
         x_rel[i] = dx / bounds.rMax;
         z_rel[i] = dz / bounds.rMax;
-        x_abs[i] = x / 360.f;   // Scale by approximate detector size - make this configurable
-        z_abs[i] = z / 1208.f;  // Scale by approximate detector size - make this configurable
+        x_abs[i] = x / detSpanX;
+        z_abs[i] = z / detSpanZ;
  
         const float r{std::sqrt(dx * dx + dz * dz)};
         if (r > 0.f)
@@ -261,7 +293,7 @@ StatusCode DlHitTrackShowerIdAlgorithm::PrepareTrainingSample()
         }
 
         adc[i] = std::log(1.f + pCaloHit->GetInputEnergy()) * 0.1f; // Log scale and normalization to keep expected values [0,1]
-        width[i] = pCaloHit->GetCellSize1() / 360.f; // Scale by approximate detector size - make this configurable
+        width[i] = pCaloHit->GetCellSize1() / detSpanX;
         for (const auto &category : categories)
             semanticLabel[i] = static_cast<int>(category);
         instanceLabel[i] = hitToInstanceMap.at(pCaloHit);
@@ -289,7 +321,8 @@ StatusCode DlHitTrackShowerIdAlgorithm::PrepareTrainingSample()
         reorder(z_rel);
         reorder(x_abs);
         reorder(z_abs);
-        reorder(vv);
+        reorder(wirePitch);
+        reorder(wireAngle);
         reorder(rr);
         reorder(cosTheta);
         reorder(sinTheta);
@@ -306,7 +339,8 @@ StatusCode DlHitTrackShowerIdAlgorithm::PrepareTrainingSample()
             FloatVector zRelChunk(z_rel.begin() + s, z_rel.begin() + end);
             FloatVector xAbsChunk(x_abs.begin() + s, x_abs.begin() + end);
             FloatVector zAbsChunk(z_abs.begin() + s, z_abs.begin() + end);
-            FloatVector vvChunk(vv.begin() + s, vv.begin() + end);
+            FloatVector wpChunk(wirePitch.begin() + s, wirePitch.begin() + end);
+            FloatVector waChunk(wireAngle.begin() + s, wireAngle.begin() + end);
             FloatVector rrChunk(rr.begin() + s, rr.begin() + end);
             FloatVector cosThetaChunk(cosTheta.begin() + s, cosTheta.begin() + end);
             FloatVector sinThetaChunk(sinTheta.begin() + s, sinTheta.begin() + end);
@@ -315,14 +349,15 @@ StatusCode DlHitTrackShowerIdAlgorithm::PrepareTrainingSample()
             IntVector semanticLabelChunk(semanticLabel.begin() + s, semanticLabel.begin() + end);
             IntVector instanceLabelChunk(instanceLabel.begin() + s, instanceLabel.begin() + end);
 
-            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "view", &vvChunk));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "wire_pitch", &wpChunk));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "wire_angle", &waChunk));
             PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "x_rel", &xRelChunk));
             PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "z_rel", &zRelChunk));
             PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "x_abs", &xAbsChunk));
             PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "z_abs", &zAbsChunk));
             PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "r", &rrChunk));
-            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "cosTheta", &cosThetaChunk));
-            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "sinTheta", &sinThetaChunk));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "cos_theta", &cosThetaChunk));
+            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "sin_theta", &sinThetaChunk));
             PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "adc", &adcChunk));
             PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "width", &widthChunk));
             PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "semantic_label", &semanticLabelChunk));
@@ -354,8 +389,8 @@ StatusCode DlHitTrackShowerIdAlgorithm::Infer()
 
     // Prepare input feature vectors
     CaloHitVector caloHitVector;
-    FloatVector x_rel, z_rel, x_abs, z_abs, rr, cosTheta, sinTheta, vv, adc, width;
-    this->PopulateInputVectors(*pCaloHitList, bounds, vx, vz, x_rel, z_rel, x_abs, z_abs, rr, cosTheta, sinTheta, vv, adc, width, caloHitVector);
+    FloatVector x_rel, z_rel, x_abs, z_abs, rr, cosTheta, sinTheta, wirePitch, wireAngle, adc, width;
+    this->PopulateInputVectors(*pCaloHitList, bounds, vx, vz, x_rel, z_rel, x_abs, z_abs, rr, cosTheta, sinTheta, wirePitch, wireAngle, adc, width, caloHitVector);
 
     PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), false, DETECTOR_VIEW_XZ, -1, 1, 1));
     // Ensure each run conforms to the maximum sequence length
@@ -367,7 +402,8 @@ StatusCode DlHitTrackShowerIdAlgorithm::Infer()
         FloatVector zRelBatch(z_rel.begin() + s, z_rel.begin() + end);
         FloatVector xAbsBatch(x_abs.begin() + s, x_abs.begin() + end);
         FloatVector zAbsBatch(z_abs.begin() + s, z_abs.begin() + end);
-        FloatVector vvBatch(vv.begin() + s, vv.begin() + end);
+        FloatVector wpBatch(wirePitch.begin() + s, wirePitch.begin() + end);
+        FloatVector waBatch(wireAngle.begin() + s, wireAngle.begin() + end);
         FloatVector rrBatch(rr.begin() + s, rr.begin() + end);
         FloatVector cosBatch(cosTheta.begin() + s, cosTheta.begin() + end);
         FloatVector sinBatch(sinTheta.begin() + s, sinTheta.begin() + end);
@@ -380,7 +416,8 @@ StatusCode DlHitTrackShowerIdAlgorithm::Infer()
             torch::from_blob(zRelBatch.data(), {batchSize}),
             torch::from_blob(xAbsBatch.data(), {batchSize}),
             torch::from_blob(zAbsBatch.data(), {batchSize}),
-            torch::from_blob(vvBatch.data(), {batchSize}),
+            torch::from_blob(wpBatch.data(), {batchSize}),
+            torch::from_blob(waBatch.data(), {batchSize}),
             torch::from_blob(rrBatch.data(), {batchSize}),
             torch::from_blob(cosBatch.data(), {batchSize}),
             torch::from_blob(sinBatch.data(), {batchSize}),
@@ -886,10 +923,15 @@ void DlHitTrackShowerIdAlgorithm::GetCoordinateExtrema(const CaloHitList &caloHi
 
 void DlHitTrackShowerIdAlgorithm::PopulateInputVectors(const CaloHitList &caloHitList, const Bounds &bounds, const float vx, const float vz,
     FloatVector &x_rel, FloatVector &z_rel, FloatVector &x_abs, FloatVector &z_abs, FloatVector &rr, FloatVector &cosTheta, FloatVector &sinTheta,
-    FloatVector &vv, FloatVector &adc, FloatVector &width, CaloHitVector &sortedCaloHitList) const
+    FloatVector &wirePitch, FloatVector &wireAngle, FloatVector &adc, FloatVector &width, CaloHitVector &sortedCaloHitList) const
 {
     if (caloHitList.empty())
         return;
+
+    LArGeometryHelper::DetectorBoundaries detBounds{LArGeometryHelper::GetDetectorBoundaries(this->GetPandora())};
+    const float detSpanX{detBounds.m_xBoundaries.second - detBounds.m_xBoundaries.first};
+    const float detSpanZ{detBounds.m_zBoundaries.second - detBounds.m_zBoundaries.first};
+    const LArTPC *const pLArTPC(this->GetPandora().GetGeometry()->GetLArTPCMap().begin()->second);
 
     const size_t nHits{caloHitList.size()};
 
@@ -900,7 +942,8 @@ void DlHitTrackShowerIdAlgorithm::PopulateInputVectors(const CaloHitList &caloHi
     rr.resize(nHits, 0);
     cosTheta.resize(nHits, 0);
     sinTheta.resize(nHits, 0);
-    vv.resize(nHits, 0);
+    wirePitch.resize(nHits, 0);
+    wireAngle.resize(nHits, 0);
     adc.resize(nHits, 0);
     width.resize(nHits, 0);
 
@@ -913,13 +956,16 @@ void DlHitTrackShowerIdAlgorithm::PopulateInputVectors(const CaloHitList &caloHi
         switch (view)
         {
             case TPC_VIEW_U:
-                vv[i] = 1 / 3.f;
+                wirePitch[i] = pLArTPC->GetWirePitchU();
+                wireAngle[i] = pLArTPC->GetWireAngleU();
                 break;
             case TPC_VIEW_V:
-                vv[i] = 2 / 3.f;
+                wirePitch[i] = pLArTPC->GetWirePitchV();
+                wireAngle[i] = pLArTPC->GetWireAngleV();
                 break;
             case TPC_VIEW_W:
-                vv[i] = 3 / 3.f;
+                wirePitch[i] = pLArTPC->GetWirePitchW();
+                wireAngle[i] = pLArTPC->GetWireAngleW();
                 break;
             default:
                 throw StatusCodeException(STATUS_CODE_NOT_FOUND);
@@ -928,8 +974,8 @@ void DlHitTrackShowerIdAlgorithm::PopulateInputVectors(const CaloHitList &caloHi
         const float dz{z - vz};
         x_rel[i] = dx / bounds.rMax;
         z_rel[i] = dz / bounds.rMax;
-        x_abs[i] = x / 360.f;
-        z_abs[i] = z / 1208.f;
+        x_abs[i] = x / detSpanX;
+        z_abs[i] = z / detSpanZ;
 
         const float r{std::sqrt(dx * dx + dz * dz)};
         if (r > 0.f)
@@ -947,7 +993,7 @@ void DlHitTrackShowerIdAlgorithm::PopulateInputVectors(const CaloHitList &caloHi
         }
 
         adc[i] = std::log(1.f + pCaloHit->GetInputEnergy()) * 0.1; // Log scale and nomralization to keep expected values in [0,1]
-        width[i] = pCaloHit->GetCellSize1() / 360.f;
+        width[i] = pCaloHit->GetCellSize1() / detSpanX;
         ++i;
     }
 
@@ -969,7 +1015,8 @@ void DlHitTrackShowerIdAlgorithm::PopulateInputVectors(const CaloHitList &caloHi
     reorder(z_rel);
     reorder(x_abs);
     reorder(z_abs);
-    reorder(vv);
+    reorder(wirePitch);
+    reorder(wireAngle);
     reorder(rr);
     reorder(cosTheta);
     reorder(sinTheta);
