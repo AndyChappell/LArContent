@@ -39,8 +39,9 @@ private:
         UNINITIALISED = 0,
         MIP = 1,
         HIP = 2,
-        SHOWER = 3,
-        LOW_E = 4 // Michels and Deltas
+        EM_TRACK = 3,
+        EM_SHOWER = 4,
+        DIFFUSE = 5
     };
 
     struct Bounds
@@ -92,20 +93,13 @@ private:
         lar_content::LArMCParticleHelper::MCContributionMap &instanceHitMap) const;
 
     /**
-     *  @brief  Determine if an MC particle is a delta ray
-     *
-     *  @param pLArMC The MC particle to check
-     *  @return true if the MC particle is a delta ray, false otherwise
-     */
-    bool IsDelta(const lar_content::LArMCParticle *const pLArMC) const;
-
-    /**
      *  @brief  Determine if an MC particle is diffuse
      *
      *  @param pLArMC The MC particle to check
+     *  @param mcToHitsMap The map of MC particles to their hits, used to determine if the particle is diffuse
      *  @return true if the MC particle is diffuse, false otherwise
      */
-    bool IsDiffuse(const lar_content::LArMCParticle *const pLArMC) const;
+    bool IsDiffuse(const lar_content::LArMCParticle *const pLArMC, const lar_content::LArMCParticleHelper::MCContributionMap &mcToHitsMap) const;
 
     /**
      *  @brief  Determine if an MC particle is highly ionising
@@ -124,20 +118,44 @@ private:
     bool IsMip(const lar_content::LArMCParticle *const pLArMC) const;
 
     /**
-     *  @brief  Determine if an MC particle is a Michel electron
+     *  @brief  Determine if an MC particle is a shower-like EM particle (essentially, does it Bremm?)
      *
      *  @param pLArMC The MC particle to check
-     *  @return true if the MC particle is a Michel electron, false otherwise
-     */
-    bool IsMichel(const lar_content::LArMCParticle *const pLArMC) const;
-
-    /**
-     *  @brief  Determine if an MC particle is a shower
-     *
-     *  @param pLArMC The MC particle to check
+     *  @param mcHitMap The map of MC particles to their hits, used to determine if the particle undergoes Bremmstrahlung
      *  @return true if the MC particle is a shower, false otherwise
      */
-    bool IsShower(const lar_content::LArMCParticle *const pLArMC) const;
+    bool IsShowerLikeEM(const lar_content::LArMCParticle *const pLArMC, const lar_content::LArMCParticleHelper::MCContributionMap &mcHitMap) const;
+
+    /**
+     *  @brief  Determine if an MC particle is track-like EM particle (effectively, does it only ionise? In practice, this function assumes we've
+     *          already ruled out diffuse and shower-like EM particles, so this is effectively a PDG check)
+     *
+     *  @param pLArMC The MC particle to check
+     *  @return true if the MC particle is track-like EM, false otherwise
+     */
+    bool IsTrackLikeEM(const lar_content::LArMCParticle *const pLArMC) const;
+
+    /**
+     *  @brief  Determine if an MC particle undergoes Bremmstrahlung, with charge deposition in a Bremm branch.
+     *
+     *  @param pLArMC The MC particle to check
+     *  @param mcHitMap The map of MC particles to their hits, used to determine if there is charge deposition along a Bremm branch
+     *  @param onBremmBranch Whether we're in a branch that has undergone Bremmstrahlung.
+     *  @return true if the MC particle undergoes Bremmstrahlung, false otherwise
+     */
+    bool UndergoesBremmstrahlung(const lar_content::LArMCParticle *const pLArMC, const lar_content::LArMCParticleHelper::MCContributionMap &mcHitMap,
+        bool onBremmBranch) const;
+
+    /**
+     *  @brief  Determine if all hits in a particle are a result of non-Bremmstrahlung induced Compton scatters.
+     *
+     *  @param pLArMC The MC particle to check
+     *  @param mcHitMap The map of MC particles to their hits, used to determine if there is charge deposition due to Compton scattering
+     *  @param onBremmBranch Whether we're in a branch that has undergone Bremmstrahlung.
+     *  @return true if all MC particle hits are due to non-Bremmstrahlung induced Compton scatters, false otherwise
+     */
+    bool AllHitsCompton(const lar_content::LArMCParticle *const pLArMC, const lar_content::LArMCParticleHelper::MCContributionMap &mcHitMap,
+        bool onBremmBranch) const;
 
     /**
      *  @brief  Choose the owner of a child MC particle based on its parent and the folding map
@@ -214,6 +232,8 @@ private:
         pandora::FloatVector &z_rel, pandora::FloatVector &x_abs, pandora::FloatVector &z_abs, pandora::FloatVector &rr, pandora::FloatVector &cosTheta,
         pandora::FloatVector &sinTheta, pandora::FloatVector &wirePitch, pandora::FloatVector &wireAngle, pandora::FloatVector &adc, pandora::FloatVector &width,
         pandora::CaloHitVector &sortedCaloHitList) const;
+
+    void TraverseChildren(const pandora::MCParticle *const pRoot, const lar_content::LArMCParticleHelper::MCContributionMap &mcToHitsMap, const std::string &tab) const;
 
     pandora::StatusCode ReadSettings(const pandora::TiXmlHandle xmlHandle);
 

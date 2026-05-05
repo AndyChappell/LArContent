@@ -15,6 +15,7 @@
 
 #include "larpandoracontent/LArHelpers/LArFileHelper.h"
 #include "larpandoracontent/LArHelpers/LArGeometryHelper.h"
+#include "larpandoracontent/LArHelpers/LArMCParticleHelper.h"
 #include "larpandoracontent/LArHelpers/LArPcaHelper.h"
 
 #include <chrono>
@@ -68,7 +69,7 @@ StatusCode DlHitTrackShowerIdAlgorithm::PrepareTrainingSample()
 {
     static int event{-1};
     ++event;
-    //PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), false, DETECTOR_VIEW_XZ, -1, 1, 1));
+    PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), false, DETECTOR_VIEW_XZ, -1, 1, 1));
     const CaloHitList *pCaloHitList(nullptr);
     PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetList(*this, m_caloHitListName, pCaloHitList));
     if (!pCaloHitList || pCaloHitList->empty())
@@ -94,10 +95,25 @@ StatusCode DlHitTrackShowerIdAlgorithm::PrepareTrainingSample()
         this->GetCoordinateExtrema(caloHitList, vx, vz, bounds);
     }
 
-    lar_content::LArMCParticleHelper::MCContributionMap leadingToHitsMap;
+    LArMCParticleHelper::MCContributionMap leadingToHitsMap;
     this->FoldToLeading(mcToHitsMap, mcFoldingMap, leadingToHitsMap);
-    lar_content::LArMCParticleHelper::MCContributionMap instanceToHitsMap;
+    LArMCParticleHelper::MCContributionMap instanceToHitsMap;
     this->ConsolidateInstances(leadingToHitsMap, instanceToHitsMap);
+
+/*    for (const auto &[pMC, caloHitList] : instanceToHitsMap)
+    {
+        const int pdg{std::abs(pMC->GetParticleId())};
+        if (pdg != E_MINUS && pdg != PHOTON)
+            continue;
+        const LArMCParticle *const pLArMC{dynamic_cast<const LArMCParticle *>(pMC)};
+        if (!pLArMC)
+            continue;
+        MCProcess process{pLArMC->GetProcess()};
+        std::cout << "PDG: " << pdg << " Proc: " << process << " Hits: " << caloHitList.size() << std::endl;
+        this->TraverseChildren(pMC, mcToHitsMap, "");
+        PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &caloHitList, "Hits", RED));
+        PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
+    }*/
 
     int inst{1};
     std::unordered_map<const MCParticle *, int> mcToInstanceMap;
@@ -110,6 +126,7 @@ StatusCode DlHitTrackShowerIdAlgorithm::PrepareTrainingSample()
     std::unordered_map<Category, CaloHitList> categoryToHitsMap;
     std::unordered_map<const CaloHit *, std::vector<Category>> hitToCategoriesMap;
     std::unordered_map<const CaloHit *, int> hitToInstanceMap;
+    std::unordered_map<const MCParticle *, Category> mcToCategoryMap;
     for (const auto &[pMC, caloHitList] : instanceToHitsMap)
     {
         const LArMCParticle *const pLArMC{dynamic_cast<const LArMCParticle *>(pMC)};
@@ -122,37 +139,35 @@ StatusCode DlHitTrackShowerIdAlgorithm::PrepareTrainingSample()
                 categoryToHitsMap[HIP].insert(categoryToHitsMap[HIP].end(), caloHitList.begin(), caloHitList.end());
                 for (const CaloHit *const pCaloHit : caloHitList)
                     hitToCategoriesMap[pCaloHit].emplace_back(HIP);
+                mcToCategoryMap[pMC] = HIP;
             }
             else if (this->IsMip(pLArMC))
             {
                 categoryToHitsMap[MIP].insert(categoryToHitsMap[MIP].end(), caloHitList.begin(), caloHitList.end());
                 for (const CaloHit *const pCaloHit : caloHitList)
                     hitToCategoriesMap[pCaloHit].emplace_back(MIP);
+                mcToCategoryMap[pMC] = MIP;
             }
-            else if (this->IsDelta(pLArMC))
+            else if (caloHitList.size() == 1 || this->IsDiffuse(pLArMC, mcToHitsMap))
             {
-                categoryToHitsMap[LOW_E].insert(categoryToHitsMap[LOW_E].end(), caloHitList.begin(), caloHitList.end());
+                categoryToHitsMap[DIFFUSE].insert(categoryToHitsMap[DIFFUSE].end(), caloHitList.begin(), caloHitList.end());
                 for (const CaloHit *const pCaloHit : caloHitList)
-                    hitToCategoriesMap[pCaloHit].emplace_back(LOW_E);
+                    hitToCategoriesMap[pCaloHit].emplace_back(DIFFUSE);
+                mcToCategoryMap[pMC] = DIFFUSE;
             }
-            else if (this->IsShower(pLArMC))
+            else if (this->IsShowerLikeEM(pLArMC, mcToHitsMap))
             {
-                categoryToHitsMap[SHOWER].insert(categoryToHitsMap[SHOWER].end(), caloHitList.begin(), caloHitList.end());
+                categoryToHitsMap[EM_SHOWER].insert(categoryToHitsMap[EM_SHOWER].end(), caloHitList.begin(), caloHitList.end());
                 for (const CaloHit *const pCaloHit : caloHitList)
-                    hitToCategoriesMap[pCaloHit].emplace_back(SHOWER);
+                    hitToCategoriesMap[pCaloHit].emplace_back(EM_SHOWER);
+                mcToCategoryMap[pMC] = EM_SHOWER;
             }
-            else if (this->IsMichel(pLArMC))
+            else if (this->IsTrackLikeEM(pLArMC))
             {
-                categoryToHitsMap[LOW_E].insert(categoryToHitsMap[LOW_E].end(), caloHitList.begin(), caloHitList.end());
+                categoryToHitsMap[EM_TRACK].insert(categoryToHitsMap[EM_TRACK].end(), caloHitList.begin(), caloHitList.end());
                 for (const CaloHit *const pCaloHit : caloHitList)
-                    hitToCategoriesMap[pCaloHit].emplace_back(LOW_E);
-            }
-            else if (this->IsDiffuse(pLArMC))
-            {
-                // Don't believe we'll ever get here in the folded scenario, but class diffuse as shower-like just in case
-                categoryToHitsMap[SHOWER].insert(categoryToHitsMap[SHOWER].end(), caloHitList.begin(), caloHitList.end());
-                for (const CaloHit *const pCaloHit : caloHitList)
-                    hitToCategoriesMap[pCaloHit].emplace_back(SHOWER);
+                    hitToCategoriesMap[pCaloHit].emplace_back(EM_TRACK);
+                mcToCategoryMap[pMC] = EM_TRACK;
             }
             else
             {
@@ -162,6 +177,7 @@ StatusCode DlHitTrackShowerIdAlgorithm::PrepareTrainingSample()
                 categoryToHitsMap[MIP].insert(categoryToHitsMap[MIP].end(), caloHitList.begin(), caloHitList.end());
                 for (const CaloHit *const pCaloHit : caloHitList)
                     hitToCategoriesMap[pCaloHit].emplace_back(MIP);
+                mcToCategoryMap[pMC] = UNINITIALISED;
             }
         }
     }
@@ -177,11 +193,14 @@ StatusCode DlHitTrackShowerIdAlgorithm::PrepareTrainingSample()
             case HIP:
                 categoryName = "HIP";
                 break;
-            case SHOWER:
-                categoryName = "SHOWER";
+            case EM_TRACK:
+                categoryName = "EM_TRACK";
                 break;
-            case LOW_E:
-                categoryName = "LOW_E";
+            case EM_SHOWER:
+                categoryName = "EM_SHOWER";
+                break;
+            case DIFFUSE:
+                categoryName = "DIFFUSE";
                 break;
             default:
                 categoryName = "UNINITIALISED";
@@ -189,6 +208,43 @@ StatusCode DlHitTrackShowerIdAlgorithm::PrepareTrainingSample()
         }
         std::cout << categoryName << ": " << hits.size() << " hits" << std::endl;
     }
+
+    for (const auto &[pMC, hits] : instanceToHitsMap)
+    {
+        auto key = mcToCategoryMap.at(pMC);
+        auto color = RED;
+        std::string categoryName;
+        switch (key)
+        {
+            case MIP:
+                categoryName = "MIP";
+                color = BLUE;
+                break;
+            case HIP:
+                categoryName = "HIP";
+                color = BLACK;
+                break;
+            case EM_TRACK:
+                categoryName = "EM_TRACK";
+                color = GREEN;
+                break;
+            case EM_SHOWER:
+                categoryName = "EM_SHOWER";
+                color = RED;
+                break;
+            case DIFFUSE:
+                categoryName = "DIFFUSE";
+                color = MAGENTA;
+                break;
+            default:
+                categoryName = "UNINITIALISED";
+                color = GRAY;
+                break;
+        }
+        PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &hits, categoryName, color));
+    }
+
+    PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
 
     /*
     for (const auto &[cat, caloHitList] : categoryToHitsMap)
@@ -475,8 +531,8 @@ StatusCode DlHitTrackShowerIdAlgorithm::Infer()
             }
         }
 
-        std::map<int, CaloHitList> classHitsMap{{MIP, CaloHitList()}, {HIP, CaloHitList()}, {SHOWER, CaloHitList()},
-            {LOW_E, CaloHitList()}};
+        std::map<int, CaloHitList> classHitsMap{{MIP, CaloHitList()}, {HIP, CaloHitList()}, {EM_TRACK, CaloHitList()},
+            {EM_SHOWER, CaloHitList()}, {DIFFUSE, CaloHitList()}};
         for (long i = 0; i < classes.size(0); ++i)
         {
             const int predictedClass{classes[i].item<int>()};
@@ -495,11 +551,14 @@ StatusCode DlHitTrackShowerIdAlgorithm::Infer()
                 case HIP:
                     categoryName = "HIP";
                     break;
-                case SHOWER:
-                    categoryName = "SHOWER";
+                case EM_TRACK:
+                    categoryName = "EM_TRACK";
                     break;
-                case LOW_E:
-                    categoryName = "LOW_E";
+                case EM_SHOWER:
+                    categoryName = "EM_SHOWER";
+                    break;
+                case DIFFUSE:
+                    categoryName = "DIFFUSE";
                     break;
                 default:
                     break;
@@ -564,47 +623,12 @@ void DlHitTrackShowerIdAlgorithm::ConsolidateInstances(const lar_content::LArMCP
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-bool DlHitTrackShowerIdAlgorithm::IsDelta(const LArMCParticle *pLArMC) const
-{
-    if (!pLArMC)
-        return false;
-    if (std::abs(pLArMC->GetParticleId()) != E_MINUS)
-        return false;
-
-    const MCProcess process{pLArMC->GetProcess()};
-    switch (process)
-    {
-        case MC_PROC_E_IONI:
-        case MC_PROC_MU_IONI:
-        case MC_PROC_HAD_IONI:
-        case MC_PROC_ION_IONI:
-            return true;
-        default:
-            return false;
-    }
-}
-
-//------------------------------------------------------------------------------------------------------------------------------------------
-
-bool DlHitTrackShowerIdAlgorithm::IsDiffuse(const LArMCParticle *const pLArMC) const
+bool DlHitTrackShowerIdAlgorithm::IsDiffuse(const LArMCParticle *const pLArMC, const LArMCParticleHelper::MCContributionMap &mcToHitsMap) const
 {
     if (!pLArMC)
         return false;
 
-    const MCProcess process{pLArMC->GetProcess()};
-    if (process == MC_PROC_COMPT)
-    {
-        if (LArMCParticleHelper::IsDescendentOf(pLArMC, NEUTRON))
-            return true;
-        if (LArMCParticleHelper::IsDescendentOf(pLArMC, E_MINUS))
-            return false;
-        else
-            return true;
-    }
-    else
-    {
-        return false;
-    }
+    return this->AllHitsCompton(pLArMC, mcToHitsMap, false);
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
@@ -631,44 +655,75 @@ bool DlHitTrackShowerIdAlgorithm::IsMip(const LArMCParticle *const pLArMC) const
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-bool DlHitTrackShowerIdAlgorithm::IsMichel(const LArMCParticle *const pLArMC) const
+bool DlHitTrackShowerIdAlgorithm::IsShowerLikeEM(const LArMCParticle *const pLArMC, const LArMCParticleHelper::MCContributionMap &mcToHitsMap) const
 {
     if (!pLArMC)
         return false;
 
-    const MCProcess process{pLArMC->GetProcess()};
     const int pdg{std::abs(pLArMC->GetParticleId())};
-    if (process != MC_PROC_DECAY || pdg != E_MINUS)
-        return false;
-    const MCParticleList &parentList{pLArMC->GetParentList()};
-    if (parentList.empty())
-        return false;
-    const int parentPdg{std::abs(parentList.front()->GetParticleId())};
 
-    // Here we will consider Michel electrons to be those that come from muon decays, pion or kaon decays, given the topological similarity
-    return (parentPdg == MU_MINUS || parentPdg == PI_PLUS || parentPdg == K_PLUS);
+    if (!(pdg == PHOTON || pdg == E_MINUS))
+        return false;
+
+    // If it Bremms, it's a shower
+    return this->UndergoesBremmstrahlung(pLArMC, mcToHitsMap, false);
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-bool DlHitTrackShowerIdAlgorithm::IsShower(const LArMCParticle *const pLArMC) const
+bool DlHitTrackShowerIdAlgorithm::IsTrackLikeEM(const LArMCParticle *const pLArMC) const
 {
     if (!pLArMC)
         return false;
 
-    const MCProcess process{pLArMC->GetProcess()};
     const int pdg{std::abs(pLArMC->GetParticleId())};
 
-    // Account for the rare(ish) pi zero and K0 long decays involving electrons
-    const MCParticleList &parentList{pLArMC->GetParentList()};
-    if (!parentList.empty())
+    // Assumes we've already ruled out diffuse and shower-like EM particles
+    return pdg == PHOTON || pdg == E_MINUS;
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+bool DlHitTrackShowerIdAlgorithm::UndergoesBremmstrahlung(const LArMCParticle *const pRoot, const LArMCParticleHelper::MCContributionMap &mcToHitsMap,
+    bool onBremmBranch) const
+{
+    if (!pRoot)
+        return false;
+    MCProcess process{pRoot->GetProcess()};
+    const CaloHitList &hits{mcToHitsMap.find(pRoot) != mcToHitsMap.end() ? mcToHitsMap.at(pRoot) : CaloHitList()};
+    if ((!hits.empty() && process == MC_PROC_E_BREM) || (onBremmBranch && !hits.empty()))
+        return true;
+
+    const MCParticleList &childList{pRoot->GetDaughterList()};
+    for (const MCParticle *const pChild : childList)
     {
-        const int parentPdg{std::abs(parentList.front()->GetParticleId())};
-        if (((parentPdg == PI_ZERO) || (parentPdg == K_LONG)) && pdg == E_MINUS && process == MC_PROC_DECAY)
+        if (this->UndergoesBremmstrahlung(dynamic_cast<const LArMCParticle *>(pChild), mcToHitsMap, onBremmBranch || process == MC_PROC_E_BREM))
             return true;
     }
 
-    return ((pdg == E_MINUS && process != MC_PROC_DECAY) || (pdg == PHOTON && process != MC_PROC_COMPT));
+    return false;
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+bool DlHitTrackShowerIdAlgorithm::AllHitsCompton(const LArMCParticle *const pRoot, const LArMCParticleHelper::MCContributionMap &mcToHitsMap,
+    bool onBremmBranch) const
+{
+    if (!pRoot)
+        return false;
+    MCProcess process{pRoot->GetProcess()};
+    const CaloHitList &hits{mcToHitsMap.find(pRoot) != mcToHitsMap.end() ? mcToHitsMap.at(pRoot) : CaloHitList()};
+    if ((!hits.empty() && process != MC_PROC_COMPT) || (onBremmBranch && !hits.empty()))
+        return false;
+
+    const MCParticleList &childList{pRoot->GetDaughterList()};
+    for (const MCParticle *const pChild : childList)
+    {
+        if (!this->AllHitsCompton(dynamic_cast<const LArMCParticle *>(pChild), mcToHitsMap, onBremmBranch || process == MC_PROC_E_BREM))
+            return false;
+    }
+
+    return true;
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
@@ -1026,6 +1081,24 @@ void DlHitTrackShowerIdAlgorithm::PopulateInputVectors(const CaloHitList &caloHi
     sortedCaloHitList.clear();
     sortedCaloHitList.insert(sortedCaloHitList.end(), caloHitList.begin(), caloHitList.end());
     reorder(sortedCaloHitList);
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+void DlHitTrackShowerIdAlgorithm::TraverseChildren(const MCParticle *const pRoot, const LArMCParticleHelper::MCContributionMap &mcToHitsMap, const std::string &tab) const
+{
+    const MCParticleList &childList{pRoot->GetDaughterList()};
+    for (const MCParticle *const pChild : childList)
+    {
+        const LArMCParticle *const pLArMC{dynamic_cast<const LArMCParticle *>(pChild)};
+        if (!pLArMC)
+            continue;
+        MCProcess process{pLArMC->GetProcess()};
+        const int nHits{mcToHitsMap.find(pChild) != mcToHitsMap.end() ? static_cast<int>(mcToHitsMap.at(pChild).size()) : 0};
+        std::cout << (tab + "  ") << "PDG: " << pLArMC->GetParticleId() << " Proc: " << process << " Hits: " << nHits << std::endl;
+
+        this->TraverseChildren(pChild, mcToHitsMap, tab + "  ");
+    }
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
