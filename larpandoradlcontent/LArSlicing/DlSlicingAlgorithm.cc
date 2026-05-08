@@ -11,6 +11,7 @@
 
 #include "Pandora/AlgorithmHeaders.h"
 
+#include "larpandoracontent/LArHelpers/LArGeometryHelper.h"
 #include "larpandoracontent/LArHelpers/LArSliceHelper.h"
 #include "larpandoracontent/LArHelpers/LArVertexHelper.h"
 #include "larpandoracontent/LArObjects/LArCaloHit.h"
@@ -95,15 +96,22 @@ void DlSlicingAlgorithm::PopulateRootTree(const LArSliceHelper::SliceHitsMap &mc
     ++event;
     int sliceId{0};
     const LArTransformationPlugin *const pTransform{this->GetPandora().GetPlugins()->GetLArTransformationPlugin()};
+    LArGeometryHelper::DetectorBoundaries detBounds{LArGeometryHelper::GetDetectorBoundaries(this->GetPandora())};
+    const float detSpanX{detBounds.m_xBoundaries.second - detBounds.m_xBoundaries.first};
+    const float detSpanZ{detBounds.m_zBoundaries.second - detBounds.m_zBoundaries.first};
+    const LArTPC *const pLArTPC(this->GetPandora().GetGeometry()->GetLArTPCMap().begin()->second);
+
     // Fill the training set with slice information
-    FloatVector xx, zz;
-    IntVector vv, ss, cc;
+    FloatVector x_rel, z_rel, x_abs, z_abs, width;
+    FloatVector wirePitch, wireAngle;
+    FloatVector adc;
+    IntVector semLabel, conLabel;
     float xMin{std::numeric_limits<float>::max()}, xMax{std::numeric_limits<float>::lowest()};
     float uMin{std::numeric_limits<float>::max()}, uMax{std::numeric_limits<float>::lowest()};
     float vMin{std::numeric_limits<float>::max()}, vMax{std::numeric_limits<float>::lowest()};
     float wMin{std::numeric_limits<float>::max()}, wMax{std::numeric_limits<float>::lowest()};
 
-    for (const auto &[pSlice, sliceHits] : mcSlices)
+    for (const auto &[slice, sliceHits] : mcSlices)
     {
         for (const CaloHit *const pCaloHit : sliceHits)
         {
@@ -131,9 +139,9 @@ void DlSlicingAlgorithm::PopulateRootTree(const LArSliceHelper::SliceHitsMap &mc
     }
     float xRange{xMax - xMin > 0 ? xMax - xMin : 1.0f};
 
-    for (const auto &[pSlice, sliceHits] : mcSlices)
+    for (const auto &[slice, sliceHits] : mcSlices)
     {
-        const auto &[tpcId, pMC] = pSlice;
+        const auto &[tpcId, pMC] = slice;
         const int pdg{std::abs(pMC->GetParticleId())};
         int view{0};
 
@@ -203,26 +211,54 @@ void DlSlicingAlgorithm::PopulateRootTree(const LArSliceHelper::SliceHitsMap &mc
             }
             for (const CaloHit *const pCaloHit : caloHits)
             {
-                xx.emplace_back((pCaloHit->GetPositionVector().GetX() - xMin) / xRange);
-                zz.emplace_back((pCaloHit->GetPositionVector().GetZ() - zMin) / zRange);
-                vv.emplace_back(view - TPC_VIEW_U);
-                cc.emplace_back(pCaloHit->GetPositionVector() == matchedVertex ? 1 : 0);
-                ss.emplace_back(sliceId);
+
+                x_rel.emplace_back((pCaloHit->GetPositionVector().GetX() - xMin) / xRange);
+                z_rel.emplace_back((pCaloHit->GetPositionVector().GetZ() - zMin) / zRange);
+                x_abs.emplace_back(pCaloHit->GetPositionVector().GetX() / detSpanX);
+                z_abs.emplace_back(pCaloHit->GetPositionVector().GetZ() / detSpanZ);
+
+                switch (view)
+                {
+                    case TPC_VIEW_U:
+                        wirePitch.emplace_back(pLArTPC->GetWirePitchU());
+                        wireAngle.emplace_back(pLArTPC->GetWireAngleU());
+                        break;
+                    case TPC_VIEW_V:
+                        wirePitch.emplace_back(pLArTPC->GetWirePitchV());
+                        wireAngle.emplace_back(pLArTPC->GetWireAngleV());
+                        break;
+                    case TPC_VIEW_W:
+                        wirePitch.emplace_back(pLArTPC->GetWirePitchW());
+                        wireAngle.emplace_back(pLArTPC->GetWireAngleW());
+                        break;
+                    default:
+                        throw StatusCodeException(STATUS_CODE_NOT_FOUND);
+                }
+                adc.emplace_back(std::log(1.f + pCaloHit->GetInputEnergy()) * 0.1); // Log scale and nomralization to keep expected values in [0,1]
+                width.emplace_back(pCaloHit->GetCellSize1() / detSpanX);
+
+                conLabel.emplace_back(pCaloHit->GetPositionVector() == matchedVertex ? 1 : 0);
+                semLabel.emplace_back(sliceId);
             }
         }
 
         ++sliceId;
     }
 
-    if (xx.empty())
+    if (x_rel.empty())
         return;
     // Don't worry about view separation here, we can handle it easily in HDF5 format conversion if we need to
     // If we do need to split by view, be sure to organise for inference
-    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "xx", &xx));
-    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "zz", &zz));
-    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "view", &vv));
-    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "cp_label", &cc));
-    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "slice_label", &ss));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "x_rel", &x_rel));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "z_rel", &z_rel));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "x_abs", &x_abs));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "z_abs", &z_abs));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "wire_pitch", &wirePitch));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "wire_angle", &wireAngle));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "adc", &adc));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "width", &width));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "cp_label", &conLabel));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "slice_label", &semLabel));
     PANDORA_MONITORING_API(FillTree(this->GetPandora(), m_rootTreeName));
 }
 
