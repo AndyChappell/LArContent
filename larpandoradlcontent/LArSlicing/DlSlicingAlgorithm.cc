@@ -72,13 +72,10 @@ StatusCode DlSlicingAlgorithm::PrepareTrainingSample()
     LArSliceHelper::SliceHitsMap sliceToHitsMap;
     LArSliceHelper::GetSliceToHitsMap(mcToHitsMap, mcToLeadingMap, sliceToHitsMap);
 
-    CaloHitList backgroundHits;
-    LArSliceHelper::FilterSlices({NEUTRON, PHOTON}, sliceToHitsMap, backgroundHits);
-
     if (m_visualize)
-        this->VisualizeSlices(sliceToHitsMap, backgroundHits);
+        this->VisualizeSlices(sliceToHitsMap);
 
-    this->PopulateRootTree(sliceToHitsMap, backgroundHits);
+    this->PopulateRootTree(sliceToHitsMap);
 
     return STATUS_CODE_SUCCESS;
 }
@@ -92,22 +89,53 @@ StatusCode DlSlicingAlgorithm::Infer()
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-void DlSlicingAlgorithm::PopulateRootTree(const LArSliceHelper::SliceHitsMap &mcSlices, const CaloHitList &backgroundHits) const
+void DlSlicingAlgorithm::PopulateRootTree(const LArSliceHelper::SliceHitsMap &mcSlices) const
 {
     static int event{-1};
     ++event;
     int sliceId{0};
     const LArTransformationPlugin *const pTransform{this->GetPandora().GetPlugins()->GetLArTransformationPlugin()};
-    // Fill the training set with per slice information
+    // Fill the training set with slice information
+    FloatVector xx, zz;
+    IntVector vv, ss, cc;
+    float xMin{std::numeric_limits<float>::max()}, xMax{std::numeric_limits<float>::lowest()};
+    float uMin{std::numeric_limits<float>::max()}, uMax{std::numeric_limits<float>::lowest()};
+    float vMin{std::numeric_limits<float>::max()}, vMax{std::numeric_limits<float>::lowest()};
+    float wMin{std::numeric_limits<float>::max()}, wMax{std::numeric_limits<float>::lowest()};
+
+    for (const auto &[pSlice, sliceHits] : mcSlices)
+    {
+        for (const CaloHit *const pCaloHit : sliceHits)
+        {
+            xMin = std::min(xMin, pCaloHit->GetPositionVector().GetX());
+            xMax = std::max(xMax, pCaloHit->GetPositionVector().GetX());
+
+            switch (pCaloHit->GetHitType())
+            {
+                case TPC_VIEW_U:
+                    uMin = std::min(uMin, pCaloHit->GetPositionVector().GetZ());
+                    uMax = std::max(uMax, pCaloHit->GetPositionVector().GetZ());
+                    break;
+                case TPC_VIEW_V:
+                    vMin = std::min(vMin, pCaloHit->GetPositionVector().GetZ());
+                    vMax = std::max(vMax, pCaloHit->GetPositionVector().GetZ());
+                    break;
+                case TPC_VIEW_W:
+                    wMin = std::min(wMin, pCaloHit->GetPositionVector().GetZ());
+                    wMax = std::max(wMax, pCaloHit->GetPositionVector().GetZ());
+                    break;
+                default:
+                    break;
+            }
+        }
+    }
+    float xRange{xMax - xMin > 0 ? xMax - xMin : 1.0f};
+
     for (const auto &[pSlice, sliceHits] : mcSlices)
     {
         const auto &[tpcId, pMC] = pSlice;
         const int pdg{std::abs(pMC->GetParticleId())};
-        const int isNeutrino{(pdg == NU_E || pdg == NU_MU || pdg == NU_TAU) ? 1 : 0};
         int view{0};
-
-        FloatVector xx, zz;
-        IntVector cp;
 
         // Separate hits by view
         CaloHitList caloHitsU, caloHitsV, caloHitsW;
@@ -133,8 +161,27 @@ void DlSlicingAlgorithm::PopulateRootTree(const LArSliceHelper::SliceHitsMap &mc
         {
             if (caloHits.empty())
                 continue;
-            xx.clear(); zz.clear();
             view = caloHits.front()->GetHitType();
+            float zMin{0}, zMax{0};
+            switch (view)
+            {
+                case TPC_VIEW_U:
+                    zMin = uMin;
+                    zMax = uMax;
+                    break;
+                case TPC_VIEW_V:
+                    zMin = vMin;
+                    zMax = vMax;
+                    break;
+                case TPC_VIEW_W:
+                    zMin = wMin;
+                    zMax = wMax;
+                    break;
+                default:
+                    break;
+            }
+            float zRange{zMax - zMin > 0 ? zMax - zMin : 1.0f};
+
             CartesianVector matchedVertex(0, 0, 0);
             if (pdg == MU_MINUS)
             {
@@ -156,76 +203,27 @@ void DlSlicingAlgorithm::PopulateRootTree(const LArSliceHelper::SliceHitsMap &mc
             }
             for (const CaloHit *const pCaloHit : caloHits)
             {
-                xx.emplace_back(pCaloHit->GetPositionVector().GetX());
-                zz.emplace_back(pCaloHit->GetPositionVector().GetZ());
-                cp.emplace_back(pCaloHit->GetPositionVector() == matchedVertex ? 1 : 0);
-                if (pCaloHit->GetPositionVector() == matchedVertex)
-                    ++cpCount;
+                xx.emplace_back((pCaloHit->GetPositionVector().GetX() - xMin) / xRange);
+                zz.emplace_back((pCaloHit->GetPositionVector().GetZ() - zMin) / zRange);
+                vv.emplace_back(view - TPC_VIEW_U);
+                cc.emplace_back(pCaloHit->GetPositionVector() == matchedVertex ? 1 : 0);
+                ss.emplace_back(sliceId);
             }
-
-            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "event", event));
-            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "slice_id", sliceId));
-            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "is_true_neutrino", isNeutrino));
-            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "is_background", 0));
-            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "view", view));
-            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "xx", &xx));
-            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "zz", &zz));
-            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "cp", &cp));
-            PANDORA_MONITORING_API(FillTree(this->GetPandora(), m_rootTreeName));
         }
 
         ++sliceId;
     }
 
-    // Fill the training set with background hit information
-    if (!backgroundHits.empty())
-    {
-        FloatVector xx, zz;
-        IntVector cp;
-
-        // Separate hits by view
-        CaloHitList caloHitsU, caloHitsV, caloHitsW;
-        for (const CaloHit *const pCaloHit : backgroundHits)
-        {
-            switch (pCaloHit->GetHitType())
-            {
-                case TPC_VIEW_U:
-                    caloHitsU.emplace_back(pCaloHit);
-                    break;
-                case TPC_VIEW_V:
-                    caloHitsV.emplace_back(pCaloHit);
-                    break;
-                case TPC_VIEW_W:
-                    caloHitsW.emplace_back(pCaloHit);
-                    break;
-                default:
-                    break;
-            }
-        }
-
-        for (const CaloHitList &caloHits : {caloHitsU, caloHitsV, caloHitsW})
-        {
-            if (caloHits.empty())
-                continue;
-            xx.clear(); zz.clear();
-            const int view{caloHits.front()->GetHitType()};
-            for (const CaloHit *const pCaloHit : caloHits)
-            {
-                xx.emplace_back(pCaloHit->GetPositionVector().GetX());
-                zz.emplace_back(pCaloHit->GetPositionVector().GetZ());
-                cp.emplace_back(0);
-            }
-            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "event", event));
-            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "slice_id", sliceId));
-            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "is_true_neutrino", 0));
-            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "is_background", 1));
-            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "view", view));
-            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "xx", &xx));
-            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "zz", &zz));
-            PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "cp", &cp));
-            PANDORA_MONITORING_API(FillTree(this->GetPandora(), m_rootTreeName));
-        }
-    }
+    if (xx.empty())
+        return;
+    // Don't worry about view separation here, we can handle it easily in HDF5 format conversion if we need to
+    // If we do need to split by view, be sure to organise for inference
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "xx", &xx));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "zz", &zz));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "view", &vv));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "cp_label", &cc));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_rootTreeName, "slice_label", &ss));
+    PANDORA_MONITORING_API(FillTree(this->GetPandora(), m_rootTreeName));
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
@@ -256,14 +254,6 @@ void DlSlicingAlgorithm::FilterSliceHitsToCosmic(const CaloHitList &sliceHits, c
 
 void DlSlicingAlgorithm::VisualizeSlices(const LArSliceHelper::SliceHitsMap &mcSlices) const
 {
-    const CaloHitList dummyList;
-    this->VisualizeSlices(mcSlices, dummyList);
-}
-
-//------------------------------------------------------------------------------------------------------------------------------------------
-
-void DlSlicingAlgorithm::VisualizeSlices(const LArSliceHelper::SliceHitsMap &mcSlices, const CaloHitList &backgroundHits) const
-{
     PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), false, DETECTOR_VIEW_XZ, -1, 1, 1));
 
     for (const auto &[slice, caloHitList] : mcSlices)
@@ -291,31 +281,6 @@ void DlSlicingAlgorithm::VisualizeSlices(const LArSliceHelper::SliceHitsMap &mcS
         PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &caloHitsU, "MC(U): " + std::to_string(pdg), RED));
         PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &caloHitsV, "MC(V): " + std::to_string(pdg), GREEN));
         PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &caloHitsW, "MC(W): " + std::to_string(pdg), BLUE));
-    }
-
-    if (!backgroundHits.empty())
-    {
-        CaloHitList caloHitsU, caloHitsV, caloHitsW;
-        for (const CaloHit *const pCaloHit : backgroundHits)
-        {
-            switch (pCaloHit->GetHitType())
-            {
-                case TPC_VIEW_U:
-                    caloHitsU.emplace_back(pCaloHit);
-                    break;
-                case TPC_VIEW_V:
-                    caloHitsV.emplace_back(pCaloHit);
-                    break;
-                case TPC_VIEW_W:
-                    caloHitsW.emplace_back(pCaloHit);
-                    break;
-                default:
-                    break;
-            }
-        }
-        PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &caloHitsU, "Background U", GRAY));
-        PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &caloHitsV, "Background V", GRAY));
-        PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &caloHitsW, "Background W", GRAY));
     }
 
     PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));

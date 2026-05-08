@@ -54,9 +54,8 @@ private:
      *  @brief  Populate the root tree with slice information
      *
      *  @param  mcSlices the mc slices
-     *  @param  backgroundHits the background hits
      */
-    void PopulateRootTree(const LArSliceHelper::SliceHitsMap &mcSlices, const pandora::CaloHitList &backgroundHits) const;
+    void PopulateRootTree(const LArSliceHelper::SliceHitsMap &mcSlices) const;
 
     /**
      *  @brief  Filter the slice hits to only those associated with the cosmic ray MC particle. In the unlikely event that the cosmic ray has no
@@ -74,14 +73,6 @@ private:
      *  @param  mcSlices the mc slices
      */
     void VisualizeSlices(const LArSliceHelper::SliceHitsMap &mcSlices) const;
-
-    /**
-     *  @brief  Visualize the slices
-     *
-     *  @param  mcSlices the mc slices
-     *  @param  backgroundHits the background hits
-     */
-    void VisualizeSlices(const LArSliceHelper::SliceHitsMap &mcSlices, const pandora::CaloHitList &backgroundHits) const;
 
     std::string m_caloHitListName; ///< Name of input calo hit list
     std::string m_rootFileName; ///< Name of output root file
