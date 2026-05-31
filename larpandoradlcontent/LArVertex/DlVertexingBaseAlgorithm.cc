@@ -267,6 +267,10 @@ StatusCode DlVertexingBaseAlgorithm::ReadSettings(const TiXmlHandle xmlHandle)
         modelName = LArFileHelper::FindFileInPath(modelName, "FW_SEARCH_PATH");
         LArDLHelper::LoadModel(modelName, m_modelW);
         PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, XmlHelper::ReadValue(xmlHandle, "OutputVertexListName", m_outputVertexListName));
+
+        // Ensure deterministic CPU inference
+        torch::set_num_threads(1);
+        at::globalContext().setDeterministicAlgorithms(true, false);
     }
 
     PANDORA_RETURN_RESULT_IF_AND_IF(
