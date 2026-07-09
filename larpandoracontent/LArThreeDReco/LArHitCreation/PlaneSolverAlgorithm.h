@@ -143,11 +143,12 @@ private:
      *  @param  unmatchedCost the cost to be assigned to unmatched hits
      *  @param  constraintView the view to be used as the constraint in the chi-squared calculation
      *  @param  usedHits the set of hits that have already been used in a match
+     *  @param  dsu the disjoint set to keep track of connected components
      *
      *  @return The cost matrix for the hits in the slice
      */
     CostMatrix ComputeTripletCostMatrix(const PairVector &pairs, const PlaneToHitsMap &planeToHitsMap, const float unmatchedCost,
-        const pandora::HitType constraintView, const pandora::CaloHitSet &usedHits) const;
+        const pandora::HitType constraintView, const pandora::CaloHitSet &usedHits, DisjointSet &dsu) const;
 
     /**
      *  @brief  Solve for the optimal matching between two sets of hits using a Kuhn-Munkres-like algorithm, and return the assignment of hits.

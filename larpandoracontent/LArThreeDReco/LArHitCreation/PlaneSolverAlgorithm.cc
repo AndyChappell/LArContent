@@ -131,9 +131,12 @@ void PlaneSolverAlgorithm::Solve() const
             const IntVector assignment{this->SolveByComponents(costMatrix, nHitsA, nHitsB, 100.f, dsu)};
             //const IntVector assignment{this->KuhnMunkres(costMatrix)};
             const PairVector pairs{this->BuildPairs(assignment, nHitsA, nHitsB, costMatrix, m_chi2Threshold)};
-            CostMatrix tripletCostMatrix{this->ComputeTripletCostMatrix(pairs, readout, 100.f, constraintView, usedHits)};
-            const IntVector tripletAssignment{this->KuhnMunkres(tripletCostMatrix)};
+            int nHitsP{static_cast<int>(pairs.size())};
             int nHitsC{static_cast<int>(readout.at(constraintView).size())};
+            dsu = DisjointSet(nHitsP + nHitsC);
+            CostMatrix tripletCostMatrix{this->ComputeTripletCostMatrix(pairs, readout, 100.f, constraintView, usedHits, dsu)};
+            //const IntVector tripletAssignment{this->KuhnMunkres(tripletCostMatrix)};
+            const IntVector tripletAssignment{this->SolveByComponents(tripletCostMatrix, nHitsP, nHitsC, 100.f, dsu)};
             const TripletVector triplets{this->BuildTriplets(pairs, tripletAssignment, nHitsC, tripletCostMatrix, constraintView, m_chi2Threshold)};
             for (size_t i = 0; i < triplets.size(); ++i)
             {
@@ -304,7 +307,7 @@ PlaneSolverAlgorithm::CostMatrix PlaneSolverAlgorithm::ComputeCostMatrix(const P
 //------------------------------------------------------------------------------------------------------------------------------------------
 
 PlaneSolverAlgorithm::CostMatrix PlaneSolverAlgorithm::ComputeTripletCostMatrix(const PairVector &pairs, const PlaneToHitsMap &planeToHitsMap,
-    const float unmatchedCost, const HitType constraintView, const CaloHitSet &usedHits) const
+    const float unmatchedCost, const HitType constraintView, const CaloHitSet &usedHits, DisjointSet &dsu) const
 {
     HitType viewA, viewB;
     this->SelectViewPair(constraintView, viewA, viewB);
@@ -314,6 +317,27 @@ PlaneSolverAlgorithm::CostMatrix PlaneSolverAlgorithm::ComputeTripletCostMatrix(
     int nPairs{static_cast<int>(pairs.size())};
     int nC{static_cast<int>(cHits.size())};
     int N{std::max(nPairs, nC)};
+
+    struct HitBounds { float xMin, xMax; };
+    std::vector<HitBounds> aBounds(nPairs), bBounds(nPairs), cBounds(nC);
+    for (int p = 0; p < nPairs; ++p)
+    {
+        const CartesianVector a(aHits[pairs[p].m_aIndex]->GetPositionVector());
+        const float dx_a(0.5f * aHits[pairs[p].m_aIndex]->GetCellSize1());
+        aBounds[p].xMin = a.GetX() - dx_a;
+        aBounds[p].xMax = a.GetX() + dx_a;
+        const CartesianVector b(bHits[pairs[p].m_bIndex]->GetPositionVector());
+        const float dx_b(0.5f * bHits[pairs[p].m_bIndex]->GetCellSize1());
+        bBounds[p].xMin = b.GetX() - dx_b;
+        bBounds[p].xMax = b.GetX() + dx_b;
+    }
+    for (int k = 0; k < nC; ++k)
+    {
+        const CartesianVector c(cHits[k]->GetPositionVector());
+        const float dx_c(0.5f * cHits[k]->GetCellSize1());
+        cBounds[k].xMin = c.GetX() - dx_c;
+        cBounds[k].xMax = c.GetX() + dx_c;
+    }
 
     CostMatrix C(N, FloatVector(N, unmatchedCost));
     for (int p = 0; p < nPairs; ++p)
@@ -325,6 +349,10 @@ PlaneSolverAlgorithm::CostMatrix PlaneSolverAlgorithm::ComputeTripletCostMatrix(
 
         for (int k = 0; k < nC; ++k)
         {
+            if ((aBounds[p].xMax < cBounds[k].xMin) || (aBounds[p].xMin > cBounds[k].xMax) ||
+                (bBounds[p].xMax < cBounds[k].xMin) || (bBounds[p].xMin > cBounds[k].xMax))
+                continue;
+
             float chi2{std::numeric_limits<float>::max()};
             switch (constraintView)
             {
@@ -342,6 +370,7 @@ PlaneSolverAlgorithm::CostMatrix PlaneSolverAlgorithm::ComputeTripletCostMatrix(
             }
 
             C[p][k] = chi2;
+            dsu.Union(p, nPairs + k);
         }
     }
 
