@@ -64,6 +64,38 @@ private:
         float m_cost;
     };
 
+    class DisjointSet
+    {
+    public:
+        /**
+         *  @brief  Constructor
+         *
+         *  @param  n the number of elements in the disjoint set
+         */
+        DisjointSet(int n);
+
+        /**
+         *  @brief  Find the representative element of the set containing x
+         *
+         *  @param  x the element to find the representative for
+         *
+         *  @return The representative element of the set containing x
+         */
+        int Find(int x);
+
+        /**
+         *  @brief  Union the sets containing a and b
+         *
+         *  @param  a the first element
+         *  @param  b the second element
+         */
+        void Union(int a, int b);
+
+    private:
+        pandora::IntVector m_parent; ///< The parent of each element in the disjoint set
+        pandora::IntVector m_rank; ///< The rank of each element in the disjoint set
+    };
+
     typedef std::unordered_map<pandora::HitType, pandora::CaloHitVector> PlaneToHitsMap;
     typedef std::unordered_map<Volume, PlaneToHitsMap, VolumeHash> VolumeToReadoutMap;
     typedef std::vector<std::vector<int>> IndexMatrix;
@@ -88,17 +120,18 @@ private:
     /**
      *  @brief  Compute the cost matrix for the hits, where the cost is based on the chi-squared value for hit triplets.
      *          This function computes the cost of matching a pair, using the constraint hits to provide a constraint, but allows for the
-     *          constraint hits to be used more than once.
+     *          constraint hits to be used more than once. A disjoint set is maintained to allow for more efficient handling of sparse costs.
      *
      *  @param  planetoHitsMap the map of the 2D hits, keyed by view
      *  @param  unmatchedCost the cost to be assigned to unmatched hits
      *  @param  constraintView the view to be used as the constraint in the chi-squared calculation
      *  @param  usedHits the set of hits that have already been used in a match
+     *  @param  dsu the disjoint set to keep track of connected components
      *
      *  @return The cost matrix for the hits in the slice
      */
     CostMatrix ComputeCostMatrix(const PlaneToHitsMap &planeToHitsMap, const float unmatchedCost, const pandora::HitType constraintView,
-        const pandora::CaloHitSet &usedHits) const;
+        const pandora::CaloHitSet &usedHits, DisjointSet &dsu) const;
 
     /**
      *  @brief  Compute the cost matrix for the hits, where the cost is based on the chi-squared value for hit triplets.
@@ -115,6 +148,21 @@ private:
      */
     CostMatrix ComputeTripletCostMatrix(const PairVector &pairs, const PlaneToHitsMap &planeToHitsMap, const float unmatchedCost,
         const pandora::HitType constraintView, const pandora::CaloHitSet &usedHits) const;
+
+    /**
+     *  @brief  Solve for the optimal matching between two sets of hits using a Kuhn-Munkres-like algorithm, and return the assignment of hits.
+     *          The disjoint set is used to keep track of connected components, allowing for more efficient handling of sparse costs.
+     *
+     *  @param  costMatrix the cost matrix for the hits in a volume
+     *  @param  nA the number of hits in the first set
+     *  @param  nB the number of hits in the second set
+     *  @param  unmatchedCost the cost to be assigned to unmatched hits
+     *  @param  dsu the disjoint set to keep track of connected components
+     *
+     *  @return The optimal matching between the two sets of hits, where the vector elements align with the first set and indicate matched index
+     *          in the second set (or -1 if unmatched)
+     */
+    pandora::IntVector SolveByComponents(const CostMatrix& costMatrix, int nA, int nB, float unmatchedCost, DisjointSet &dsu) const;
 
     /**
      *  @brief  Implementation of the Kunhne-Munkres (aka Hungarian) algorithm to solve the optimal matching between UV pairs and W hits.

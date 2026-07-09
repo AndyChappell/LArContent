@@ -14,6 +14,7 @@
 
 #include "larpandoracontent/LArThreeDReco/LArHitCreation/PlaneSolverAlgorithm.h"
 
+#include <numeric>
 #include <ranges>
 
 using namespace pandora;
@@ -67,6 +68,9 @@ void PlaneSolverAlgorithm::FillHitMap(const CaloHitList &caloHitList)
 
 void PlaneSolverAlgorithm::Solve() const
 {
+    CaloHitList hits3D;
+    PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1.f, 1.f, 1.f));
+
     LArPlaneContextObject *pPlaneContextObject{new LArPlaneContextObject()};
     // Loop over each read out volume (e.g. an APA in a horizontal drift detector) and solve for the optimal set of triplet and doublet
     // relationships between the 2D hits in each unit.
@@ -116,21 +120,16 @@ void PlaneSolverAlgorithm::Solve() const
                 else if (usedView == TPC_VIEW_W)
                     constraintView = nHitsV <= nHitsU ? TPC_VIEW_V : TPC_VIEW_U;
             }
-            CostMatrix costMatrix{this->ComputeCostMatrix(readout, 100.f, constraintView, usedHits)};
-            const IntVector assignment{this->KuhnMunkres(costMatrix)};
             HitType viewA, viewB;
             this->SelectViewPair(constraintView, viewA, viewB);
             int nHitsA{static_cast<int>(readout.at(viewA).size())};
             int nHitsB{static_cast<int>(readout.at(viewB).size())};
-            {
-                int nActualA{0}, nActualB{0};
-                for (const auto *pHit : readout.at(viewA))
-                    nActualA += !usedHits.count(pHit);
-                for (const auto *pHit : readout.at(viewB))
-                    nActualB += !usedHits.count(pHit);
-            }
             if (nHitsA == 0 || nHitsB == 0)
                 continue;
+            DisjointSet dsu(nHitsA + nHitsB);
+            CostMatrix costMatrix{this->ComputeCostMatrix(readout, 100.f, constraintView, usedHits, dsu)};
+            const IntVector assignment{this->SolveByComponents(costMatrix, nHitsA, nHitsB, 100.f, dsu)};
+            //const IntVector assignment{this->KuhnMunkres(costMatrix)};
             const PairVector pairs{this->BuildPairs(assignment, nHitsA, nHitsB, costMatrix, m_chi2Threshold)};
             CostMatrix tripletCostMatrix{this->ComputeTripletCostMatrix(pairs, readout, 100.f, constraintView, usedHits)};
             const IntVector tripletAssignment{this->KuhnMunkres(tripletCostMatrix)};
@@ -197,13 +196,28 @@ void PlaneSolverAlgorithm::Solve() const
             pPlaneContextObject->AddHitTriplet(pHitU, pHitV, pHitW);
         }
     }
+
+    for (const LArPlaneContextObject::HitTriplet *pHitTriplet : *pPlaneContextObject)
+    {
+        const CaloHit *pHitU{pHitTriplet->m_uHit};
+        const CaloHit *pHitV{pHitTriplet->m_vHit};
+        const CaloHit *pHitW{pHitTriplet->m_wHit};
+        const CaloHit *pCaloHit3D{nullptr};
+        this->CreateThreeDHit(pHitU, pHitV, pHitW, pCaloHit3D);
+        if (pCaloHit3D)
+            hits3D.push_back(pCaloHit3D);
+    }
+
+    PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &hits3D, "3D", BLACK));
+    PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
+
     PandoraContentApi::AddEventContextObject(*this, m_eventContextName, pPlaneContextObject);
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
 PlaneSolverAlgorithm::CostMatrix PlaneSolverAlgorithm::ComputeCostMatrix(const PlaneToHitsMap &planeToHitsMap, const float unmatchedCost,
-    const HitType constraintView, const CaloHitSet &usedHits) const
+    const HitType constraintView, const CaloHitSet &usedHits, DisjointSet &dsu) const
 {
     HitType viewA, viewB;
     this->SelectViewPair(constraintView, viewA, viewB);
@@ -277,7 +291,10 @@ PlaneSolverAlgorithm::CostMatrix PlaneSolverAlgorithm::ComputeCostMatrix(const P
             }
 
             if (bestK >= 0)
+            {
                 C[i][j] = bestChi2;
+                dsu.Union(i, nA + j);
+            }
         }
     }
 
@@ -329,6 +346,55 @@ PlaneSolverAlgorithm::CostMatrix PlaneSolverAlgorithm::ComputeTripletCostMatrix(
     }
 
     return C;
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+IntVector PlaneSolverAlgorithm::SolveByComponents(const CostMatrix& costMatrix, int nA, int nB, float unmatchedCost, DisjointSet &dsu) const
+{
+    const int N{std::max(nA, nB)};
+    IntVector assignment(N, -1);
+
+    // Group rows and columns by their DSU root
+    std::unordered_map<int, IntVector> rowsByRoot;
+    std::unordered_map<int, IntVector> colsByRoot;
+    for (int i = 0; i < nA; ++i)
+        rowsByRoot[dsu.Find(i)].emplace_back(i);
+    for (int j = 0; j < nB; ++j)
+        colsByRoot[dsu.Find(nA + j)].emplace_back(j);
+
+    // Solve each connected component separately
+    for (auto &[root, rows] : rowsByRoot)
+    {
+        IntVector cols;
+        auto it{colsByRoot.find(root)};
+        if (it != colsByRoot.end())
+            cols = it->second;
+
+        const int n{std::max(static_cast<int>(rows.size()), static_cast<int>(cols.size()))};
+        if (n == 0)
+            continue;
+
+        CostMatrix subCostMatrix(n, FloatVector(n, unmatchedCost));
+        for (size_t i = 0; i < rows.size(); ++i)
+        {
+            for (size_t j = 0; j < cols.size(); ++j)
+            {
+                subCostMatrix[i][j] = costMatrix[rows[i]][cols[j]];
+            }
+        }
+
+        const IntVector subAssignment{this->KuhnMunkres(subCostMatrix)};
+
+        // Map local indices back to global indices
+        for (size_t i = 0; i < rows.size(); ++i)
+        {
+            const int localCol{static_cast<int>(subAssignment[i])};
+            assignment[rows[i]] = (localCol >= 0 && localCol < static_cast<int>(cols.size())) ? cols[localCol] : nB;
+        }
+    }
+
+    return assignment;
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
@@ -579,6 +645,45 @@ StatusCode PlaneSolverAlgorithm::ReadSettings(const TiXmlHandle xmlHandle)
     PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "EventContextName", m_eventContextName));
 
     return STATUS_CODE_SUCCESS;
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+PlaneSolverAlgorithm::DisjointSet::DisjointSet(int n) :
+    m_parent(n), m_rank(n, 0)
+{
+    std::iota(m_parent.begin(), m_parent.end(), 0);
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+int PlaneSolverAlgorithm::DisjointSet::Find(int x)
+{
+    while (m_parent[x] != x)
+    {
+        // Compress the path
+        m_parent[x] = m_parent[m_parent[x]];
+        x = m_parent[x];
+    }
+    return x;
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+void PlaneSolverAlgorithm::DisjointSet::Union(int a, int b)
+{
+    a = this->Find(a);
+    b = this->Find(b);
+    if (a == b)
+        return;
+
+    // Union by rank
+    if (m_rank[a] < m_rank[b])
+        std::swap(a, b);
+    m_parent[b] = a;
+    if (m_rank[a] == m_rank[b])
+        ++m_rank[a];
 }
 
 } // namespace lar_content
