@@ -127,7 +127,8 @@ void ShortTrackReclusteringAlgorithm::FitAndOrderClusters(const ViewToClustersMa
                 case TPC_VIEW_V:
                     try
                     {
-                        m_clusterToSFRMap.emplace(pCluster, TwoDSlidingFitResult(pCluster, 3, LArGeometryHelper::GetWirePitch(this->GetPandora(), TPC_VIEW_V)));
+                        m_clusterToSFRMap.emplace(pCluster, TwoDSlidingFitResult(pCluster, 3, LArGeometryHelper::GetWirePitch(this->GetPandora(),
+                            TPC_VIEW_V)));
                         LArClusterHelper::OrderHitsAlongTrajectory(pCluster, m_clusterToSFRMap.at(pCluster), m_clusterToOrderedHitsMap[pCluster]);
                     }
                     catch (const StatusCodeException &)
