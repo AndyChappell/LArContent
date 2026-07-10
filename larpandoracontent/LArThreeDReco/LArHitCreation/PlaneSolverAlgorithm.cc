@@ -294,21 +294,10 @@ PlaneSolverAlgorithm::CostMatrix PlaneSolverAlgorithm::ComputeCostMatrix(const P
     {
         if (usedHits.count(aHits[i]))
             continue;
-        const CartesianVector a(aHits[i]->GetPositionVector());
-        const float dx_a(0.5f * aHits[i]->GetCellSize1());
-        const float xMin_a(a.GetX() - dx_a);
-        const float xMax_a(a.GetX() + dx_a);
         
         for (int j = 0; j < nB; ++j)
         {
             if (usedHits.count(bHits[j]))
-                continue;
-            const CartesianVector b(bHits[j]->GetPositionVector());
-            const float dx_b(0.5f * bHits[j]->GetCellSize1());
-            const float xMin_b(b.GetX() - dx_b);
-            const float xMax_b(b.GetX() + dx_b);
-            // Check that the A and B views are compatible in x, otherwise skip the chi-squared calculation
-            if ((xMax_a < xMin_b) || (xMin_a > xMax_b))
                 continue;
             
             float bestChi2 = std::numeric_limits<float>::max();
@@ -317,14 +306,6 @@ PlaneSolverAlgorithm::CostMatrix PlaneSolverAlgorithm::ComputeCostMatrix(const P
             for (int k = 0; k < nC; ++k)
             {
                 // We allow the constraint hit to be used for cost calculation even if it's already used (it can validate a doublet match)
-                const CartesianVector c(cHits[k]->GetPositionVector());
-                const float dx_c(0.5f * cHits[k]->GetCellSize1());
-                const float xMin_c(c.GetX() - dx_c);
-                const float xMax_c(c.GetX() + dx_c);
-                // Check that constraint view is compatible with A and V in x, otherwise skip the chi-squared calculation
-                if ((xMax_a < xMin_c) || (xMin_a > xMax_c) || (xMax_b < xMin_c) || (xMin_b > xMax_c))
-                    continue;
-
                 float chi2{std::numeric_limits<float>::max()};
                 switch (constraintView)
                 {
