@@ -46,48 +46,30 @@ public:
     class ExternalEventReadingParameters : public pandora::ExternalParameters
     {
     public:
-        std::string m_geometryFileName;   ///< Name of the file containing geometry information
-        std::string m_eventFileNameList;  ///< Colon-separated list of file names to be processed
-        pandora::InputUInt m_skipToEvent; ///< Index of first event to consider in input file
+        std::string        m_geometryFileName;  ///< Name of the file containing geometry information
+        std::string        m_eventFileNameList; ///< Colon-separated list of file names to be processed
+        pandora::InputUInt m_skipToEvent;       ///< Index of first event to consider in input file
     };
 
 private:
     pandora::StatusCode Initialize();
     pandora::StatusCode Run();
 
-    /**
-     *  @brief  Proceed to process next event file named in the input list
-     */
     void MoveToNextEventFile();
 
-    /**
-     *  @brief  Replace the current event file reader with a new reader for the specified file
-     *
-     *  @param  fileName the file name
-     */
     pandora::StatusCode ReplaceEventFileReader(const std::string &fileName);
 
-    /**
-     *  @brief  Analyze a provided file name to extract the file type/extension
-     *
-     *  @param  fileName the file name
-     *
-     *  @return the file type
-     */
     pandora::FileType GetFileType(const std::string &fileName) const;
 
     pandora::StatusCode ReadSettings(const pandora::TiXmlHandle xmlHandle);
 
-    std::string m_geometryFileName;              ///< Name of the file containing geometry information
-    std::string m_eventFileName;                 ///< Name of the current file containing event information
-    pandora::StringVector m_eventFileNameVector; ///< Vector of file names to be processed
+    std::string               m_geometryFileName;      ///< Name of the file containing geometry information
+    std::string               m_eventFileName;         ///< Name of the current file containing event information
+    pandora::StringVector     m_eventFileNameVector;   ///< Vector of file names to be processed
 
-    unsigned int m_skipToEvent;          ///< Index of first event to consider in first input file
-    bool m_isEnhancedEventFile;          ///< Whether the event file has a 'file describing' block
-    bool m_useLArCaloHits;               ///< Whether to read lar calo hits, or standard pandora calo hits
-    unsigned int m_larCaloHitVersion;    ///< LArCaloHit version for LArCaloHitFactory
-    bool m_useLArMCParticles;            ///< Whether to read lar mc particles, or standard pandora mc particles
-    unsigned int m_larMCParticleVersion; ///< LArMCParticle version for LArMCParticleFactory
+    unsigned int m_skipToEvent;      ///< Index of first event to consider in first input file
+    bool         m_useLArCaloHits;   ///< Whether to read lar calo hits, or standard pandora calo hits
+    bool         m_useLArMCParticles;///< Whether to read lar mc particles, or standard pandora mc particles
 
     pandora::FileReader *m_pEventFileReader; ///< Address of the event file reader
 };
