@@ -338,7 +338,7 @@ protected:
     const pandora::Pandora *m_pSlicingWorkerInstance; ///< The slicing worker instance
     const pandora::Pandora *m_pSliceNuWorkerInstance; ///< The per-slice neutrino reconstruction worker instance
     const pandora::Pandora *m_pSliceCRWorkerInstance; ///< The per-slice cosmic-ray reconstruction worker instance
-    std::map<unsigned int, unsigned int> m_daughterVolumeIdOffsetMap; ///< Maps original LArTPC volume id -> id offset for merged instances
+    mutable std::map<unsigned int, unsigned int> m_daughterVolumeIdOffsetMap; ///< Maps original LArTPC volume id -> id offset for merged instances
 
     bool m_fullWidthCRWorkerWireGaps;        ///< Whether wire-type line gaps in cosmic-ray worker instances should cover all drift time
     bool m_passMCParticlesToWorkerInstances; ///< Whether to pass mc particle details (and links to calo hits) to worker instances

@@ -1092,7 +1092,7 @@ const Pandora *MasterAlgorithm::CreateWorkerInstance(
 void MasterAlgorithm::AppendReadoutVolumeParameters(const LArTPC &larTPC, const unsigned int idOffset,
     object_creation::LArReadoutVolumeParametersVector &readoutVolumeParametersVector) const
 {
-    for (const LArReadoutVolume &readoutVolume : larTPC.GetReadoutVolumes())
+    for (const auto &[_, readoutVolume] : larTPC.GetReadoutVolumes())
     {
         object_creation::LArReadoutVolumeParameters readoutVolumeParams;
         readoutVolumeParams.m_id = idOffset + readoutVolume.GetId();
