@@ -115,6 +115,7 @@ StatusCode EventWritingAlgorithm::Run()
     // ATTN Should complete geometry creation in LArSoft begin job, but some channel status service functionality unavailable at that point
     if (!m_writtenGeometry && m_pGeometryFileWriter && m_shouldWriteGeometry)
     {
+        PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, m_pGeometryFileWriter->WriteGlobalHeader());
         PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, m_pGeometryFileWriter->WriteGeometry());
         m_writtenGeometry = true;
     }
