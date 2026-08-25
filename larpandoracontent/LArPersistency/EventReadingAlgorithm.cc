@@ -27,6 +27,7 @@ EventReadingAlgorithm::EventReadingAlgorithm() :
     m_skipToEvent(0),
     m_useLArCaloHits(true),
     m_useLArMCParticles(true),
+    m_strictSchemaChecking(true),
     m_pEventFileReader(nullptr)
 {
 }
@@ -49,12 +50,14 @@ StatusCode EventReadingAlgorithm::Initialize()
         if (BINARY == geometryFileType)
         {
             BinaryFileReader fileReader(this->GetPandora(), m_geometryFileName);
+            this->ConfigureReader(fileReader);
             PANDORA_RETURN_RESULT_IF(pandora::STATUS_CODE_SUCCESS, !=, fileReader.ReadGlobalHeader());
             PANDORA_RETURN_RESULT_IF(pandora::STATUS_CODE_SUCCESS, !=, fileReader.ReadGeometry());
         }
         else if (XML == geometryFileType)
         {
             XmlFileReader fileReader(this->GetPandora(), m_geometryFileName);
+            this->ConfigureReader(fileReader);
             PANDORA_RETURN_RESULT_IF(pandora::STATUS_CODE_SUCCESS, !=, fileReader.ReadGlobalHeader());
             PANDORA_RETURN_RESULT_IF(pandora::STATUS_CODE_SUCCESS, !=, fileReader.ReadGeometry());
         }
@@ -134,6 +137,8 @@ StatusCode EventReadingAlgorithm::ReplaceEventFileReader(const std::string &file
     else
         return STATUS_CODE_FAILURE;
 
+    this->ConfigureReader(*m_pEventFileReader);
+
     if (m_useLArCaloHits)
         m_pEventFileReader->SetFactory(new LArCaloHitFactory());
 
@@ -159,6 +164,28 @@ FileType EventReadingAlgorithm::GetFileType(const std::string &fileName) const
         std::cout << "EventReadingAlgorithm: Unknown file type specified " << fileName << std::endl;
         throw StatusCodeException(STATUS_CODE_INVALID_PARAMETER);
     }
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+void EventReadingAlgorithm::ConfigureReader(FileReader &fileReader) const
+{
+    fileReader.SetSchemaCheckPolicy(m_strictSchemaChecking ? SCHEMA_CHECK_FAIL : SCHEMA_CHECK_WARN);
+
+    // Schema migrations to be registered here, one per version transition.
+    //
+    // Example:
+    // fileReader.RegisterMigration(MC_PARTICLE_COMPONENT, 1, 2,
+    //     [](FieldMap &fields)
+    //     {
+    //         float visibleEnergy(0.f);
+    //
+    //         if (STATUS_CODE_SUCCESS == fields.Get("visibleEnergy", visibleEnergy))
+    //         {
+    //             fields.Set("depositedEnergy", visibleEnergy * 0.001f);
+    //             fields.Remove("visibleEnergy");
+    //         }
+    //     });
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
@@ -211,6 +238,9 @@ StatusCode EventReadingAlgorithm::ReadSettings(const TiXmlHandle xmlHandle)
 
     PANDORA_RETURN_RESULT_IF_AND_IF(
         STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "UseLArMCParticles", m_useLArMCParticles));
+
+    PANDORA_RETURN_RESULT_IF_AND_IF(
+        STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "StrictSchemaChecking", m_strictSchemaChecking));
 
     return STATUS_CODE_SUCCESS;
 }
