@@ -328,8 +328,9 @@ inline pandora::StatusCode LArMCParticleFactory::Read(Parameters &parameters, co
     p.m_visibleEnergy = fields.GetOrDefault<float>("visibleEnergy", 0.f);
     p.m_endDirection = fields.GetOrDefault<pandora::CartesianVector>("endDirection", pandora::CartesianVector(0.f, 0.f, 0.f));
 
-    const int nTrajPoints = fields.GetOrDefault<int>("nTrajPoints", 0);
+    const int nTrajPoints = std::max(0, fields.GetOrDefault<int>("nTrajPoints", 0));
     p.m_nTrajPoints = nTrajPoints;
+    p.m_trajPoints.clear();
     p.m_trajPoints.reserve(static_cast<std::size_t>(nTrajPoints));
 
     for (int i = 0; i < nTrajPoints; ++i)
