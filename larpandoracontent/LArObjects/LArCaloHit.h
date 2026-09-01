@@ -290,6 +290,8 @@ inline pandora::StatusCode LArCaloHitFactory::Read(Parameters &parameters, const
     p.m_daughterVolumeId = fields.GetOrDefault<unsigned int>("daughterVolumeId", 0u);
 
     const unsigned int nHitScores = fields.GetOrDefault<unsigned int>("nHitScores", 0u);
+    p.m_hitScores.clear();
+    p.m_hitScoreLabels.clear();
     p.m_hitScores.reserve(nHitScores);
     p.m_hitScoreLabels.reserve(nHitScores);
 
