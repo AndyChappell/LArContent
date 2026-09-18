@@ -52,6 +52,8 @@ MCHierarchyAlgorithm::~MCHierarchyAlgorithm()
 
 StatusCode MCHierarchyAlgorithm::Run()
 {
+    int run{static_cast<int>(this->GetPandora().GetRun())}, subrun{static_cast<int>(this->GetPandora().GetSubrun())},
+        event{static_cast<int>(this->GetPandora().GetEvent())};
     m_mcToHitsMap.clear();
     m_mcToVisibleEnergyMap.clear();
     const CartesianVector geoCorrection(m_correctionX, m_correctionY, m_correctionZ);
@@ -215,9 +217,9 @@ StatusCode MCHierarchyAlgorithm::Run()
             }
         }
 
-        PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_mcTreeName, "run", this->GetPandora().GetRun()));
-        PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_mcTreeName, "subrun", this->GetPandora().GetSubrun()));
-        PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_mcTreeName, "event_id", this->GetPandora().GetEvent()));
+        PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_mcTreeName, "run", run));
+        PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_mcTreeName, "subrun", subrun));
+        PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_mcTreeName, "event_id", event));
         PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_mcTreeName, "mc_id", mcId));
         PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_mcTreeName, "is_triggered_beam", isTriggeredBeam));
         PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_mcTreeName, "is_beam_induced", isBeamInduced));
@@ -272,9 +274,9 @@ StatusCode MCHierarchyAlgorithm::Run()
         }
     }
 
-    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_hitsTreeName, "run", this->GetPandora().GetRun()));
-    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_hitsTreeName, "subrun", this->GetPandora().GetSubrun()));
-    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_hitsTreeName, "event_id", this->GetPandora().GetEvent()));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_hitsTreeName, "run", run));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_hitsTreeName, "subrun", subrun));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_hitsTreeName, "event_id", event));
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_hitsTreeName, "plane", &plane));
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_hitsTreeName, "mc_id", &mcId));
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_hitsTreeName, "drift", &drift));
@@ -299,9 +301,9 @@ StatusCode MCHierarchyAlgorithm::Run()
         }
     }
 
-    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_hitsTreeName + "3D", "run", this->GetPandora().GetRun()));
-    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_hitsTreeName + "3D", "subrun", this->GetPandora().GetSubrun()));
-    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_hitsTreeName + "3D", "event_id", this->GetPandora().GetEvent()));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_hitsTreeName + "3D", "run", run));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_hitsTreeName + "3D", "subrun", subrun));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_hitsTreeName + "3D", "event_id", event));
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_hitsTreeName + "3D", "mc_id", &mcId3D));
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_hitsTreeName + "3D", "x", &xx));
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_hitsTreeName + "3D", "y", &yy));
@@ -332,9 +334,9 @@ StatusCode MCHierarchyAlgorithm::Run()
         decaysHadronically = 0;
     }
 
-    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_eventTreeName, "run", this->GetPandora().GetRun()));
-    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_eventTreeName, "subrun", this->GetPandora().GetSubrun()));
-    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_eventTreeName, "event_id", this->GetPandora().GetEvent()));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_eventTreeName, "run", run));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_eventTreeName, "subrun", subrun));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_eventTreeName, "event_id", event));
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_eventTreeName, "is_cc", isCC));
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_eventTreeName, "is_nu_e", isNue));
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), m_eventTreeName, "is_nu_mu", isNumu));
