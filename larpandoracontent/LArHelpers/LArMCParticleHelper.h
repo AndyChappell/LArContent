@@ -111,6 +111,15 @@ public:
     static bool IsCosmicRay(const pandora::MCParticle *const pMCParticle);
 
     /**
+     *  @brief  Whether an MC particle is the child of a pi zero
+     *
+     *  @param  pMCParticle the input mc particle
+     *
+     *  @return true if the MC particle is a child of a pi zero, false otherwise
+     */
+    static bool IsPiZeroChild(const pandora::MCParticle *const pMCParticle);
+
+    /**
      *  @brief  Return true if passed a photon or electorn/position
      */
     static bool IsEM(const pandora::MCParticle *const pMCParticle);

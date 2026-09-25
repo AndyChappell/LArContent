@@ -117,6 +117,20 @@ bool LArMCParticleHelper::IsCosmicRay(const MCParticle *const pMCParticle)
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
+bool LArMCParticleHelper::IsPiZeroChild(const MCParticle *const pMCParticle)
+{
+    const MCParticleList parentList{pMCParticle->GetParentList()};
+    if (!parentList.empty())
+    {
+        const MCParticle *const pParent{parentList.front()};
+        return pParent->GetParticleId() == PI_ZERO;
+    }
+
+    return false;
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
 bool LArMCParticleHelper::IsEM(const MCParticle *const pMCParticle)
 {
     const int pdg{std::abs(pMCParticle->GetParticleId())};
