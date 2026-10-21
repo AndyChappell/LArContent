@@ -188,6 +188,7 @@ void PlaneSolverAlgorithm::Solve() const
                         const CaloHit *pHitU{driftBinHits.at(TPC_VIEW_U)[triplets[i].m_uIndex]};
                         const CaloHit *pHitV{driftBinHits.at(TPC_VIEW_V)[triplets[i].m_vIndex]};
                         const CaloHit *pHitW{driftBinHits.at(TPC_VIEW_W)[triplets[i].m_wIndex]};
+                        const float cost{triplets[i].m_cost};
 
                         if (pass == 1 && (usedHits.count(pHitU) || usedHits.count(pHitV) || usedHits.count(pHitW)))
                             continue;
@@ -204,7 +205,7 @@ void PlaneSolverAlgorithm::Solve() const
                             if ((pHitU && usedHits.count(pHitU)) || (pHitV && usedHits.count(pHitV)) || (pHitW && usedHits.count(pHitW)))
                                 continue;
                         }
-                        if (pass == 1 && pPlaneContextObject->AddHitTriplet(pHitU, pHitV, pHitW))
+                        if (pass == 1 && pPlaneContextObject->AddHitTriplet(pHitU, pHitV, pHitW, cost))
                         {
                             usedHits.insert(pHitU);
                             usedHits.insert(pHitV);
@@ -216,11 +217,12 @@ void PlaneSolverAlgorithm::Solve() const
                         const CaloHit *pHitU{(triplets[i].m_uIndex >= 0) ? driftBinHits.at(TPC_VIEW_U)[triplets[i].m_uIndex] : nullptr};
                         const CaloHit *pHitV{(triplets[i].m_vIndex >= 0) ? driftBinHits.at(TPC_VIEW_V)[triplets[i].m_vIndex] : nullptr};
                         const CaloHit *pHitW{(triplets[i].m_wIndex >= 0) ? driftBinHits.at(TPC_VIEW_W)[triplets[i].m_wIndex] : nullptr};
+                        const float cost{triplets[i].m_cost};
                         if ((pHitU && usedHits.count(pHitU)) || (pHitV && usedHits.count(pHitV)) || (pHitW && usedHits.count(pHitW)))
                             continue;
                         if (pass == 1)
                             fallbackTriplets.push_back({triplets[i].m_uIndex, triplets[i].m_vIndex, triplets[i].m_wIndex, triplets[i].m_cost});
-                        if (pass == 2 && pPlaneContextObject->AddHitTriplet(pHitU, pHitV, pHitW))
+                        if (pass == 2 && pPlaneContextObject->AddHitTriplet(pHitU, pHitV, pHitW, cost))
                         {
                             usedHits.insert(pHitU);
                             usedHits.insert(pHitV);
@@ -236,10 +238,11 @@ void PlaneSolverAlgorithm::Solve() const
                 const CaloHit *pHitU{(triplet.m_uIndex >= 0) ? driftBinHits.at(TPC_VIEW_U)[triplet.m_uIndex] : nullptr};
                 const CaloHit *pHitV{(triplet.m_vIndex >= 0) ? driftBinHits.at(TPC_VIEW_V)[triplet.m_vIndex] : nullptr};
                 const CaloHit *pHitW{(triplet.m_wIndex >= 0) ? driftBinHits.at(TPC_VIEW_W)[triplet.m_wIndex] : nullptr};
+                const float cost{triplet.m_cost};
                 if ((pHitU && usedHits.count(pHitU)) || (pHitV && usedHits.count(pHitV)) || (pHitW && usedHits.count(pHitW)))
                     continue;
 
-                pPlaneContextObject->AddHitTriplet(pHitU, pHitV, pHitW);
+                pPlaneContextObject->AddHitTriplet(pHitU, pHitV, pHitW, cost);
             }
         }
     }

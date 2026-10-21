@@ -13,13 +13,13 @@ using namespace pandora;
 namespace lar_content
 {
 
-bool LArPlaneContextObject::AddHitTriplet(const CaloHit *const pHitU, const CaloHit *const pHitV, const CaloHit *const pHitW)
+bool LArPlaneContextObject::AddHitTriplet(const CaloHit *const pHitU, const CaloHit *const pHitV, const CaloHit *const pHitW, const float chi2)
 {
     const int nValidHits{(pHitU ? 1 : 0) + (pHitV ? 1 : 0) + (pHitW ? 1 : 0)};
     if (nValidHits < 2)
         return false;
 
-    auto hitTriplet(std::make_unique<HitTriplet>(HitTriplet{pHitU, pHitV, pHitW}));
+    auto hitTriplet(std::make_unique<HitTriplet>(HitTriplet{pHitU, pHitV, pHitW, nValidHits, chi2}));
     HitTriplet *raw = hitTriplet.get();
     m_hitTriplets.emplace_back(std::move(hitTriplet));
 
