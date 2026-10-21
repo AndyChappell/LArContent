@@ -65,6 +65,7 @@
 #include "larpandoracontent/LArMonitoring/ShowerTensorVisualizationTool.h"
 #include "larpandoracontent/LArMonitoring/TestBeamEventValidationAlgorithm.h"
 #include "larpandoracontent/LArMonitoring/TestBeamHierarchyEventValidationAlgorithm.h"
+#include "larpandoracontent/LArMonitoring/TrackMonitoringAlgorithm.h"
 #include "larpandoracontent/LArMonitoring/TransverseMatrixVisualizationTool.h"
 #include "larpandoracontent/LArMonitoring/TransverseTensorVisualizationTool.h"
 #include "larpandoracontent/LArMonitoring/VertexMonitoringAlgorithm.h"
@@ -155,6 +156,7 @@
 #include "larpandoracontent/LArThreeDReco/LArTrackFragments/ClearTrackFragmentsTool.h"
 #include "larpandoracontent/LArThreeDReco/LArTrackFragments/ThreeViewTrackFragmentsAlgorithm.h"
 
+#include "larpandoracontent/LArThreeDReco/LArTransverseTrackMatching/CaloMatchTool.h"
 #include "larpandoracontent/LArThreeDReco/LArTransverseTrackMatching/ClearTracksTool.h"
 #include "larpandoracontent/LArThreeDReco/LArTransverseTrackMatching/LongTracksTool.h"
 #include "larpandoracontent/LArThreeDReco/LArTransverseTrackMatching/MissingTrackSegmentTool.h"
@@ -258,6 +260,7 @@
     d("LArMCParticleMonitoring",                MCParticleMonitoringAlgorithm)                                                  \
     d("LArVertexMonitoring",                    VertexMonitoringAlgorithm)                                                      \
     d("LArVisualMonitoring",                    VisualMonitoringAlgorithm)                                                      \
+    d("LArTrackMonitoring",                     TrackMonitoringAlgorithm)                                                       \
     d("LArVisualParticleMonitoring",            VisualParticleMonitoringAlgorithm)                                              \
     d("LArEventReading",                        EventReadingAlgorithm)                                                          \
     d("LArEventWriting",                        EventWritingAlgorithm)                                                          \
@@ -433,6 +436,7 @@
     d("LArClearRemnants",                       ClearRemnantsTool)                                                              \
     d("LArConnectedRemnants",                   ConnectedRemnantsTool)                                                          \
     d("LArMopUpRemnants",                       MopUpRemnantsTool)                                                              \
+    d("LArCaloMatch",                           CaloMatchTool)                                                                  \
     d("LArClearTracks",                         ClearTracksTool)                                                                \
     d("LArLongTracks",                          LongTracksTool)                                                                 \
     d("LArMissingTrack",                        MissingTrackTool)                                                               \
