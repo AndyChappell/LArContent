@@ -566,6 +566,43 @@ void LArMCParticleHelper::GetMCToHitsMap(const CaloHitList *const pCaloHitList2D
 
 //-----------------------------------------------------------------------------------------------------------------------------------------
 
+void LArMCParticleHelper::GetMCToPfosMap(const PfoList &pfoList, MCToPfosMap &mcToPfosMap)
+{
+    for (const Pfo *const pPfo : pfoList)
+    {
+        MCContributionMap mcToHitsMap;
+        CaloHitList caloHitList;
+        LArPfoHelper::GetAllCaloHits2D(pPfo, caloHitList);
+        for (const CaloHit *const pCaloHit : caloHitList)
+        {
+            try
+            {
+                const MCParticle *const pMC(MCParticleHelper::GetMainMCParticle(pCaloHit));
+                mcToHitsMap[pMC].emplace_back(pCaloHit);
+            }
+            catch (StatusCodeException &statusCodeException)
+            {
+            }
+        }
+
+        size_t bestCount(0);
+        const MCParticle *pBestMC(nullptr);
+        for (const auto &[pMC, hits] : mcToHitsMap)
+        {
+            const size_t count(hits.size());
+            if (count > bestCount)
+            {
+                bestCount = count;
+                pBestMC = pMC;
+            }
+        }
+        if (pBestMC)
+            mcToPfosMap[pBestMC].emplace_back(pPfo);
+    }
+}
+
+//-----------------------------------------------------------------------------------------------------------------------------------------
+
 void LArMCParticleHelper::CompleteMCHierarchy(const LArMCParticleHelper::MCContributionMap &mcToHitsMap, MCParticleList &mcHierarchy)
 {
     try

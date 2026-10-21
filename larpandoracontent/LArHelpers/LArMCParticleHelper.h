@@ -28,6 +28,7 @@ public:
     typedef std::unordered_map<const pandora::MCParticle *, int> MCParticleIntMap;
 
     typedef std::unordered_map<const pandora::MCParticle *, const pandora::ParticleFlowObject *> MCToPfoMap;
+    typedef std::unordered_map<const pandora::MCParticle *, pandora::PfoList> MCToPfosMap;
 
     typedef std::unordered_map<const pandora::CaloHit *, const pandora::MCParticle *> CaloHitToMCMap;
     typedef std::unordered_map<const pandora::CaloHit *, const pandora::ParticleFlowObject *> CaloHitToPfoMap;
@@ -333,6 +334,14 @@ public:
      **/
     static void GetMCToHitsMap(const pandora::CaloHitList *const pCaloHitList2S, const pandora::MCParticleList *const pMCParticleList,
         LArMCParticleHelper::MCContributionMap &mcToHitsMap);
+
+    /**
+     *  @brief  Get mapping from MC to PFOs for all particles
+     *
+     *  @param  pfoList The PFO list for which MC particle matches are to be determined
+     *  @param  mcToPfosMap The map to populate
+     */
+    static void GetMCToPfosMap(const pandora::PfoList &pfoList, MCToPfosMap &mcToPfosMap);
 
     /*
      *  @brief  Construct a list of the MC particles from the MC to calo hits map, completing the interaction hierarchy with the invisible

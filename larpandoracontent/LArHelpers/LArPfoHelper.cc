@@ -6,6 +6,7 @@
  *  $Log: $
  */
 
+#include "Helpers/MCParticleHelper.h"
 #include "Pandora/PdgTable.h"
 
 #include "larpandoracontent/LArHelpers/LArClusterHelper.h"
@@ -81,6 +82,34 @@ void LArPfoHelper::GetAllCaloHits2D(const ParticleFlowObject *const pPfo, CaloHi
     LArPfoHelper::GetIsolatedCaloHits(pPfo, TPC_VIEW_U, caloHitList);
     LArPfoHelper::GetIsolatedCaloHits(pPfo, TPC_VIEW_V, caloHitList);
     LArPfoHelper::GetIsolatedCaloHits(pPfo, TPC_VIEW_W, caloHitList);
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+int LArPfoHelper::GetNSharedHits(const ParticleFlowObject *const pPfo, const MCParticle *const pMC)
+{
+    CaloHitList pfoHitList;
+    LArPfoHelper::GetAllCaloHits2D(pPfo, pfoHitList);
+
+    CaloHitList mcHitList;
+    for (const CaloHit *const pCaloHit : pfoHitList)
+    {
+        try
+        {
+            const MCParticle *const pPfoMC(MCParticleHelper::GetMainMCParticle(pCaloHit));
+            if (pPfoMC != pMC)
+                continue;
+            mcHitList.emplace_back(pCaloHit);
+        }
+        catch (const StatusCodeException &)
+        {
+            continue;
+        }
+    }
+    CaloHitSet sharedHitSet;
+    std::set_intersection(pfoHitList.begin(), pfoHitList.end(), mcHitList.begin(), mcHitList.end(), std::inserter(sharedHitSet, sharedHitSet.begin()));
+
+    return sharedHitSet.size();
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------

@@ -12,6 +12,10 @@
 
 #include <Eigen/Dense>
 
+#include <algorithm>
+#include <utility>
+#include <vector>
+
 using namespace pandora;
 
 namespace lar_content
@@ -139,7 +143,47 @@ void LArPcaHelper::RunPca(const WeightedPointVector &pointVector, CartesianVecto
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
+template <typename T>
+LArPcaHelper::ProjectedPointVector LArPcaHelper::GetOrderedPoints(const T &t)
+{
+    if (t.empty())
+        return {};
+
+    CartesianPointVector points;
+    for (const auto &point : t)
+        points.emplace_back(LArObjectHelper::TypeAdaptor::GetPosition(point));
+
+    CartesianVector centroid(0.f, 0.f, 0.f);
+    EigenValues eigenValues(0.f, 0.f, 0.f);
+    EigenVectors eigenVectors;
+    RunPca(points, centroid, eigenValues, eigenVectors);
+
+    const CartesianVector &axis = eigenVectors.at(0);
+
+    // Project points onto the principal axis
+    ProjectedPointVector projectedPoints;
+    projectedPoints.reserve(points.size());
+    for (const CartesianVector &point : points)
+    {
+        const float longitudinal = (point - centroid).GetDotProduct(axis);
+        projectedPoints.emplace_back(longitudinal, point);
+    }
+
+    // Sort by increasing longitudinal coordinate
+    std::stable_sort(projectedPoints.begin(), projectedPoints.end(),
+        [](const ProjectedPoint &a, const ProjectedPoint &b)
+        {
+            return a.first < b.first;
+        });
+
+    return projectedPoints;
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
 template void LArPcaHelper::RunPca(const CartesianPointVector &, CartesianVector &, EigenValues &, EigenVectors &);
 template void LArPcaHelper::RunPca(const CaloHitList &, CartesianVector &, EigenValues &, EigenVectors &);
+template LArPcaHelper::ProjectedPointVector LArPcaHelper::GetOrderedPoints(const CartesianPointVector &);
+template LArPcaHelper::ProjectedPointVector LArPcaHelper::GetOrderedPoints(const CaloHitList &);
 
 } // namespace lar_content

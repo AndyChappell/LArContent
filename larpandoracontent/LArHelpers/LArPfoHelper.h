@@ -78,6 +78,16 @@ public:
     static void GetAllCaloHits2D(const pandora::ParticleFlowObject *pPfo, pandora::CaloHitList &caloHitList);
 
     /**
+     *  @brief  Get the number of shared hits between a pfo and an MC particle
+     *
+     *  @param  pPfo the input Pfo
+     *  @param  pMC the input MC particle
+     *
+     *  @return The number of shared hits
+     */
+    static int GetNSharedHits(const pandora::ParticleFlowObject *const pPfo, const pandora::MCParticle *const pMC);
+
+    /**
      *  @brief  Get a list of clusters of a particular hit type from a list of pfos
      *
      *  @param  pfoList the input list of Pfos

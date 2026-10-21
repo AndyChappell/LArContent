@@ -25,6 +25,8 @@ public:
     typedef std::vector<pandora::CartesianVector> EigenVectors;
     typedef std::pair<const pandora::CartesianVector, double> WeightedPoint;
     typedef std::vector<WeightedPoint> WeightedPointVector;
+    typedef std::pair<float, pandora::CartesianVector> ProjectedPoint;
+    typedef std::vector<ProjectedPoint> ProjectedPointVector;
 
     /**
      *  @brief  Run principal component analysis using input calo hits (TPC_VIEW_U,V,W or TPC_3D; all treated as 3D points)
@@ -47,6 +49,16 @@ public:
      */
     static void RunPca(const WeightedPointVector &pointVector, pandora::CartesianVector &centroid, EigenValues &outputEigenValues,
         EigenVectors &outputEigenVectors);
+
+    /**
+     *  @brief  Get ordered points along the principal axis of a set of points.
+     *
+     *  @param  t the input information
+     *
+     *  @return a vector of pairs of longitudinal coordinate and position, ordered by increasing longitudinal coordinate
+     */
+    template <typename T>
+    static ProjectedPointVector GetOrderedPoints(const T &t);
 };
 
 } // namespace lar_content
