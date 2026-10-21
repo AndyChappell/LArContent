@@ -77,6 +77,7 @@ set(LAR_CONTENT_SRCS
     larpandoracontent/LArMonitoring/ShowerTensorVisualizationTool.cc
     larpandoracontent/LArMonitoring/TestBeamEventValidationAlgorithm.cc
     larpandoracontent/LArMonitoring/TestBeamHierarchyEventValidationAlgorithm.cc
+    larpandoracontent/LArMonitoring/TrackMonitoringAlgorithm.cc
     larpandoracontent/LArMonitoring/TransverseMatrixVisualizationTool.cc
     larpandoracontent/LArMonitoring/TransverseTensorVisualizationTool.cc
     larpandoracontent/LArMonitoring/VertexMonitoringAlgorithm.cc
@@ -190,6 +191,7 @@ set(LAR_CONTENT_SRCS
     larpandoracontent/LArThreeDReco/LArThreeDBase/TwoViewMatchingControl.cc
     larpandoracontent/LArThreeDReco/LArTrackFragments/ClearTrackFragmentsTool.cc
     larpandoracontent/LArThreeDReco/LArTrackFragments/ThreeViewTrackFragmentsAlgorithm.cc
+    larpandoracontent/LArThreeDReco/LArTransverseTrackMatching/CaloMatchTool.cc
     larpandoracontent/LArThreeDReco/LArTransverseTrackMatching/ClearTracksTool.cc
     larpandoracontent/LArThreeDReco/LArTransverseTrackMatching/LongTracksTool.cc
     larpandoracontent/LArThreeDReco/LArTransverseTrackMatching/MissingTrackSegmentTool.cc
