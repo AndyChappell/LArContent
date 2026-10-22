@@ -75,6 +75,7 @@ set(LAR_CONTENT_SRCS
     larpandoracontent/LArMonitoring/MuonLeadingEventValidationAlgorithm.cc
     larpandoracontent/LArMonitoring/NeutrinoEventValidationAlgorithm.cc
     larpandoracontent/LArMonitoring/PfoValidationAlgorithm.cc
+    larpandoracontent/LArMonitoring/SliceMonitoringAlgorithm.cc
     larpandoracontent/LArMonitoring/ShowerTensorVisualizationTool.cc
     larpandoracontent/LArMonitoring/TestBeamEventValidationAlgorithm.cc
     larpandoracontent/LArMonitoring/TestBeamHierarchyEventValidationAlgorithm.cc
