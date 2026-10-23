@@ -80,7 +80,6 @@ bool CaloMatchTool::Construct3DTrajectoryTemplates(const pandora::Cluster *const
     const pandora::Cluster *const pClusterW, pandora::CartesianPointVector &trajectory) const
 {
     PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1, 1, 1));
-    const LArTransformationPlugin *const pTransform{this->GetPandora().GetPlugins()->GetLArTransformationPlugin()};
 
     CaloHitList refHitsU, refHitsV, refHitsW;
     CartesianPointVector refPositions3D;
@@ -90,136 +89,15 @@ bool CaloMatchTool::Construct3DTrajectoryTemplates(const pandora::Cluster *const
     std::cout << "Ref hits: " << refHitsU.size() << ", " << refHitsV.size() << ", " << refHitsW.size() << std::endl;
     if (!refHitsW.empty())
     {
-        // Find all the hit triplets that are fully consistent with the three clusters, and have a good chi2.
-        // Then, apply a PCA fit to those points to get a baseline direction
-        // Then, filter to only those hits with excellent chi2 and try to select a roughly even spread of the hits along the baseline
-        // trajectory. These will form the trajectory template
         this->Estimate3DTrajectory(refHitsU, refHitsV, refHitsW, refPositions3D);
-        // PCA fit the refPositions3D here
-        CartesianVector centroid(0.f, 0.f, 0.f);
-        LArPcaHelper::EigenValues eigenValues(0.f, 0.f, 0.f);
-        LArPcaHelper::EigenVectors eigenVectors;
-        LArPcaHelper::RunPca(refPositions3D, centroid, eigenValues, eigenVectors);
-        LArPcaHelper::ProjectedPointVector projectedPoints(LArPcaHelper::GetOrderedPoints(refPositions3D));
-
-        for (const auto &[l, position3D] : projectedPoints)
-        {
-            PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &position3D, "Pos: " + std::to_string(l), BLUE, 2));
-        }
-        CartesianVector start(centroid - eigenVectors[0] * 20);
-        CartesianVector end(centroid + eigenVectors[0] * 20);
-        PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &refHitsW, "2D Hits", RED));
-        PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &start, &end, "Fit", BLACK, 3, 1));
-
-        PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
-
-        // Extract a spread of points along the ordered trajectory
-        // ATTN: Need to think about forward/backward directionality depending upon the flipping of clusters (for now, it's arbitrary)
         CartesianPointVector trajectoryTemplate;
         const unsigned int nKeyPoints = 10;
-        if (projectedPoints.size() > nKeyPoints)
-        {
-            const float tMin = projectedPoints.front().first;
-            const float tMax = projectedPoints.back().first;
-            auto it = projectedPoints.begin();
-            for (unsigned int i = 0; i < nKeyPoints; ++i)
-            {
-                float bestDelta(std::numeric_limits<float>::max());
-                const float target = tMin + (tMax - tMin) * static_cast<float>(i) / static_cast<float>(nKeyPoints - 1);
-                while (true)
-                {
-                    const float delta = std::abs(it->first - target);
-                    if (delta < bestDelta)
-                    {
-                        bestDelta = delta;
-                        ++it;
-                    }
-                    else
-                    {
-                        --it;
-                        if (std::find(trajectoryTemplate.begin(), trajectoryTemplate.end(), it->second) == trajectoryTemplate.end())
-                            trajectoryTemplate.emplace_back(it->second);
-                        break;
-                    }
-                    if (bestDelta == std::numeric_limits<float>::max() && it == projectedPoints.end())
-                        break;
-                }
-            }
-        }
-        else
-        {
-            for (const auto &[l, position3D] : projectedPoints)
-                trajectoryTemplate.emplace_back(position3D);
-        }
+        this->SparsifyTrajectory(refPositions3D, nKeyPoints, trajectoryTemplate, refHitsW);   // refHitsW is temporary for debugging visualisations
 
-        for (const CartesianVector &position3D : trajectoryTemplate)
-        {
-            PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &position3D, "Template", BLUE, 2));
-        }
-        PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &refHitsW, "2D Hits", RED));
-        PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
-
-        // Project the template into each 2D view
-        CartesianPointVector trajectoryTemplateW;
-        for (const CartesianVector &position3D : trajectoryTemplate)
-        {
-            const CartesianVector projection(position3D.GetX(), 0.f, static_cast<float>(pTransform->YZtoW(position3D.GetY(), position3D.GetZ())));
-            trajectoryTemplateW.emplace_back(projection);
-        }
-
-        // Build the trajectory segment objects and populate with the relevant hits in each view.
         Trajectory trajectory;
-        for (const CaloHit *const pCaloHit : refHitsW)
-        {
-            const CartesianVector &position(pCaloHit->GetPositionVector());
-            float bestDistanceSquared(std::numeric_limits<float>::max());
-            float bestLongitudinal(std::numeric_limits<float>::max());
-            int bestSegmentIndex(-1);
-            for (size_t i = 0; i < trajectoryTemplateW.size() - 1; ++i)
-            {
-                const bool firstSegment(i == 0), lastSegment(i == trajectoryTemplateW.size() - 2);
-                const CartesianVector &start(trajectoryTemplateW[i]);
-                const CartesianVector &end(trajectoryTemplateW[i + 1]);
-                const CartesianVector axis = (end - start).GetUnitVector();
-                const float limitLow = 0.f;
-                const float limitHigh = (end - start).GetMagnitude();
-                const float projection = (position - start).GetDotProduct(axis);
-                const CartesianVector closestPoint = start + axis * projection;
-                if ((projection >= limitLow || firstSegment) && (projection < limitHigh || lastSegment))
-                {
-                    const float distanceSquared = (position - closestPoint).GetMagnitudeSquared();
-                    if (distanceSquared < bestDistanceSquared)
-                    {
-                        bestDistanceSquared = distanceSquared;
-                        bestLongitudinal = projection;
-                        bestSegmentIndex = i;
-                    }
-                }
-            }
+        this->ProjectTrajectory(trajectoryTemplate, refHitsW, trajectory);
+        // Need to add U and V as well
 
-            if (bestSegmentIndex >= 0)
-            {
-                if (trajectory.find(bestSegmentIndex) == trajectory.end())
-                {
-                    trajectory[bestSegmentIndex] = std::make_unique<TrajectorySegment>(trajectoryTemplateW[bestSegmentIndex],
-                        trajectoryTemplateW[bestSegmentIndex + 1], ChargeProfile(), ChargeProfile(), ChargeProfile());
-                }
-                switch (pCaloHit->GetHitType())
-                {
-                    case TPC_VIEW_U:
-                        trajectory[bestSegmentIndex]->m_chargeProfileU.emplace_back(bestLongitudinal, pCaloHit->GetInputEnergy());
-                        break;
-                    case TPC_VIEW_V:
-                        trajectory[bestSegmentIndex]->m_chargeProfileV.emplace_back(bestLongitudinal, pCaloHit->GetInputEnergy());
-                        break;
-                    case TPC_VIEW_W:
-                        trajectory[bestSegmentIndex]->m_chargeProfileW.emplace_back(bestLongitudinal, pCaloHit->GetInputEnergy());
-                        break;
-                    default:
-                        break;
-                }
-            }
-        }
         for (const auto &[index, pSegment] : trajectory)
         {
             if (!pSegment)
@@ -278,6 +156,153 @@ void CaloMatchTool::Estimate3DTrajectory(const CaloHitList &refHitsU, const Calo
                 LArGeometryHelper::MergeTwoPositions3D(this->GetPandora(), TPC_VIEW_W, pOtherHit->GetHitType(),
                     pHitTriplet->m_wHit->GetPositionVector(), pOtherHit->GetPositionVector(), position3D, chi2);
                 refPositions3D.emplace_back(position3D);
+            }
+        }
+    }
+}
+
+void CaloMatchTool::SparsifyTrajectory(const CartesianPointVector &refPositions3D, const unsigned int nKeyPoints,
+    CartesianPointVector &trajectoryTemplate, const CaloHitList &refHitsW) const
+{
+    CartesianVector centroid(0.f, 0.f, 0.f);
+    LArPcaHelper::EigenValues eigenValues(0.f, 0.f, 0.f);
+    LArPcaHelper::EigenVectors eigenVectors;
+    LArPcaHelper::RunPca(refPositions3D, centroid, eigenValues, eigenVectors);
+    LArPcaHelper::ProjectedPointVector projectedPoints(LArPcaHelper::GetOrderedPoints(refPositions3D));
+
+    for (const auto &[l, position3D] : projectedPoints)
+    {
+        PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &position3D, "Pos: " + std::to_string(l), BLUE, 2));
+    }
+    CartesianVector start(centroid - eigenVectors[0] * 20);
+    CartesianVector end(centroid + eigenVectors[0] * 20);
+    PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &refHitsW, "2D Hits", RED));
+    PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &start, &end, "Fit", BLACK, 3, 1));
+
+    PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
+
+    // Extract a spread of points along the ordered trajectory
+    // ATTN: Need to think about forward/backward directionality depending upon the flipping of clusters (for now, it's arbitrary)
+    if (projectedPoints.size() > nKeyPoints)
+    {
+        const float tMin = projectedPoints.front().first;
+        const float tMax = projectedPoints.back().first;
+        auto it = projectedPoints.begin();
+        for (unsigned int i = 0; i < nKeyPoints; ++i)
+        {
+            float bestDelta(std::numeric_limits<float>::max());
+            const float target = tMin + (tMax - tMin) * static_cast<float>(i) / static_cast<float>(nKeyPoints - 1);
+            while (true)
+            {
+                const float delta = std::abs(it->first - target);
+                if (delta < bestDelta)
+                {
+                    bestDelta = delta;
+                    ++it;
+                }
+                else
+                {
+                    --it;
+                    if (std::find(trajectoryTemplate.begin(), trajectoryTemplate.end(), it->second) == trajectoryTemplate.end())
+                        trajectoryTemplate.emplace_back(it->second);
+                    break;
+                }
+                if (bestDelta == std::numeric_limits<float>::max() && it == projectedPoints.end())
+                    break;
+            }
+        }
+    }
+    else
+    {
+        for (const auto &[l, position3D] : projectedPoints)
+            trajectoryTemplate.emplace_back(position3D);
+    }
+
+    for (const CartesianVector &position3D : trajectoryTemplate)
+    {
+        PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &position3D, "Template", BLUE, 2));
+    }
+    PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &refHitsW, "2D Hits", RED));
+    PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+void CaloMatchTool::ProjectTrajectory(const CartesianPointVector &trajectoryTemplate, const CaloHitList &refHits, Trajectory &trajectory) const
+{
+    const LArTransformationPlugin *const pTransform{this->GetPandora().GetPlugins()->GetLArTransformationPlugin()};
+
+    // Project the template into a 2D view
+    CartesianPointVector trajectoryTemplateW;
+    for (const CartesianVector &position3D : trajectoryTemplate)
+    {
+        float viewCoordinate(0.f);
+        switch (refHits.front()->GetHitType())
+        {
+            case TPC_VIEW_U:
+                viewCoordinate = static_cast<float>(pTransform->YZtoU(position3D.GetY(), position3D.GetZ()));
+                break;
+            case TPC_VIEW_V:
+                viewCoordinate = static_cast<float>(pTransform->YZtoV(position3D.GetY(), position3D.GetZ()));
+                break;
+            case TPC_VIEW_W:
+                viewCoordinate = static_cast<float>(pTransform->YZtoW(position3D.GetY(), position3D.GetZ()));
+                break;
+            default:
+                break;
+        }
+        trajectoryTemplateW.emplace_back(CartesianVector(position3D.GetX(), 0.f, viewCoordinate));
+    }
+
+    // Build the trajectory segment objects and populate with the relevant hits in the current view.
+    for (const CaloHit *const pCaloHit : refHits)
+    {
+        const CartesianVector &position(pCaloHit->GetPositionVector());
+        float bestDistanceSquared(std::numeric_limits<float>::max());
+        float bestLongitudinal(std::numeric_limits<float>::max());
+        int bestSegmentIndex(-1);
+        for (size_t i = 0; i < trajectoryTemplateW.size() - 1; ++i)
+        {
+            const bool firstSegment(i == 0), lastSegment(i == trajectoryTemplateW.size() - 2);
+            const CartesianVector &start(trajectoryTemplateW[i]);
+            const CartesianVector &end(trajectoryTemplateW[i + 1]);
+            const CartesianVector axis = (end - start).GetUnitVector();
+            const float limitLow = 0.f;
+            const float limitHigh = (end - start).GetMagnitude();
+            const float projection = (position - start).GetDotProduct(axis);
+            const CartesianVector closestPoint = start + axis * projection;
+            if ((projection >= limitLow || firstSegment) && (projection < limitHigh || lastSegment))
+            {
+                const float distanceSquared = (position - closestPoint).GetMagnitudeSquared();
+                if (distanceSquared < bestDistanceSquared)
+                {
+                    bestDistanceSquared = distanceSquared;
+                    bestLongitudinal = projection;
+                    bestSegmentIndex = i;
+                }
+            }
+        }
+
+        if (bestSegmentIndex >= 0)
+        {
+            if (trajectory.find(bestSegmentIndex) == trajectory.end())
+            {
+                trajectory[bestSegmentIndex] = std::make_unique<TrajectorySegment>(trajectoryTemplateW[bestSegmentIndex],
+                    trajectoryTemplateW[bestSegmentIndex + 1], ChargeProfile(), ChargeProfile(), ChargeProfile());
+            }
+            switch (pCaloHit->GetHitType())
+            {
+                case TPC_VIEW_U:
+                    trajectory[bestSegmentIndex]->m_chargeProfileU.emplace_back(bestLongitudinal, pCaloHit->GetInputEnergy());
+                    break;
+                case TPC_VIEW_V:
+                    trajectory[bestSegmentIndex]->m_chargeProfileV.emplace_back(bestLongitudinal, pCaloHit->GetInputEnergy());
+                    break;
+                case TPC_VIEW_W:
+                    trajectory[bestSegmentIndex]->m_chargeProfileW.emplace_back(bestLongitudinal, pCaloHit->GetInputEnergy());
+                    break;
+                default:
+                    break;
             }
         }
     }

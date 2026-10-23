@@ -80,6 +80,25 @@ private:
     void Estimate3DTrajectory(const pandora::CaloHitList &refHitsU, const pandora::CaloHitList &refHitsV, const pandora::CaloHitList &refHitsW,
         pandora::CartesianPointVector &refPositions3D) const;
 
+    /**
+     *  @brief  Sparsify the given trajectory to a specified number of key points.
+     *
+     *  @param  refPositions3D the input trajectory points
+     *  @param  nKeyPoints the desired number of key points in the output trajectory
+     *  @param  trajectoryTemplate the resulting sparsified trajectory points
+     */
+    void SparsifyTrajectory(const pandora::CartesianPointVector &refPositions3D, const unsigned int nKeyPoints,
+        pandora::CartesianPointVector &trajectoryTemplate, const pandora::CaloHitList &refHitsW) const;
+
+    /**
+     *  @brief  Project the given trajectory template into each view and associate the relevant hits.
+     *
+     *  @param  trajectoryTemplate the input trajectory template
+     *  @param  refHits the hits in the view to be projected into
+     *  @param[in,out] trajectory the output trajectory
+     */
+    void ProjectTrajectory(const pandora::CartesianPointVector &trajectoryTemplate, const pandora::CaloHitList &refHits, Trajectory &trajectory) const;
+
     pandora::StatusCode ReadSettings(const pandora::TiXmlHandle xmlHandle);
 
     const LArPlaneContextObject *m_planeContextObject;  ///< The PlaneContextObject for the current event
