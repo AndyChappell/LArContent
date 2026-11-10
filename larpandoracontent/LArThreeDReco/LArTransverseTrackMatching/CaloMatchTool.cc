@@ -95,23 +95,8 @@ bool CaloMatchTool::Construct3DTrajectoryTemplates(const pandora::Cluster *const
         this->SparsifyTrajectory(refPositions3D, nKeyPoints, trajectoryTemplate, refHitsW);   // refHitsW is temporary for debugging visualisations
 
         Trajectory trajectory;
-        this->ProjectTrajectory(trajectoryTemplate, refHitsW, trajectory);
+        this->ProjectTrajectory(trajectoryTemplate, refHitsW, 2.f, trajectory);
         // Need to add U and V as well
-
-        for (const auto &[index, pSegment] : trajectory)
-        {
-            if (!pSegment)
-                continue;
-            PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &refHitsW, "2D Hits", RED));
-            PANDORA_MONITORING_API(AddLineToVisualization(this->GetPandora(), &pSegment->m_start, &pSegment->m_end, "Template", BLACK, 3, 1));
-            for (const auto &[l, adc] : pSegment->m_chargeProfileW)
-            {
-                CartesianVector pos(pSegment->m_start + (pSegment->m_end - pSegment->m_start).GetUnitVector() * l);
-                PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &pos, std::to_string(index) + " L: " + std::to_string(l)
-                    + " Q: " + std::to_string(adc), GREEN, 2));
-            }
-            PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
-        }
     }
     // Get the hits from each cluster.
     // Find the full triplet matches with an excellent chi2.
@@ -228,84 +213,273 @@ void CaloMatchTool::SparsifyTrajectory(const CartesianPointVector &refPositions3
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-void CaloMatchTool::ProjectTrajectory(const CartesianPointVector &trajectoryTemplate, const CaloHitList &refHits, Trajectory &trajectory) const
+void CaloMatchTool::ProjectTrajectory(const CartesianPointVector &trajectoryTemplate, const CaloHitList &refHits, const float binSize, Trajectory &trajectory) const
 {
+    if (refHits.empty() || trajectoryTemplate.size() < 2 || binSize <= 0.f)
+        return;
+
+    const HitType view = refHits.front()->GetHitType();
+    if (view != TPC_VIEW_U && view != TPC_VIEW_V && view != TPC_VIEW_W)
+        return;
+
     const LArTransformationPlugin *const pTransform{this->GetPandora().GetPlugins()->GetLArTransformationPlugin()};
 
-    // Project the template into a 2D view
-    CartesianPointVector trajectoryTemplateW;
-    for (const CartesianVector &position3D : trajectoryTemplate)
+    // Project a 3D point into the requested 2D view.
+    const auto project = [&](const CartesianVector &p) -> CartesianVector
     {
-        float viewCoordinate(0.f);
-        switch (refHits.front()->GetHitType())
+        float coordinate(0.f);
+        switch (view)
         {
             case TPC_VIEW_U:
-                viewCoordinate = static_cast<float>(pTransform->YZtoU(position3D.GetY(), position3D.GetZ()));
+                coordinate = static_cast<float>(pTransform->YZtoU(p.GetY(), p.GetZ()));
                 break;
             case TPC_VIEW_V:
-                viewCoordinate = static_cast<float>(pTransform->YZtoV(position3D.GetY(), position3D.GetZ()));
+                coordinate = static_cast<float>(pTransform->YZtoV(p.GetY(), p.GetZ()));
                 break;
             case TPC_VIEW_W:
-                viewCoordinate = static_cast<float>(pTransform->YZtoW(position3D.GetY(), position3D.GetZ()));
+                coordinate = static_cast<float>(pTransform->YZtoW(p.GetY(), p.GetZ()));
                 break;
             default:
                 break;
         }
-        trajectoryTemplateW.emplace_back(CartesianVector(position3D.GetX(), 0.f, viewCoordinate));
+
+        return CartesianVector(p.GetX(), 0.f, coordinate);
+    };
+
+    // Piece3D describes one straight portion of the trajectory. Multiple pieces can belong to the same bin (e.g. around initial template point).
+    // BinGeometry describes the complete bin, whose endpoints may span one or more changes in trajectory direction.
+    struct Piece3D
+    {
+        CartesianVector m_start;
+        CartesianVector m_end;
+        int m_binIndex;
+    };
+
+    struct BinGeometry
+    {
+        CartesianVector m_start;
+        CartesianVector m_end;
+        double m_pathLength;
+    };
+
+    std::vector<Piece3D> pieces3D;
+    std::vector<BinGeometry> binDefinitions;
+
+    const double targetLength = static_cast<double>(binSize);
+
+    const double tolerance = 1.e-3;
+    double distanceInBin(0.);
+    int binIndex(0);
+
+    // Build the trajectory pieces and bin geometry in 3D (view-independent).
+    for (size_t i = 1; i < trajectoryTemplate.size(); ++i)
+    {
+        const CartesianVector &start3D = trajectoryTemplate[i - 1];
+        const CartesianVector &end3D = trajectoryTemplate[i];
+        const double dx = static_cast<double>(end3D.GetX()) - start3D.GetX();
+        const double dy = static_cast<double>(end3D.GetY()) - start3D.GetY();
+        const double dz = static_cast<double>(end3D.GetZ()) - start3D.GetZ();
+        const double segmentLength = std::sqrt(dx * dx + dy * dy + dz * dz);
+
+        if (segmentLength <= 0.)
+            continue;
+
+        const auto interpolate = [&](const double t) -> CartesianVector
+        {
+            return CartesianVector(static_cast<float>(start3D.GetX() + dx * t), static_cast<float>(start3D.GetY() + dy * t),
+                static_cast<float>(start3D.GetZ() + dz * t));
+        };
+
+        double distanceInSegment(0.);
+        while (distanceInSegment < segmentLength)
+        {
+            const double segmentRemaining = segmentLength - distanceInSegment;
+            const double binRemaining = targetLength - distanceInBin;
+
+            // If the template vertex is very close to the next bin boundary, snap the boundary onto that vertex.
+            const bool atBoundary = std::abs(segmentRemaining - binRemaining) <= tolerance;
+            const double step = atBoundary ? segmentRemaining : std::min(segmentRemaining, binRemaining);
+            const bool completesBin = (segmentRemaining >= binRemaining - tolerance);
+
+            // Interpolate the piece endpoints along the current straight section of the original 3D trajectory.
+            const double t0 = distanceInSegment / segmentLength;
+            const double t1 = (distanceInSegment + step) / segmentLength;
+
+            const CartesianVector p0(interpolate(t0));
+            const CartesianVector p1(interpolate(t1));
+            pieces3D.push_back({p0, p1, binIndex});
+
+            // Construct or extend the corresponding complete 3D bin.
+            if (static_cast<size_t>(binIndex) == binDefinitions.size())
+            {
+                binDefinitions.push_back({p0, p1, step});
+            }
+            else
+            {
+                BinGeometry &bin = binDefinitions.at(binIndex);
+                bin.m_end = p1;
+                bin.m_pathLength += step;
+            }
+
+            if (step >= segmentRemaining)
+                distanceInSegment = segmentLength;
+            else
+                distanceInSegment += step;
+
+            if (completesBin)
+            {
+                // The next piece belongs to the next bin.
+                ++binIndex;
+                distanceInBin = 0.;
+            }
+            else
+            {
+                // Continue this bin across the template vertex.
+                distanceInBin += step;
+            }
+        }
     }
 
-    // Build the trajectory segment objects and populate with the relevant hits in the current view.
+    // Initialise the shared trajectory on the first call. On subsequent calls, ensure the supplied 3D template and bin size generate matching bin geometry.
+    if (trajectory.empty())
+    {
+        for (size_t i = 0; i < binDefinitions.size(); ++i)
+        {
+            const BinGeometry &bin = binDefinitions[i];
+            trajectory.emplace(static_cast<int>(i), std::make_unique<TrajectorySegment>(bin.m_start, bin.m_end, static_cast<float>(bin.m_pathLength)));
+        }
+    }
+    else
+    {
+        if (trajectory.size() != binDefinitions.size())
+            throw StatusCodeException(STATUS_CODE_INVALID_PARAMETER);
+
+        constexpr float geometryTolerance = 1.e-3f;
+
+        for (size_t i = 0; i < binDefinitions.size(); ++i)
+        {
+            const auto iter = trajectory.find(static_cast<int>(i));
+
+            if (iter == trajectory.end())
+                throw StatusCodeException(STATUS_CODE_NOT_FOUND);
+
+            const TrajectorySegment &existing = *iter->second;
+            const BinGeometry &expected = binDefinitions[i];
+
+            const float startDifference = (existing.m_start3D - expected.m_start).GetMagnitude();
+            const float endDifference = (existing.m_end3D - expected.m_end).GetMagnitude();
+
+            const double lengthDifference = std::abs(static_cast<double>(existing.m_pathLength3D) - expected.m_pathLength);
+
+            if (startDifference > geometryTolerance || endDifference > geometryTolerance || lengthDifference > geometryTolerance)
+                throw StatusCodeException(STATUS_CODE_INVALID_PARAMETER);
+        }
+    }
+
+    // Project the individual 3D pieces into the requested view.
+    struct Piece2D
+    {
+        CartesianVector m_start;
+        CartesianVector m_end;
+        int m_binIndex;
+    };
+
+    std::vector<Piece2D> pieces2D;
+    pieces2D.reserve(pieces3D.size());
+
+    for (const Piece3D &piece : pieces3D)
+        pieces2D.push_back({project(piece.m_start), project(piece.m_end), piece.m_binIndex});
+
+    // Reset only the charge belonging to this view.
+    for (auto &[index, pSegment] : trajectory)
+    {
+        switch (view)
+        {
+            case TPC_VIEW_U:
+                pSegment->m_chargeU = 0.f;
+                break;
+            case TPC_VIEW_V:
+                pSegment->m_chargeV = 0.f;
+                break;
+            case TPC_VIEW_W:
+                pSegment->m_chargeW = 0.f;
+                break;
+            default:
+                break;
+        }
+    }
+
+    // Associate each hit with the nearest projected piece.
     for (const CaloHit *const pCaloHit : refHits)
     {
+        if (pCaloHit->GetHitType() != view)
+            continue;
+
         const CartesianVector &position(pCaloHit->GetPositionVector());
         float bestDistanceSquared(std::numeric_limits<float>::max());
-        float bestLongitudinal(std::numeric_limits<float>::max());
-        int bestSegmentIndex(-1);
-        for (size_t i = 0; i < trajectoryTemplateW.size() - 1; ++i)
+        int bestBinIndex(-1);
+        for (const Piece2D &piece : pieces2D)
         {
-            const bool firstSegment(i == 0), lastSegment(i == trajectoryTemplateW.size() - 2);
-            const CartesianVector &start(trajectoryTemplateW[i]);
-            const CartesianVector &end(trajectoryTemplateW[i + 1]);
-            const CartesianVector axis = (end - start).GetUnitVector();
-            const float limitLow = 0.f;
-            const float limitHigh = (end - start).GetMagnitude();
-            const float projection = (position - start).GetDotProduct(axis);
-            const CartesianVector closestPoint = start + axis * projection;
-            if ((projection >= limitLow || firstSegment) && (projection < limitHigh || lastSegment))
+            const CartesianVector delta(piece.m_end - piece.m_start);
+            const float lengthSquared = delta.GetMagnitudeSquared();
+            float t(0.f);
+
+            if (lengthSquared > 1.e-10f)
             {
-                const float distanceSquared = (position - closestPoint).GetMagnitudeSquared();
-                if (distanceSquared < bestDistanceSquared)
-                {
-                    bestDistanceSquared = distanceSquared;
-                    bestLongitudinal = projection;
-                    bestSegmentIndex = i;
-                }
+                // Project onto the finite straight piece.
+                t = (position - piece.m_start).GetDotProduct(delta) / lengthSquared;
+                t = std::clamp(t, 0.f, 1.f);
+            }
+
+            const CartesianVector closestPoint(piece.m_start + delta * t);
+            const float distanceSquared = (position - closestPoint).GetMagnitudeSquared();
+
+            if (distanceSquared < bestDistanceSquared)
+            {
+                bestDistanceSquared = distanceSquared;
+                bestBinIndex = piece.m_binIndex;
             }
         }
 
-        if (bestSegmentIndex >= 0)
+        if (bestBinIndex < 0)
+            continue;
+
+        // The selected bin is shared across all three views.
+        TrajectorySegment &bin = *trajectory.at(bestBinIndex);
+        const float charge = pCaloHit->GetInputEnergy();
+        switch (view)
         {
-            if (trajectory.find(bestSegmentIndex) == trajectory.end())
-            {
-                trajectory[bestSegmentIndex] = std::make_unique<TrajectorySegment>(trajectoryTemplateW[bestSegmentIndex],
-                    trajectoryTemplateW[bestSegmentIndex + 1], ChargeProfile(), ChargeProfile(), ChargeProfile());
-            }
-            switch (pCaloHit->GetHitType())
-            {
-                case TPC_VIEW_U:
-                    trajectory[bestSegmentIndex]->m_chargeProfileU.emplace_back(bestLongitudinal, pCaloHit->GetInputEnergy());
-                    break;
-                case TPC_VIEW_V:
-                    trajectory[bestSegmentIndex]->m_chargeProfileV.emplace_back(bestLongitudinal, pCaloHit->GetInputEnergy());
-                    break;
-                case TPC_VIEW_W:
-                    trajectory[bestSegmentIndex]->m_chargeProfileW.emplace_back(bestLongitudinal, pCaloHit->GetInputEnergy());
-                    break;
-                default:
-                    break;
-            }
+            case TPC_VIEW_U:
+                bin.m_chargeU += charge;
+                break;
+            case TPC_VIEW_V:
+                bin.m_chargeV += charge;
+                break;
+            case TPC_VIEW_W:
+                bin.m_chargeW += charge;
+                break;
+            default:
+                break;
         }
     }
+
+    // Visualise the projected boundaries of the complete 3D bins.
+    bool firstSegment(true);
+
+    for (const auto &[index, pSegment] : trajectory)
+    {
+        if (firstSegment)
+        {
+            const CartesianVector position2D(project(pSegment->m_start3D));
+            PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &position2D, "traj", MAGENTA, 1));
+            firstSegment = false;
+        }
+
+        const CartesianVector position2D(project(pSegment->m_end3D));
+        PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &position2D, "traj", MAGENTA, 1));
+    }
+
+    PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------

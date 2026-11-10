@@ -34,24 +34,25 @@ public:
 private:
     typedef std::pair<float, float> ChargeDeposit;
     typedef std::vector<ChargeDeposit> ChargeProfile;
+
     struct TrajectorySegment
     {
-        TrajectorySegment(const pandora::CartesianVector &start, const pandora::CartesianVector &end,
-            const ChargeProfile &chargeProfileU, const ChargeProfile &chargeProfileV, const ChargeProfile &chargeProfileW) :
-            m_start(start),
-            m_end(end),
-            m_chargeProfileU(chargeProfileU),
-            m_chargeProfileV(chargeProfileV),
-            m_chargeProfileW(chargeProfileW)
+        TrajectorySegment(const pandora::CartesianVector &start3D, const pandora::CartesianVector &end3D, const float pathLength3D) :
+            m_start3D(start3D),
+            m_end3D(end3D),
+            m_pathLength3D(pathLength3D)
         {
         }
+        pandora::CartesianVector m_start3D;
+        pandora::CartesianVector m_end3D;
 
-        pandora::CartesianVector m_start;
-        pandora::CartesianVector m_end;
-        ChargeProfile m_chargeProfileU;
-        ChargeProfile m_chargeProfileV;
-        ChargeProfile m_chargeProfileW;
+        float m_pathLength3D{0.f};
+
+        float m_chargeU{0.f};
+        float m_chargeV{0.f};
+        float m_chargeW{0.f};
     };
+
     typedef std::map<int, std::unique_ptr<TrajectorySegment>> Trajectory;
 
     /**
@@ -95,9 +96,11 @@ private:
      *
      *  @param  trajectoryTemplate the input trajectory template
      *  @param  refHits the hits in the view to be projected into
+     *  @param  binSize the size of the bins for the charge profile
      *  @param[in,out] trajectory the output trajectory
      */
-    void ProjectTrajectory(const pandora::CartesianPointVector &trajectoryTemplate, const pandora::CaloHitList &refHits, Trajectory &trajectory) const;
+    void ProjectTrajectory(const pandora::CartesianPointVector &trajectoryTemplate, const pandora::CaloHitList &refHits, const float binSize,
+        Trajectory &trajectory) const;
 
     pandora::StatusCode ReadSettings(const pandora::TiXmlHandle xmlHandle);
 
