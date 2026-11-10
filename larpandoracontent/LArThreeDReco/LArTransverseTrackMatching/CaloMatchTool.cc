@@ -86,7 +86,6 @@ bool CaloMatchTool::Construct3DTrajectoryTemplates(const pandora::Cluster *const
     LArClusterHelper::GetAllHits(pClusterU, refHitsU);
     LArClusterHelper::GetAllHits(pClusterV, refHitsV);
     LArClusterHelper::GetAllHits(pClusterW, refHitsW);
-    std::cout << "Ref hits: " << refHitsU.size() << ", " << refHitsV.size() << ", " << refHitsW.size() << std::endl;
     if (!refHitsW.empty())
     {
         this->Estimate3DTrajectory(refHitsU, refHitsV, refHitsW, refPositions3D);
@@ -155,6 +154,27 @@ void CaloMatchTool::SparsifyTrajectory(const CartesianPointVector &refPositions3
     LArPcaHelper::RunPca(refPositions3D, centroid, eigenValues, eigenVectors);
     LArPcaHelper::ProjectedPointVector projectedPoints(LArPcaHelper::GetOrderedPoints(refPositions3D));
 
+    // Order using the 3D principal axis projected into the W view,
+    const LArTransformationPlugin *const pTransform{this->GetPandora().GetPlugins()->GetLArTransformationPlugin()};
+
+    const auto getW = [&](const CartesianVector &p) -> float
+    {
+        return static_cast<float>(pTransform->YZtoW(p.GetY(), p.GetZ()));
+    };
+
+    const float centroidW = getW(centroid);
+    const float axisX = eigenVectors[0].GetX();
+    const float axisW = getW(centroid + eigenVectors[0]) - centroidW;
+
+    for (auto &[l, position3D] : projectedPoints)
+        l = (position3D.GetX() - centroid.GetX()) * axisX + (getW(position3D) - centroidW) * axisW;
+
+    std::stable_sort(projectedPoints.begin(), projectedPoints.end(),
+        [](const auto &a, const auto &b)
+        {
+            return a.first < b.first;
+        });
+
     for (const auto &[l, position3D] : projectedPoints)
     {
         PANDORA_MONITORING_API(AddMarkerToVisualization(this->GetPandora(), &position3D, "Pos: " + std::to_string(l), BLUE, 2));
@@ -168,33 +188,37 @@ void CaloMatchTool::SparsifyTrajectory(const CartesianPointVector &refPositions3
 
     // Extract a spread of points along the ordered trajectory
     // ATTN: Need to think about forward/backward directionality depending upon the flipping of clusters (for now, it's arbitrary)
-    if (projectedPoints.size() > nKeyPoints)
+    if (projectedPoints.size() > nKeyPoints && nKeyPoints >= 2)
     {
         const float tMin = projectedPoints.front().first;
         const float tMax = projectedPoints.back().first;
-        auto it = projectedPoints.begin();
+
+        size_t firstAllowed(0);
+
         for (unsigned int i = 0; i < nKeyPoints; ++i)
         {
-            float bestDelta(std::numeric_limits<float>::max());
             const float target = tMin + (tMax - tMin) * static_cast<float>(i) / static_cast<float>(nKeyPoints - 1);
-            while (true)
+
+            // Leave sufficient points for all remaining selections
+            const size_t lastAllowed = projectedPoints.size() - (nKeyPoints - i);
+
+            size_t bestIndex(firstAllowed);
+            float bestDelta(std::numeric_limits<float>::max());
+
+            for (size_t j = firstAllowed; j <= lastAllowed; ++j)
             {
-                const float delta = std::abs(it->first - target);
+                const float delta = std::abs(projectedPoints[j].first - target);
                 if (delta < bestDelta)
                 {
                     bestDelta = delta;
-                    ++it;
+                    bestIndex = j;
                 }
-                else
-                {
-                    --it;
-                    if (std::find(trajectoryTemplate.begin(), trajectoryTemplate.end(), it->second) == trajectoryTemplate.end())
-                        trajectoryTemplate.emplace_back(it->second);
-                    break;
-                }
-                if (bestDelta == std::numeric_limits<float>::max() && it == projectedPoints.end())
-                    break;
             }
+
+            trajectoryTemplate.emplace_back(projectedPoints[bestIndex].second);
+
+            // Future selections must use subsequent points
+            firstAllowed = bestIndex + 1;
         }
     }
     else
