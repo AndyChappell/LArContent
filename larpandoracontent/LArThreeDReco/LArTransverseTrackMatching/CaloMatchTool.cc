@@ -95,7 +95,8 @@ bool CaloMatchTool::Construct3DTrajectoryTemplates(const pandora::Cluster *const
 
         Trajectory trajectory;
         this->ProjectTrajectory(trajectoryTemplate, refHitsW, 2.f, trajectory);
-        // Need to add U and V as well
+        this->ProjectTrajectory(trajectoryTemplate, refHitsU, 2.f, trajectory);
+        this->ProjectTrajectory(trajectoryTemplate, refHitsV, 2.f, trajectory);
     }
     // Get the hits from each cluster.
     // Find the full triplet matches with an excellent chi2.
