@@ -9,9 +9,16 @@
 #include "Pandora/AlgorithmHeaders.h"
 
 #include "larpandoracontent/LArHelpers/LArClusterHelper.h"
+#include "larpandoracontent/LArHelpers/LArDiscreteProbabilityHelper.h"
 #include "larpandoracontent/LArHelpers/LArGeometryHelper.h"
 #include "larpandoracontent/LArHelpers/LArPcaHelper.h"
+#include "larpandoracontent/LArObjects/LArDiscreteProbabilityVector.h"
 #include "larpandoracontent/LArThreeDReco/LArTransverseTrackMatching/CaloMatchTool.h"
+
+#include <algorithm>
+#include <cmath>
+#include <limits>
+#include <random>
 
 using namespace pandora;
 
@@ -28,6 +35,8 @@ CaloMatchTool::CaloMatchTool() :
 
 bool CaloMatchTool::Run(ThreeViewTransverseTracksAlgorithm *const pAlgorithm, TensorType &overlapTensor)
 {
+    PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1, 1, 1));
+
     if (PandoraContentApi::GetSettings(*pAlgorithm)->ShouldDisplayAlgorithmInfo())
         std::cout << "----> Running Algorithm Tool: " << this->GetInstanceName() << ", " << this->GetType() << std::endl;
 
@@ -54,15 +63,17 @@ bool CaloMatchTool::Run(ThreeViewTransverseTracksAlgorithm *const pAlgorithm, Te
             const Cluster *const pClusterV(element.GetClusterV());
             const Cluster *const pClusterW(element.GetClusterW());
 
-            pandora::CartesianPointVector trajectory;
-            if (this->Construct3DTrajectoryTemplates(pClusterU, pClusterV, pClusterW, trajectory))
-            {
-                //std::cout << "Found trajectory" << std::endl;
-            }
-            else
-            {
-                //std::cout << "Failed to find trajectory" << std::endl;
-            }
+            Trajectory trajectory;
+            if (!this->Construct3DTrajectoryTemplates(pClusterU, pClusterV, pClusterW, trajectory))
+                continue;
+
+            CaloMatchResult caloResult;
+            if (!this->CompareChargeProfiles(trajectory, caloResult))
+                continue;
+
+            std::cout << "Calo comparison: " << "nBins=" << caloResult.m_nBins << " rUV=" << caloResult.m_uv.m_correlation << " pUV="
+                << caloResult.m_uv.m_pValue << " rUW=" << caloResult.m_uw.m_correlation << " pUW=" << caloResult.m_uw.m_pValue << " rVW="
+                << caloResult.m_vw.m_correlation << " pVW=" << caloResult.m_vw.m_pValue << " goodMatch=" << caloResult.m_isGoodMatch << std::endl;
         }
     }
 
@@ -77,35 +88,35 @@ bool CaloMatchTool::Run(ThreeViewTransverseTracksAlgorithm *const pAlgorithm, Te
 //------------------------------------------------------------------------------------------------------------------------------------------
 
 bool CaloMatchTool::Construct3DTrajectoryTemplates(const pandora::Cluster *const pClusterU, const pandora::Cluster *const pClusterV,
-    const pandora::Cluster *const pClusterW, pandora::CartesianPointVector &trajectory) const
+    const pandora::Cluster *const pClusterW, Trajectory &trajectory) const
 {
-    PANDORA_MONITORING_API(SetEveDisplayParameters(this->GetPandora(), true, DETECTOR_VIEW_XZ, -1, 1, 1));
-
     CaloHitList refHitsU, refHitsV, refHitsW;
     CartesianPointVector refPositions3D;
     LArClusterHelper::GetAllHits(pClusterU, refHitsU);
     LArClusterHelper::GetAllHits(pClusterV, refHitsV);
     LArClusterHelper::GetAllHits(pClusterW, refHitsW);
-    if (!refHitsW.empty())
-    {
-        this->Estimate3DTrajectory(refHitsU, refHitsV, refHitsW, refPositions3D);
-        CartesianPointVector trajectoryTemplate;
-        const unsigned int nKeyPoints = 10;
-        this->SparsifyTrajectory(refPositions3D, nKeyPoints, trajectoryTemplate, refHitsW);   // refHitsW is temporary for debugging visualisations
+    if (refHitsU.empty() || refHitsV.empty() || refHitsW.empty())
+        return false;
+    
+    this->Estimate3DTrajectory(refHitsU, refHitsV, refHitsW, refPositions3D);
+    CartesianPointVector trajectoryTemplate;
+    const unsigned int nKeyPoints = 10;
+    this->SparsifyTrajectory(refPositions3D, nKeyPoints, trajectoryTemplate, refHitsW);
 
-        Trajectory trajectory;
-        this->ProjectTrajectory(trajectoryTemplate, refHitsW, 2.f, trajectory);
-        this->ProjectTrajectory(trajectoryTemplate, refHitsU, 2.f, trajectory);
-        this->ProjectTrajectory(trajectoryTemplate, refHitsV, 2.f, trajectory);
-    }
-    // Get the hits from each cluster.
-    // Find the full triplet matches with an excellent chi2.
-    // Figure out the ordering of those triplets.
-    // Pick a sensible spreads of those triplets to make a trajectory template.
-    // We want the minimum number of points that define reasonably straight segments.
-    // Then aim to put together geometric and calorimetric consistency between the clusters based on the trajectory template.
+    if (trajectoryTemplate.size() < 2)
+        return false;
 
-    return false;
+    const float binSize = 2.f;
+    this->ProjectTrajectory(trajectoryTemplate, refHitsW, binSize, trajectory);
+    this->ProjectTrajectory(trajectoryTemplate, refHitsU, binSize, trajectory);
+    this->ProjectTrajectory(trajectoryTemplate, refHitsV, binSize, trajectory);
+
+    PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &refHitsU, "U Hits", RED));
+    PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &refHitsV, "V Hits", GREEN));
+    PANDORA_MONITORING_API(VisualizeCaloHits(this->GetPandora(), &refHitsW, "W Hits", BLUE));
+    PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
+
+    return !trajectory.empty();
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
@@ -505,6 +516,86 @@ void CaloMatchTool::ProjectTrajectory(const CartesianPointVector &trajectoryTemp
     }
 
     PANDORA_MONITORING_API(ViewEvent(this->GetPandora()));
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+
+bool CaloMatchTool::CompareChargeProfiles(const Trajectory &trajectory, CaloMatchResult &result) const
+{
+    const unsigned int minBins = 2;
+    const unsigned int nPermutations = 1000;
+    const float minCorrelation = 0.5f;
+    const float maxPValue = 0.05f;
+
+    DiscreteProbabilityVector::AllFloatInputData inputU, inputV, inputW;
+
+    inputU.reserve(trajectory.size());
+    inputV.reserve(trajectory.size());
+    inputW.reserve(trajectory.size());
+
+    float pathLength = 0.f;
+    float totalU = 0.f, totalV = 0.f, totalW = 0.f;
+
+    for (const auto &[index, pSegment] : trajectory)
+    {
+        const float length = pSegment->m_pathLength3D;
+        if (length <= 0.f)
+            return false;
+
+        // Only include bins where at least one view has charge
+        if (pSegment->m_chargeU + pSegment->m_chargeV + pSegment->m_chargeW > 0.f)
+        {
+            inputU.emplace_back(pathLength, pSegment->m_chargeU);
+            inputV.emplace_back(pathLength, pSegment->m_chargeV);
+            inputW.emplace_back(pathLength, pSegment->m_chargeW);
+
+            totalU += pSegment->m_chargeU;
+            totalV += pSegment->m_chargeV;
+            totalW += pSegment->m_chargeW;
+        }
+
+        pathLength += length;
+    }
+
+    result.m_nBins = static_cast<unsigned int>(inputU.size());
+    if (result.m_nBins < minBins)
+        return false;
+
+    // The probability-vector constructor requires a positive normalisation for every view.
+    const float epsilon = std::numeric_limits<float>::epsilon();
+    if (totalU <= epsilon || totalV <= epsilon || totalW <= epsilon)
+        return false;
+
+    try
+    {
+        const DiscreteProbabilityVector profileU(inputU, pathLength, false);
+        const DiscreteProbabilityVector profileV(inputV, pathLength, false);
+        const DiscreteProbabilityVector profileW(inputW, pathLength, false);
+
+        std::mt19937 randomNumberGenerator(42);
+        const auto comparePair = [&](const DiscreteProbabilityVector &a, const DiscreteProbabilityVector &b) -> CaloPairResult
+        {
+            CaloPairResult pair;
+            pair.m_correlation = LArDiscreteProbabilityHelper::CalculateCorrelationCoefficient(a, b);
+            pair.m_pValue = LArDiscreteProbabilityHelper::CalculateCorrelationCoefficientPValueFromPermutationTest(a, b, randomNumberGenerator, nPermutations);
+            return pair;
+        };
+
+        result.m_uv = comparePair(profileU, profileV);
+        result.m_uw = comparePair(profileU, profileW);
+        result.m_vw = comparePair(profileV, profileW);
+
+        const float minR = std::min({result.m_uv.m_correlation, result.m_uw.m_correlation, result.m_vw.m_correlation});
+        const float maxP = std::max({result.m_uv.m_pValue, result.m_uw.m_pValue, result.m_vw.m_pValue});
+        result.m_isGoodMatch = std::isfinite(minR) && std::isfinite(maxP) && minR >= minCorrelation && maxP <= maxPValue;
+
+        return true;
+    }
+    catch (const pandora::StatusCodeException &)
+    {
+        return false;
+    }
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------

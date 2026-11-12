@@ -55,6 +55,23 @@ private:
 
     typedef std::map<int, std::unique_ptr<TrajectorySegment>> Trajectory;
 
+    
+    struct CaloPairResult
+    {
+        float m_correlation{0.f};
+        float m_pValue{1.f};
+    };
+
+    struct CaloMatchResult
+    {
+        CaloPairResult m_uv;
+        CaloPairResult m_uw;
+        CaloPairResult m_vw;
+
+        unsigned int m_nBins{0};
+        bool m_isGoodMatch{false};
+    };
+
     /**
      *  @brief  Construct a 3D trajectory template from the given clusters.
      *          Uses the PlaneSolver to identify high-confidence matched 3D points from the 2D clusters, and build a template trajectory from them.
@@ -67,7 +84,7 @@ private:
      *  @return true if the trajectory was successfully constructed, false otherwise
      */
     bool Construct3DTrajectoryTemplates(const pandora::Cluster *const pClusterU, const pandora::Cluster *const pClusterV,
-        const pandora::Cluster *const pClusterW, pandora::CartesianPointVector &trajectory) const;
+        const pandora::Cluster *const pClusterW, Trajectory &trajectory) const;
 
     /**
      *  @brief  Estimate the 3D trajectory from the given hits in each view.
@@ -101,6 +118,16 @@ private:
      */
     void ProjectTrajectory(const pandora::CartesianPointVector &trajectoryTemplate, const pandora::CaloHitList &refHits, const float binSize,
         Trajectory &trajectory) const;
+
+    /**
+     *  @brief  Compare the charge profiles of the given trajectory segments and return a result.
+     *
+     *  @param  trajectory the input trajectory segments
+     *  @param[out] result the resulting comparison of charge profiles
+     *
+     *  @return true if the charge profiles are consistent, false otherwise
+     */
+    bool CompareChargeProfiles(const Trajectory &trajectory, CaloMatchResult &result) const;
 
     pandora::StatusCode ReadSettings(const pandora::TiXmlHandle xmlHandle);
 
